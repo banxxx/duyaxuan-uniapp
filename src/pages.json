@@ -1,0 +1,174 @@
+{
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^App(.*)": "@/components/base/App$1.vue",
+      "^(Poll|Status|Type|Empty)(.*)": "@/components/business/$1$2.vue"
+    }
+  },
+  "pages": [
+    {
+      "path": "pages/login/index",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/index/index",
+      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/search/index",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/detail/index",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/detail/success",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/detail/result",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/detail/voters",
+      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/detail/comments",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/create/type",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/create/content",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/create/rules",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/create/success",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/creator/data",
+      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/creator/edit-content",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/creator/edit-rules",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/survey/fill",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/survey/done",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/survey/mine",
+      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/survey/edit-answer",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/survey/answers",
+      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/summary/index",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/summary/option",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/summary/unclassified",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/me/index",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/me/created",
+      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/me/joined",
+      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+    },
+    {
+      "path": "pages/settings/index",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/settings/notifications",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/settings/profile",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/settings/account",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/settings/password",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/settings/phone",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/settings/wechat",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/settings/deactivate",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/settings/doc",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
+      "path": "pages/support/index",
+      "style": { "navigationStyle": "custom" }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "投票",
+    "navigationBarBackgroundColor": "#FAFAFA",
+    "backgroundColor": "#FAFAFA",
+    "backgroundColorTop": "#FAFAFA",
+    "backgroundColorBottom": "#FAFAFA"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#A1A1AA",
+    "selectedColor": "#4F46E5",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "发现" },
+      { "pagePath": "pages/me/index", "text": "我的" }
+    ]
+  }
+}

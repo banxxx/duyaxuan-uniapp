@@ -1,0 +1,2 @@
+<!-- 故意留空：自定义 tabBar 的视觉部分在 AppTabBar 组件里 -->
+<view class="custom-tab-bar" />

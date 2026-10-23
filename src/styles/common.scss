@@ -1,0 +1,70 @@
+@use './tokens.scss' as *;
+
+/* 全局重置与基础样式。设计稿底色 $bg #FAFAFA，所有页面统一。 */
+
+page {
+  background-color: $bg;
+  color: $ink;
+  font-family: $font-sans;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+view,
+text,
+scroll-view,
+image,
+button,
+input,
+textarea {
+  box-sizing: border-box;
+}
+
+/* 小程序 button 默认带边框与背景，统一抹掉，由业务自己画 */
+button {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border-radius: 0;
+  line-height: normal;
+  font-size: inherit;
+  color: inherit;
+
+  &::after {
+    border: none;
+  }
+}
+
+/* 文本省略：卡片标题单行、列表副标题单行都用它 */
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ellipsis-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* 点击反馈：小程序里 hover-class 更省性能，但卡片统一用这个类 */
+.pressable {
+  transition: opacity 0.15s ease;
+
+  &:active {
+    opacity: 0.7;
+  }
+}
+
+/*
+ * H5 端不支持 tabBar.custom，会照常渲染一条原生 tabBar。
+ * 页面 onShow 里已经调 uni.hideTabBar() 把它藏掉，但那是异步的 ——
+ * 首帧会先画出来再消失，看起来就是闪一下。这里直接按元素屏蔽掉，
+ * 视觉栏只留我们自己画的 AppTabBar。
+ */
+uni-tabbar {
+  display: none !important;
+}

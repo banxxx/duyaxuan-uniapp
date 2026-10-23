@@ -1,0 +1,4 @@
+.custom-tab-bar {
+  height: 0;
+  overflow: hidden;
+}

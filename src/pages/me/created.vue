@@ -1,0 +1,539 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
+import type { Poll } from '@/types/api'
+import AppNavBar from '@/components/base/AppNavBar.vue'
+import AppIcon from '@/components/base/AppIcon.vue'
+import AppEmpty from '@/components/base/AppEmpty.vue'
+import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppTabBar from '@/components/base/AppTabBar.vue'
+import StatsCard from '@/components/business/StatsCard.vue'
+import FilterChips from '@/components/business/FilterChips.vue'
+import PollRow from '@/components/business/PollRow.vue'
+import SwipeRow from '@/components/business/SwipeRow.vue'
+import { fetchMyPolls, fetchStats, deletePoll, restorePoll } from '@/api/poll'
+import { formatRemaining } from '@/utils/format'
+import { getSafeArea, bottomInset } from '@/utils/platform'
+
+/**
+ * 41 我发起的 + 88 左滑操作 + 89 更多操作 + 96 删除撤销
+ *
+ * 四个设计稿页面合成一个页面：
+ *   列表常态       → 41
+ *   左滑露出操作   → 88（SwipeRow 手势）
+ *   点「···」      → 89（ActionSheet）
+ *   删除后         → 96（底部提示条 + 5 秒撤销）
+ */
+const filters = [
+  { value: 'all', label: '全部' },
+  { value: 'ongoing', label: '进行中' },
+  { value: 'ended', label: '已结束' }
+]
+
+const status = ref<'all' | 'ongoing' | 'ended'>('all')
+const list = ref<Poll[]>([])
+const stats = ref<Array<{ value: string | number; label: string }>>([])
+const loading = ref(false)
+const cursor = ref<string | null>(null)
+const hasMore = ref(true)
+
+/** 底部小横条高度，用于撤销条与 tab 占位 */
+const { safeBottom } = getSafeArea()
+
+// 操作面板（89）
+const sheetVisible = ref(false)
+const activePoll = ref<Poll | null>(null)
+
+// 删除确认（92/95）
+const confirmVisible = ref(false)
+
+// 撤销提示条（96）
+const toastVisible = ref(false)
+const toastText = ref('')
+let undoPoll: Poll | null = null
+let undoTimer: ReturnType<typeof setTimeout> | null = null
+
+async function load(reset = false) {
+  if (loading.value) return
+  loading.value = true
+  try {
+    if (reset) {
+      cursor.value = null
+      hasMore.value = true
+    }
+    const res = await fetchMyPolls(status.value, cursor.value)
+    list.value = reset ? res.list : [...list.value, ...res.list]
+    cursor.value = res.cursor
+    hasMore.value = res.hasMore
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadStats() {
+  stats.value = await fetchStats()
+}
+
+onMounted(async () => {
+  await Promise.all([load(true), loadStats()])
+})
+
+onPullDownRefresh(async () => {
+  await Promise.all([load(true), loadStats()])
+  uni.stopPullDownRefresh()
+})
+
+onReachBottom(() => {
+  if (hasMore.value && !loading.value) load()
+})
+
+function onFilter(v: string) {
+  status.value = v as typeof status.value
+  load(true)
+}
+
+function openDetail(poll: Poll) {
+  uni.navigateTo({ url: `/pages/detail/index?id=${poll.id}` })
+}
+
+/** 89：底部操作面板 */
+function openSheet(poll: Poll) {
+  activePoll.value = poll
+  sheetVisible.value = true
+}
+
+/** 编辑只有「内容」和「规则」两页，问卷和投票共用同一套页面，靠 type 分流渲染 */
+function goEdit(poll: Poll) {
+  sheetVisible.value = false
+  uni.navigateTo({ url: `/pages/creator/edit-content?id=${poll.id}` })
+}
+
+function goCreate() {
+  uni.navigateTo({ url: '/pages/create/type' })
+}
+
+function askDelete(poll: Poll) {
+  sheetVisible.value = false
+  activePoll.value = poll
+  confirmVisible.value = true
+}
+
+async function confirmDelete() {
+  const poll = activePoll.value
+  if (!poll) return
+  confirmVisible.value = false
+
+  // 先本地移除，界面立刻响应；失败再放回去
+  const index = list.value.findIndex((p) => p.id === poll.id)
+  if (index >= 0) list.value.splice(index, 1)
+
+  try {
+    await deletePoll(poll.id)
+    undoPoll = poll
+    toastText.value = `已删除「${poll.title}」`
+    toastVisible.value = true
+    if (undoTimer) clearTimeout(undoTimer)
+    undoTimer = setTimeout(() => {
+      toastVisible.value = false
+      undoPoll = null
+    }, 5000)
+  } catch {
+    if (index >= 0) list.value.splice(index, 0, poll)
+    uni.showToast({ title: '删除失败，请重试', icon: 'none' })
+  }
+}
+
+/** 96：5 秒内撤销 */
+async function undoDelete() {
+  const poll = undoPoll
+  if (!poll) return
+  if (undoTimer) clearTimeout(undoTimer)
+  toastVisible.value = false
+  undoPoll = null
+  try {
+    await restorePoll(poll.id)
+    await load(true)
+  } catch {
+    uni.showToast({ title: '撤销失败，已超出可撤销时间', icon: 'none' })
+  }
+}
+
+function onSwipeEdit(poll: Poll) {
+  goEdit(poll)
+}
+
+function onSwipeDelete(poll: Poll) {
+  askDelete(poll)
+}
+</script>
+
+<template>
+  <view class="page">
+    <AppNavBar title="我发起的" :back="true">
+      <template #right>
+        <view class="page__add" @tap="goCreate">
+          <AppIcon name="plus" :size="17" color="#09090B" />
+        </view>
+      </template>
+    </AppNavBar>
+
+    <view class="page__content">
+      <StatsCard v-if="stats.length" :items="stats" />
+      <FilterChips :model-value="status" :options="filters" @update:model-value="onFilter" />
+
+      <view class="page__list">
+        <SwipeRow
+          v-for="poll in list"
+          :key="poll.id"
+          @edit="onSwipeEdit(poll)"
+          @delete="onSwipeDelete(poll)"
+          @tap="openDetail(poll)"
+        >
+          <PollRow :poll="poll" manage @tap="openDetail(poll)" @more="openSheet(poll)" />
+        </SwipeRow>
+
+        <AppEmpty
+          v-if="!loading && !list.length"
+          icon="inbox"
+          title="还没有发起过投票"
+          desc="点右上角「+」发起第一场，三步就能完成"
+          action="去创建"
+          @action="goCreate"
+        />
+
+        <view v-if="loading" class="page__loading">
+          <AppSkeleton type="list" />
+        </view>
+      </view>
+    </view>
+
+    <!-- 89 更多操作 -->
+    <view v-if="sheetVisible" class="sheet" @tap="sheetVisible = false">
+      <view class="sheet__panel" :style="{ paddingBottom: bottomInset(24) }" @tap.stop>
+        <view class="sheet__handle"><view class="sheet__bar" /></view>
+        <view class="sheet__head">
+          <text class="sheet__title">{{ activePoll?.title }}</text>
+          <text class="sheet__desc">
+            {{ activePoll?.type === 'survey' ? '问卷' : activePoll?.type === 'multiple' ? '多选' : '单选' }}
+            · {{ activePoll && activePoll.rules.endAt > Date.now() ? '进行中' : '已结束' }}
+            <template v-if="activePoll && activePoll.rules.endAt > Date.now()">
+               · {{ formatRemaining(activePoll.rules.endAt) }}
+            </template>
+          </text>
+        </view>
+
+        <view class="sheet__actions">
+          <view class="sheet__item" hover-class="sheet__item--active" @tap="activePoll && goEdit(activePoll)">
+            <AppIcon name="square-pen" :size="18" color="#09090B" />
+            <text class="sheet__item-text">编辑{{ activePoll?.type === 'survey' ? '问卷' : '投票' }}</text>
+          </view>
+          <view class="sheet__sep" />
+          <view class="sheet__item" hover-class="sheet__item--active" @tap="activePoll && askDelete(activePoll)">
+            <AppIcon name="trash-2" :size="18" color="#DC2626" />
+            <text class="sheet__item-text sheet__item-text--danger">
+              删除{{ activePoll?.type === 'survey' ? '问卷' : '投票' }}
+            </text>
+          </view>
+        </view>
+
+        <view class="sheet__cancel" hover-class="sheet__item--active" @tap="sheetVisible = false">
+          <text class="sheet__cancel-text">取消</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 92/95 删除确认 -->
+    <view v-if="confirmVisible" class="sheet" @tap="confirmVisible = false">
+      <view class="confirm" :style="{ paddingBottom: bottomInset(24) }" @tap.stop>
+        <view class="confirm__handle"><view class="confirm__bar" /></view>
+        <view class="confirm__head">
+          <text class="confirm__title">
+            删除这{{ activePoll?.type === 'survey' ? '份问卷' : '场投票' }}？
+          </text>
+          <text class="confirm__desc">
+            「{{ activePoll?.title }}」有
+            {{ activePoll?.type === 'survey' ? `${activePoll?.answerCount ?? 0} 条回答` : `${activePoll?.voterCount ?? 0} 人投票` }}、{{
+              activePoll?.commentCount ?? 0
+            }}
+            条评论。确认后立即从列表和分享链接下线，5 秒内可在底部提示里撤销，之后无法恢复。
+          </text>
+        </view>
+        <view class="confirm__buttons">
+          <view class="confirm__btn confirm__btn--cancel" @tap="confirmVisible = false">
+            <text class="confirm__btn-text">取消</text>
+          </view>
+          <view class="confirm__btn confirm__btn--danger" @tap="confirmDelete">
+            <text class="confirm__btn-text confirm__btn-text--light">
+              删除{{ activePoll?.type === 'survey' ? '问卷' : '投票' }}
+            </text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 96 撤销提示条 -->
+    <view v-if="toastVisible" class="toast" :style="{ bottom: `calc(76px + ${safeBottom}px)` }">
+      <text class="toast__text">{{ toastText }}</text>
+      <text class="toast__undo" @tap="undoDelete">撤销</text>
+    </view>
+
+    <AppTabBar current="me" />
+    <view class="page__tabspace" :style="{ height: `calc(64px + ${safeBottom}px)` }" />
+  </view>
+</template>
+
+<script lang="ts">
+export default { name: 'CreatedPollsPage' }
+</script>
+
+<style lang="scss" scoped>
+.page {
+  min-height: 100vh;
+  background: $bg;
+  display: flex;
+  flex-direction: column;
+
+  &__add {
+    width: 34px;
+    height: 34px;
+    border-radius: 17px;
+    background: $surface;
+    border: 1px solid $line;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__content {
+    flex: 1;
+    padding: 8px $gutter 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__loading {
+    padding: 20px 0;
+  }
+
+  &__tabspace {
+    /* 高度由内联 style 按 safeBottom 给 */
+  }
+}
+
+/* 底部弹层通用 */
+.sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 9, 11, 0.4);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+
+  &__panel {
+    width: 100%;
+    background: $surface;
+    border-radius: $r-sheet $r-sheet 0 0;
+    /* 下边距由内联 bottomInset(24) 给 */
+    padding: 10px $gutter 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &__handle {
+    height: 4px;
+    display: flex;
+    justify-content: center;
+  }
+
+  &__bar {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: $line;
+  }
+
+  &__head {
+    padding: 8px 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__title {
+    font-size: 15px;
+    font-weight: 600;
+    color: $ink;
+  }
+
+  &__desc {
+    font-size: 11px;
+    color: $faint;
+  }
+
+  &__actions {
+    background: $subtle;
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  &__item {
+    height: 52px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    &--active {
+      background: $line;
+    }
+  }
+
+  &__item-text {
+    font-size: 14px;
+    color: $ink;
+
+    &--danger {
+      color: $danger;
+    }
+  }
+
+  &__sep {
+    height: 1px;
+    background: $line;
+    margin-left: 16px;
+  }
+
+  &__cancel {
+    height: 50px;
+    border-radius: 14px;
+    background: $subtle;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__cancel-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: $ink;
+  }
+}
+
+/* 删除确认面板 */
+.confirm {
+  width: 100%;
+  background: $surface;
+  border-radius: $r-sheet $r-sheet 0 0;
+  /* 下边距由内联 bottomInset(24) 给 */
+  padding: 10px $gutter 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  &__handle {
+    height: 4px;
+    display: flex;
+    justify-content: center;
+  }
+
+  &__bar {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: $line;
+  }
+
+  &__head {
+    padding-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__title {
+    font-size: 17px;
+    font-weight: 600;
+    color: $ink;
+  }
+
+  &__desc {
+    font-size: 12px;
+    color: $muted;
+    line-height: 1.55;
+  }
+
+  &__buttons {
+    display: flex;
+    gap: 10px;
+  }
+
+  &__btn {
+    flex: 1;
+    height: 50px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &--cancel {
+      background: $subtle;
+    }
+
+    &--danger {
+      background: $danger;
+    }
+  }
+
+  &__btn-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: $ink;
+
+    &--light {
+      color: #fff;
+    }
+  }
+}
+
+/* 撤销提示条 */
+.toast {
+  position: fixed;
+  left: $gutter;
+  right: $gutter;
+  /* bottom 由内联 style 按 safeBottom 给 */
+  height: 52px;
+  padding: 0 16px;
+  border-radius: 14px;
+  background: $ink;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 210;
+
+  &__text {
+    font-size: 13px;
+    font-weight: 500;
+    color: #fff;
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__undo {
+    font-size: 13px;
+    font-weight: 600;
+    color: #c7d2fe;
+    padding-left: 12px;
+    flex-shrink: 0;
+  }
+}
+</style>

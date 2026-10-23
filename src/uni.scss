@@ -1,0 +1,8 @@
+/**
+ * uni.scss 是 uni-app 的特殊文件：会被自动注入到每个 <style lang="scss"> 中，
+ * 页面里不需要再 @use / @import 就能直接用 $ink、$accent 这些变量。
+ * 真正的定义放在 styles/tokens.scss，这里只做转发，保持单一来源。
+ */
+/* 用别名而不是相对路径：uni.scss 的内容会被内联进每个页面的 style 块，
+   相对路径会按页面文件的位置解析，指不到 src/styles。 */
+@use '@/styles/tokens.scss' as *;

@@ -1,0 +1,79 @@
+@use 'sass:color';
+
+/* ============================================================
+ * 设计 token —— 唯一来源是 duyaxuan.pen 的「设计规范」区块
+ * 改动这里会同时影响所有页面，页面里不要再写死色值
+ * ============================================================ */
+
+/* 中性色 */
+$ink: #09090b; // 主文字、主标题
+$muted: #71717a; // 次要文字、副标题
+$faint: #a1a1aa; // 占位符、时间、弱提示
+$line: #e4e4e7; // 描边、分割线
+$subtle: #f4f4f5; // 次级底色、禁用开关轨道
+$bg: #fafafa; // 页面底色
+$surface: #ffffff; // 卡片、弹层
+
+/* 品牌色 */
+$accent: #4f46e5;
+$accent-ink: #4338ca;
+$accent-soft: #eef2ff;
+
+/* 语义色 */
+$success: #047857; // 设计稿 success = #047857（规范卡上的文字写的是 #10B981，以色板与变量为准）
+$success-soft: #d1fae5;
+$warning: #d97706;
+$warning-soft: #fef3c7;
+$danger: #dc2626;
+$danger-soft: #fee2e2; // 危险提示图标底色（53）
+$danger-mist: #fef2f2; // 危险提示卡底色（53）
+
+/* 字号（设计稿 px，构建时统一乘 1.923 转 rpx） */
+$fs-page-title: 28px; // 页面标题 28 / bold
+$fs-card-title: 16px; // 卡片标题 16 / 600
+$fs-body: 13px; // 正文 13 / 400
+$fs-body-strong: 13px; // 正文强调 13 / 500–600
+$fs-caption: 11px; // 辅助说明 11 / 400
+$fs-micro: 10px; // 徽标、时间 10 / 400–600
+
+$font-sans: 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+$font-num: 'Inter', 'DIN Alternate', $font-sans;
+
+/* 圆角 */
+$r-card: 22px; // 大卡片
+$r-input: 14px; // 卡片 / 输入框
+$r-button: 16px; // 按钮
+$r-chip: 8px; // 胶囊 / 标签
+$r-sheet: 20px; // 底部弹层上沿
+
+/* 间距 */
+$gutter: 20px; // 页面左右边距
+$section-gap: 16px; // 区块间距
+$row-gap: 10px; // 列表行间距
+
+/* 组件级固定尺寸（设计稿实测） */
+$nav-height: 52px;
+$statusbar-height: 44px; // 实际由系统胶囊高度决定，仅作兜底
+$tabbar-height: 64px;
+$button-height: 52px;
+$pill-height: 20px;
+
+/* 阴影：设计稿基本不用阴影，只给浮层留一档 */
+$shadow-sheet: 0 -4px 24px rgba(9, 9, 11, 0.08);
+$shadow-float: 0 4px 16px rgba(9, 9, 11, 0.12);
+
+/* 兼容 uni.scss 内置变量，避免第三方组件找不到变量 */
+$uni-color-primary: $accent;
+$uni-color-success: $success;
+$uni-color-warning: $warning;
+$uni-color-error: $danger;
+$uni-text-color: $ink;
+$uni-text-color-inverse: #fff;
+$uni-text-color-grey: $muted;
+$uni-text-color-placeholder: $faint;
+$uni-text-color-disable: $faint;
+$uni-bg-color: $surface;
+$uni-bg-color-grey: $bg;
+$uni-bg-color-hover: $subtle;
+$uni-bg-color-mask: rgba(9, 9, 11, 0.4);
+$uni-border-color: $line;
