@@ -184,8 +184,10 @@ function onSwipeDelete(poll: Poll) {
 
       <view class="page__list">
         <SwipeRow
-          v-for="poll in list"
+          v-for="(poll, i) in list"
           :key="poll.id"
+          class="anim anim--fade-up"
+          :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
           @edit="onSwipeEdit(poll)"
           @delete="onSwipeDelete(poll)"
           @tap="openDetail(poll)"
@@ -332,12 +334,21 @@ export default { name: 'CreatedPollsPage' }
 .sheet {
   position: fixed;
   inset: 0;
-  background: rgba(9, 9, 11, 0.4);
   z-index: 200;
   display: flex;
   align-items: flex-end;
 
+  /* 遮罩与面板分两层，遮罩只淡入、面板只上滑 */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(9, 9, 11, 0.4);
+    animation: dyx-mask-in $dur-base $ease-out both;
+  }
+
   &__panel {
+    position: relative;
     width: 100%;
     background: $surface;
     border-radius: $r-sheet $r-sheet 0 0;
@@ -346,6 +357,7 @@ export default { name: 'CreatedPollsPage' }
     display: flex;
     flex-direction: column;
     gap: 10px;
+    animation: dyx-sheet-up $dur-base $ease-out both;
   }
 
   &__handle {
@@ -430,6 +442,7 @@ export default { name: 'CreatedPollsPage' }
 
 /* 删除确认面板 */
 .confirm {
+  position: relative;
   width: 100%;
   background: $surface;
   border-radius: $r-sheet $r-sheet 0 0;
@@ -438,6 +451,7 @@ export default { name: 'CreatedPollsPage' }
   display: flex;
   flex-direction: column;
   gap: 12px;
+  animation: dyx-sheet-up $dur-base $ease-out both;
 
   &__handle {
     height: 4px;
@@ -518,6 +532,8 @@ export default { name: 'CreatedPollsPage' }
   align-items: center;
   justify-content: space-between;
   z-index: 210;
+  /* 从底部浮上来，比直接闪现更容易被注意到 */
+  animation: dyx-fade-up $dur-base $ease-out both;
 
   &__text {
     font-size: 13px;

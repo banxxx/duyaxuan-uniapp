@@ -51,7 +51,7 @@ const footUrgent = computed(
 </script>
 
 <template>
-  <view class="pending" :class="{ 'pending--urgent': urgent }" @tap="emit('tap')">
+  <view class="pending" :class="{ 'pending--urgent': urgent }" @tap.stop="emit('tap')">
     <view class="pending__top">
       <view class="pending__badge" :class="{ 'pending__badge--urgent': urgent }">
         <text class="pending__badge-text" :class="{ 'pending__badge-text--urgent': urgent }">

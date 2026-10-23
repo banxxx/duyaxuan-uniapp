@@ -43,7 +43,7 @@ const emit = defineEmits<{ (e: 'tap'): void }>()
     class="menu"
     :class="{ 'menu--danger': danger, 'menu--roomy': roomy, 'menu--strong': strong }"
     hover-class="menu--active"
-    @tap="emit('tap')"
+    @tap.stop="emit('tap')"
   >
     <view v-if="icon" class="menu__icon">
       <AppIcon :name="icon" :size="17" :color="danger ? '#DC2626' : '#71717A'" />

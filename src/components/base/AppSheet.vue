@@ -42,6 +42,8 @@ function onMask() {
 
 <template>
   <view v-if="visible" class="sheet" @tap="maskClosable && onMask()">
+    <!-- 遮罩单独一层：面板上滑时遮罩同时淡入，比整块一起位移更像原生 -->
+    <view class="sheet__mask" />
     <view
       class="sheet__panel"
       :class="{ 'sheet__panel--confirm': variant === 'confirm' }"
@@ -84,12 +86,20 @@ export default { name: 'AppSheet' }
 .sheet {
   position: fixed;
   inset: 0;
-  background: rgba(9, 9, 11, 0.4);
   z-index: 200;
   display: flex;
   align-items: flex-end;
 
+  /* 遮罩自己一层，只做透明度变化，不跟着面板位移 */
+  &__mask {
+    position: absolute;
+    inset: 0;
+    background: rgba(9, 9, 11, 0.4);
+    animation: dyx-mask-in $dur-base $ease-out both;
+  }
+
   &__panel {
+    position: relative;
     width: 100%;
     background: $surface;
     border-radius: $r-sheet $r-sheet 0 0;
@@ -99,6 +109,7 @@ export default { name: 'AppSheet' }
     flex-direction: column;
     gap: 16px;
     max-height: 86vh;
+    animation: dyx-sheet-up $dur-base $ease-out both;
 
     /* 49/56/57：系统确认框的上沿更圆、头顶留白更多 */
     &--confirm {

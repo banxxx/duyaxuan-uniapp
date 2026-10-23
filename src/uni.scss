@@ -6,3 +6,4 @@
 /* 用别名而不是相对路径：uni.scss 的内容会被内联进每个页面的 style 块，
    相对路径会按页面文件的位置解析，指不到 src/styles。 */
 @use '@/styles/tokens.scss' as *;
+@use '@/styles/motion.scss' as *;

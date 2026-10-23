@@ -115,8 +115,10 @@ function goHome() {
 
       <view class="page__list">
         <PollRow
-          v-for="poll in list"
+          v-for="(poll, i) in list"
           :key="poll.id"
+          class="anim anim--fade-up"
+          :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
           :poll="poll"
           show-my-choice
           @tap="openDetail(poll)"

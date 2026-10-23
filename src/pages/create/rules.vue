@@ -7,12 +7,13 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppSwitch from '@/components/base/AppSwitch.vue'
+import AppDateTimePicker from '@/components/base/AppDateTimePicker.vue'
 import StepBar from '@/components/business/StepBar.vue'
 import RuleRow from '@/components/business/RuleRow.vue'
 import { useDraftStore } from '@/stores/draft'
 import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
-import { back, go, ROUTES } from '@/utils/router'
+import { back, go, reset, ROUTES } from '@/utils/router'
 
 /**
  * 30 创建 · ③ 规则 · 单选 / 31 · 多选 / 63 · 问卷（含 32/34/35/36/37/38 六个弹层）
@@ -33,17 +34,18 @@ const typeMode = ref<'single' | 'multiple'>('single')
 const maxChoice = ref(3)
 
 /** 通用弹层 */
-type SheetKind = 'join' | 'result' | 'profile' | 'deadline' | null
+type SheetKind = 'join' | 'result' | 'profile' | null
 const sheet = ref<SheetKind>(null)
 
 /** 需填信息：两个输入 */
 const profileTitle = ref('')
 const profileHint = ref('')
 
-/** 截止时间：天快捷 + 自定义日期时间 */
+/** 截止时间：天快捷 + 自定义日期时间（自定义走 34/35 面板） */
 const deadlinePreset = ref<'1d' | '3d' | '7d' | 'custom'>('3d')
-const customDate = ref('')
-const customTime = ref('18:00')
+const deadlinePicker = ref(false)
+/** 面板打开时的草稿值，只有点「确定」才写回 draft */
+const customDeadline = ref(0)
 
 const joinOptions: Array<{ value: JoinMethod; label: string; desc: string }> = [
   { value: 'link', label: '链接分享', desc: '持链接者皆可投，适合群内公开征集' },
@@ -70,59 +72,77 @@ onLoad(() => {
   typeMode.value = draft.draft.type === 'multiple' ? 'multiple' : 'single'
   maxChoice.value = draft.draft.rules.maxChoice ?? 3
   profileTitle.value = draft.draft.rules.profileField ?? ''
+  // 回填截止时间：草稿里已有 endAt 就按它和「现在 + 1/3/7 天」比对，
+  // 对不上任何快捷档就落到「自定义」，否则用户会看到选中了「3 天」但时间对不上
+  const endAt = draft.draft.rules.endAt
+  const day = 24 * 3600 * 1000
+  const near = endAt
+    ? ([1, 3, 7] as const).find((d) => Math.abs(endAt - (Date.now() + d * day)) < 60 * 1000)
+    : undefined
+  deadlinePreset.value = near === 1 ? '1d' : near === 3 ? '3d' : near === 7 ? '7d' : 'custom'
 })
 
-/** 所有开关都直接写回 draft，页面不持有副本，避免「改了没保存」 */
+/**
+ * 所有开关都直接写回 draft，页面不持有副本，避免「改了没保存」。
+ * 必须走 patchRules：直接改 draft.rules.xxx 不会换引用，页面不会重渲染。
+ */
 function setRule(key: string, v: boolean) {
-  ;(draft.draft.rules as unknown as Record<string, boolean>)[key] = v
-  draft.patch({})
+  draft.patchRules({ [key]: v } as Partial<typeof draft.draft.rules>)
 }
 
 function pickJoin(v: JoinMethod) {
-  draft.draft.rules.joinMethod = v
-  draft.patch({})
+  draft.patchRules({ joinMethod: v })
   sheet.value = null
 }
 
 function pickResult(v: ResultVisibility) {
-  draft.draft.rules.resultVisibility = v
-  draft.patch({})
+  draft.patchRules({ resultVisibility: v })
   sheet.value = null
 }
 
 function confirmProfile() {
   const t = profileTitle.value.trim()
-  draft.draft.rules.profileField = t || null
-  draft.patch({})
+  draft.patchRules({ profileField: t || null })
   sheet.value = null
 }
 
 function pickDeadline(p: '1d' | '3d' | '7d' | 'custom') {
+  if (p === 'custom') {
+    openDeadlinePicker()
+    return
+  }
   deadlinePreset.value = p
-  if (p === 'custom') return
   const days = p === '1d' ? 1 : p === '3d' ? 3 : 7
-  draft.draft.rules.endAt = Date.now() + days * 24 * 3600 * 1000
-  draft.patch({})
+  draft.patchRules({ endAt: Date.now() + days * 24 * 3600 * 1000 })
 }
 
-function applyCustomDeadline() {
-  const iso = `${customDate.value}T${customTime.value}:00`
-  const ts = new Date(iso).getTime()
-  if (!customDate.value || Number.isNaN(ts) || ts <= Date.now()) {
+/** 打开 34：用当前截止时间作为初始值，没有就默认 3 天后 18:00 */
+function openDeadlinePicker() {
+  customDeadline.value = draft.draft.rules.endAt || Date.now() + 3 * 86400000
+  deadlinePicker.value = true
+}
+
+function applyCustomDeadline(ts: number) {
+  if (ts <= Date.now()) {
     uni.showToast({ title: '请选择一个将来的时间', icon: 'none' })
     return
   }
-  draft.draft.rules.endAt = ts
-  draft.patch({})
-  sheet.value = null
+  deadlinePreset.value = 'custom'
+  draft.patchRules({ endAt: ts })
+  deadlinePicker.value = false
 }
-
-/** 预览用：默认给个明天的日期 */
-const todayStr = new Date().toISOString().slice(0, 10)
-customDate.value = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
 
 function onBack() {
   back()
+}
+
+/**
+ * 左上角「取消」= 放弃整个创建流程，回首页。
+ * 底部「上一步」才是退到上一步骤，两者语义不同，不能共用。
+ * 草稿保留，下次进来还能续上。
+ */
+function cancel() {
+  reset(ROUTES.home)
 }
 
 function publish() {
@@ -139,7 +159,7 @@ function publish() {
   <view class="rules">
     <AppNavBar :back="false">
       <template #left>
-        <text class="rules__cancel" @tap="onBack">取消</text>
+        <text class="rules__cancel" @tap="cancel">取消</text>
       </template>
       <template #title>
         <text class="rules__nav-title">新建{{ isSurvey ? '问卷' : '投票' }}</text>
@@ -378,7 +398,7 @@ function publish() {
             </view>
           </view>
 
-          <view class="deadline__value" @tap="sheet = 'deadline'">
+          <view class="deadline__value" @tap="openDeadlinePicker">
             <AppIcon name="calendar" :size="16" color="#71717A" />
             <text class="deadline__value-text">{{ formatDateTime(draft.draft.rules.endAt) }}</text>
             <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
@@ -494,50 +514,14 @@ function publish() {
       </template>
     </AppSheet>
 
-    <!-- 34/35 自定义截止时间 -->
-    <AppSheet
-      :visible="sheet === 'deadline'"
-      title="选择截止时间"
-      desc="到点后自动停止收集，已提交的票与回答都会保留"
-      @close="sheet = null"
-    >
-      <view class="form">
-        <view class="form__group">
-          <text class="form__label">日期</text>
-          <picker mode="date" :value="customDate" :start="todayStr" @change="customDate = $event.detail.value">
-            <view class="form__input form__input--picker">
-              <text class="form__picker-text">{{ customDate }}</text>
-              <AppIcon name="chevron-right" :size="14" color="#A1A1AA" />
-            </view>
-          </picker>
-        </view>
-
-        <view class="form__group">
-          <text class="form__label">时间</text>
-          <picker mode="time" :value="customTime" @change="customTime = $event.detail.value">
-            <view class="form__input form__input--picker">
-              <text class="form__picker-text">{{ customTime }}</text>
-              <AppIcon name="chevron-right" :size="14" color="#A1A1AA" />
-            </view>
-          </picker>
-          <view class="quick-times">
-            <view
-              v-for="t in ['09:00', '12:00', '18:00', '21:00']"
-              :key="t"
-              class="quick-times__chip"
-              :class="{ 'quick-times__chip--on': customTime === t }"
-              @tap="customTime = t"
-            >
-              <text class="quick-times__text">{{ t }}</text>
-            </view>
-          </view>
-        </view>
-      </view>
-
-      <template #footer>
-        <AppButton :disabled="!customDate" @tap="applyCustomDeadline">确定</AppButton>
-      </template>
-    </AppSheet>
+    <!-- 34/35 自定义截止时间：自绘面板，替换原来的原生 <picker> -->
+    <AppDateTimePicker
+      :visible="deadlinePicker"
+      :model-value="customDeadline"
+      :min="Date.now()"
+      @close="deadlinePicker = false"
+      @confirm="applyCustomDeadline"
+    />
   </view>
 </template>
 
@@ -907,34 +891,6 @@ export default { name: 'CreateRulesPage' }
 
   &__ph {
     color: $faint;
-  }
-}
-
-.quick-times {
-  display: flex;
-  gap: 8px;
-
-  &__chip {
-    height: 30px;
-    padding: 0 14px;
-    border-radius: 15px;
-    background: $subtle;
-    display: flex;
-    align-items: center;
-
-    &--on {
-      background: $accent;
-    }
-  }
-
-  &__text {
-    font-size: 12px;
-    color: $muted;
-  }
-
-  &__chip--on &__text {
-    color: #fff;
-    font-weight: 600;
   }
 }
 </style>

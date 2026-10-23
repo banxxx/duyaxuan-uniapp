@@ -25,8 +25,9 @@ export default defineConfig({
           unit: 'rpx',
           // 设计稿 390 → 750rpx
           transform: (x: number) => Number((x * RPX_RATIO).toFixed(3)),
-          // 组件库自带的样式不做换算，避免双重缩放
-          exclude: /node_modules[\\/]wot-design-uni/
+          // 没有第三方组件库了：所有样式都按 390 设计稿写 px，
+          // 全部交给这里统一换算。将来若引入库，再按 node_modules 路径排除。
+          exclude: /node_modules/
         })
       ]
     }

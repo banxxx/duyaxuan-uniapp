@@ -63,12 +63,12 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
     <AppNavBar :back="false" />
 
     <view class="success__content" :style="{ paddingBottom: bottomInset(28) }">
-      <view class="success__icon">
+      <view class="success__icon anim anim--success">
         <AppIcon name="check" :size="42" color="#FFFFFF" :stroke-width="2.4" />
       </view>
 
-      <text class="success__title">投票成功</text>
-      <text class="success__desc">
+      <text class="success__title anim anim--fade-up anim--stagger-2">投票成功</text>
+      <text class="success__desc anim anim--fade-up anim--stagger-3">
         {{ canSeeResult ? '你的选择已记录，可以去看看实时票数' : '你的选择已记录，发起人未开放实时结果' }}
       </text>
 

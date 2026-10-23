@@ -39,7 +39,17 @@ withDefaults(
 
 const emit = defineEmits<{ (e: 'tap'): void }>()
 
+/**
+ * 防重复：小程序里自定义组件内部的原生 tap 会冒泡穿出组件边界，
+ * 与这里的 emit('tap') 叠加，父级 @tap 会收到两次（一次点击 = 两个选项）。
+ * 这里用时间戳兜底去重，同时模板里改用 catchtap 阻断冒泡。
+ */
+let lastTap = 0
+
 function onTap() {
+  const now = Date.now()
+  if (now - lastTap < 350) return
+  lastTap = now
   emit('tap')
 }
 
@@ -76,7 +86,7 @@ const iconColor = (type: string) =>
     :class="[`btn--${type}`, `btn--${size}`, { 'btn--disabled': disabled || loading, 'btn--block': block }]"
     :style="radius ? { borderRadius: `${radius}px` } : undefined"
     :hover-class="disabled || loading ? 'none' : 'btn--active'"
-    @tap="!disabled && !loading && onTap()"
+    @tap.stop="!disabled && !loading && onTap()"
   >
     <view v-if="loading" class="btn__spinner" />
     <AppIcon
@@ -103,6 +113,8 @@ export default { name: 'AppButton' }
   border-radius: $r-button;
   font-size: 15px;
   font-weight: 600;
+  /* 按下时只改透明度，给个短过渡，避免 hover-class 硬切 */
+  transition: opacity $dur-fast $ease-both;
 
   &--block {
     display: flex;

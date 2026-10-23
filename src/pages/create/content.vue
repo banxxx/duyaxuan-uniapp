@@ -10,7 +10,7 @@ import { useDraftStore } from '@/stores/draft'
 import type { DraftOption } from '@/stores/draft'
 import { charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
-import { back, go, ROUTES } from '@/utils/router'
+import { back, go, reset, ROUTES } from '@/utils/router'
 
 /**
  * 29 创建 · ② 内容（投票）/ 62 创建 · ② 内容（问卷）/ 33 添加选项弹层
@@ -47,12 +47,25 @@ onLoad(() => {
 })
 
 function syncToDraft() {
-  draft.patch({ title: title.value, desc: desc.value })
+  // options 是数组，push/splice 本身会触发响应式；title/desc 走 patch 换新对象。
+  // 这里把 options 一起带上，避免只改数组时 title/desc 的旧引用把它覆盖回去。
+  draft.patch({ title: title.value, desc: desc.value, options: [...draft.draft.options] })
 }
 
 function goBack() {
   syncToDraft()
   back()
+}
+
+/**
+ * 左上角「取消」= 放弃整个创建流程，回到进入流程前的那一页。
+ * 不能和底部「上一步」共用 back() —— 那只是退回上一个步骤，
+ * 用户点「取消」的语义是「不建了」，必须一次性退出向导。
+ * 草稿仍然保留，下次进来能续上。
+ */
+function cancel() {
+  syncToDraft()
+  reset(ROUTES.home)
 }
 
 /** 问卷 → 投票：回到汇总页重新挑选项 */
@@ -70,12 +83,30 @@ function openAdd() {
   sheetVisible.value = true
 }
 
+/**
+ * 添加选项。
+ *
+ * 幂等保护：小程序里自定义组件内部的原生 tap 会冒泡穿出组件边界，
+ * 和组件自己 emit('tap') 叠加，父级 @tap 会收到两次 —— 表现就是
+ * 「一次点击加两个选项」。AppButton 已经用 catchtap + 时间戳去重，
+ * 这里再加一道闸：正在提交时忽略重复调用。
+ */
+let adding = false
+
 function confirmAdd() {
+  if (adding) return
   const t = newTitle.value.trim()
   if (!t) return
+  adding = true
   draft.draft.options.push({ title: t, desc: newDesc.value.trim() || undefined })
   sheetVisible.value = false
   syncToDraft()
+  newTitle.value = ''
+  newDesc.value = ''
+  // 下一帧再解锁，足以吃掉同一次点击产生的第二个事件
+  setTimeout(() => {
+    adding = false
+  }, 300)
 }
 
 function removeOption(i: number) {
@@ -129,7 +160,7 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
   <view class="content">
     <AppNavBar :back="false">
       <template #left>
-        <text class="content__cancel" @tap="goBack">取消</text>
+        <text class="content__cancel" @tap="cancel">取消</text>
       </template>
       <template #title>
         <text class="content__nav-title">新建{{ isSurvey ? '问卷' : '投票' }}</text>

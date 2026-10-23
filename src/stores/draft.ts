@@ -120,6 +120,21 @@ export const useDraftStore = defineStore('draft', () => {
     persist()
   }
 
+  /**
+   * 改写 rules 里的单个字段。
+   *
+   * 不能写成 draft.rules.xxx = v 再 patch({}) —— 那样 rules 还是同一个对象引用，
+   * 页面上的 computed / 模板绑定不会重算，表现为「点了没反应，退出重进才看到」。
+   * 这里显式复制一份 rules，保证引用变化。
+   */
+  function patchRules(partial: Partial<PollRules>) {
+    draft.value = {
+      ...draft.value,
+      rules: { ...draft.value.rules, ...partial }
+    }
+    persist()
+  }
+
   function reset() {
     draft.value = createEmptyDraft()
     uni.removeStorageSync(DRAFT_KEY)
@@ -156,5 +171,5 @@ export const useDraftStore = defineStore('draft', () => {
     return saved
   }
 
-  return { draft, lockedRules, isLocked, startCreate, startEdit, patch, reset, restore, submit }
+  return { draft, lockedRules, isLocked, startCreate, startEdit, patch, patchRules, reset, restore, submit }
 })

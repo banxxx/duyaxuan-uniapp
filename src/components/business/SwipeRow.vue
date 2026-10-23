@@ -95,7 +95,7 @@ defineExpose({ close: () => (offset.value = 0) })
       @touchmove.stop.prevent="onTouchMove"
       @touchend="onTouchEnd"
       @touchcancel="onTouchEnd"
-      @tap="guardTap(() => emit('tap'))"
+      @tap.stop="guardTap(() => emit('tap'))"
     >
       <slot />
     </view>

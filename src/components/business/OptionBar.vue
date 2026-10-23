@@ -93,7 +93,8 @@ const readonly = computed(() => props.mode === 'result' || props.mode === 'locke
     </view>
 
     <view v-if="mode === 'result'" class="option__track">
-      <view class="option__fill" :style="{ width: `${pct}%` }" />
+      <!-- 票数条从左往右长出来，宽度仍是 inline style，动效只做 scaleX -->
+      <view class="option__fill anim anim--grow" :style="{ width: `${pct}%` }" />
     </view>
   </view>
 </template>
@@ -247,7 +248,8 @@ export default { name: 'OptionBar' }
     height: 100%;
     border-radius: 3px;
     background: #d4d4d8;
-    transition: width 0.4s ease;
+    /* 进场由 .anim--grow 的 scaleX 负责，这里只管数值变化时的宽度过渡 */
+    transition: width $dur-slow $ease-both;
   }
 
   &--selected &__fill {

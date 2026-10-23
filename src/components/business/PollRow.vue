@@ -97,7 +97,7 @@ function onMore(e: Event) {
     class="poll-row"
     :class="{ 'poll-row--compact': compact }"
     hover-class="poll-row--active"
-    @tap="onTap"
+    @tap.stop="onTap"
   >
     <view class="poll-row__top">
       <view class="poll-row__left">

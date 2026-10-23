@@ -70,8 +70,10 @@
 
           <view v-else class="home__cards">
             <PendingCard
-              v-for="p in pending"
+              v-for="(p, i) in pending"
               :key="p.id"
+              class="anim anim--fade-up"
+              :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
               :poll="p"
               @tap="openDetail(p.id)"
               @vote="openDetail(p.id)"
@@ -88,9 +90,10 @@
 
           <view class="home__mine">
             <view
-              v-for="poll in mine"
+              v-for="(poll, i) in mine"
               :key="poll.id"
-              class="mine-row"
+              class="mine-row anim anim--fade-up"
+              :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
               hover-class="mine-row--active"
               @tap="openDetail(poll.id)"
             >

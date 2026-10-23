@@ -1,0 +1,120 @@
+/* ============================================================
+ * 动效工具类
+ *
+ * 用法：给元素加 class="anim anim--fade-up"，进场时自动播放。
+ * 列表用 :style="{ animationDelay: stagger(i) }" 做错位。
+ *
+ * 为什么是纯 CSS：小程序没有 DOM API，WAAPI 和大部分 JS 动画库在
+ * 微信/抖音里直接不生效。CSS animation 三端一致，且不占 JS 线程。
+ *
+ * 所有动效都遵守 prefers-reduced-motion —— 系统开了「减弱动态效果」
+ * 就只保留透明度变化，不做位移，避免前庭敏感用户不适。
+ * ============================================================ */
+
+/* 这里必须自己 @use 一次：uni.scss 的自动注入只覆盖页面/组件的 style 块，
+   common.scss 是被 App.vue 直接 @use 的普通样式表，不会自动拿到变量。 */
+@use './motion.scss' as *;
+
+/* ---------- 关键帧 ---------- */
+
+@keyframes dyx-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dyx-fade-up {
+  from { opacity: 0; transform: translateY($slide-enter); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dyx-fade-down {
+  from { opacity: 0; transform: translateY(-$slide-enter); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dyx-scale-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes dyx-pop {
+  0% { transform: scale(0.8); opacity: 0; }
+  60% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* 弹层：遮罩淡入 + 面板上滑，两个元素分别用 */
+@keyframes dyx-sheet-up {
+  from { transform: translateY($slide-sheet); }
+  to { transform: translateY(0); }
+}
+
+@keyframes dyx-sheet-down {
+  from { transform: translateY(0); }
+  to { transform: translateY($slide-sheet); }
+}
+
+@keyframes dyx-mask-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dyx-mask-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* 确认页的成功勾：从 0.6 弹到 1，配合圆底一起出现 */
+@keyframes dyx-success-in {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { opacity: 1; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* 进度条 / 票数条：从 0 长到目标宽度，宽度由内联 style 给 */
+@keyframes dyx-grow-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* 骨架屏微光 */
+@keyframes dyx-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(220%); }
+}
+
+/* ---------- 工具类 ---------- */
+
+.anim {
+  animation-duration: $dur-base;
+  animation-timing-function: $ease-out;
+  animation-fill-mode: both;
+}
+
+.anim--fade { animation-name: dyx-fade-in; }
+.anim--fade-up { animation-name: dyx-fade-up; }
+.anim--fade-down { animation-name: dyx-fade-down; }
+.anim--scale { animation-name: dyx-scale-in; }
+.anim--pop { animation-name: dyx-pop; }
+.anim--success { animation-name: dyx-success-in; animation-duration: $dur-slow; }
+.anim--grow { animation-name: dyx-grow-x; transform-origin: left center; }
+.anim--slow { animation-duration: $dur-slow; }
+
+/* 列表错位：第 1~8 项依次延迟 */
+.anim--stagger-1 { animation-delay: 0ms; }
+.anim--stagger-2 { animation-delay: $stagger; }
+.anim--stagger-3 { animation-delay: $stagger * 2; }
+.anim--stagger-4 { animation-delay: $stagger * 3; }
+.anim--stagger-5 { animation-delay: $stagger * 4; }
+.anim--stagger-6 { animation-delay: $stagger * 5; }
+.anim--stagger-7 { animation-delay: $stagger * 6; }
+.anim--stagger-8 { animation-delay: $stagger * 7; }
+
+/* ---------- 尊重系统「减弱动态效果」 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .anim {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+}

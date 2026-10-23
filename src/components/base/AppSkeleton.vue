@@ -93,10 +93,11 @@ export default { name: 'AppSkeleton' }
     width: 60%;
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
     transform: translateX(-100%);
-    animation: sk-shimmer 1.3s ease-in-out infinite;
+    animation: sk-shimmer $dur-shimmer $ease-both infinite;
   }
 }
 
+/* 扫光只用 opacity/transform，不触发重排；时长走全局 token 保持一致 */
 @keyframes sk-shimmer {
   to {
     transform: translateX(220%);

@@ -19,8 +19,7 @@ const width = computed(() => `${(props.current / 3) * 100}%`)
 <template>
   <view class="steps">
     <view class="steps__track">
-      <view class="steps__progress" :style="{ width }" />
-    </view>
+      <view class="steps__progress" :style="{ width }" />    </view>
     <view class="steps__labels">
       <view
         v-for="(label, i) in labels"
@@ -59,7 +58,7 @@ export default { name: 'StepBar' }
     height: 100%;
     border-radius: 2px;
     background: $accent;
-    transition: width 0.3s ease;
+    transition: width $dur-slow $ease-out;
   }
 
   &__labels {

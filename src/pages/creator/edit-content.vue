@@ -103,11 +103,21 @@ function openAdd() {
   sheetVisible.value = true
 }
 
+/** 幂等：小程序自定义组件内部 tap 会穿出组件边界，和 emit('tap') 叠加触发两次 */
+let adding = false
+
 function confirmAdd() {
+  if (adding) return
   const t = newTitle.value.trim()
   if (!t) return
+  adding = true
   options.value.push({ title: t, desc: newDesc.value.trim() || undefined, votes: 0 })
   sheetVisible.value = false
+  newTitle.value = ''
+  newDesc.value = ''
+  setTimeout(() => {
+    adding = false
+  }, 300)
 }
 
 function removeOption(i: number) {
