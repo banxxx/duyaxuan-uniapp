@@ -11,6 +11,7 @@ import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { fetchPoll, updatePoll } from '@/api/poll'
 import { charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { ROUTES, back, go } from '@/utils/router'
 
 /**
  * 90 编辑投票 · 内容 / 93 编辑问卷 · 内容
@@ -145,7 +146,7 @@ async function save() {
     })
     poll.value = next
     uni.showToast({ title: '已保存', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 600)
+    setTimeout(back, 600)
   } catch {
     uni.showToast({ title: '保存失败，请重试', icon: 'none' })
   } finally {
@@ -154,11 +155,11 @@ async function save() {
 }
 
 function close() {
-  uni.navigateBack()
+  back()
 }
 
 function goRules() {
-  uni.navigateTo({ url: `/pages/creator/edit-rules?id=${pollId.value}` })
+  go(ROUTES.creatorEditRules, { id: pollId.value })
 }
 </script>
 

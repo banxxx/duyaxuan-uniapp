@@ -10,11 +10,11 @@
             <text class="profile__meta">ID {{ user.profile?.id ?? '-' }} · 加入 {{ joinedDays }} 天</text>
           </view>
           <view class="profile__actions">
-            <view class="profile__icon" hover-class="profile__icon--active" @tap="go('/pages/settings/notifications')">
+            <view class="profile__icon" hover-class="profile__icon--active" @tap="open('/pages/settings/notifications')">
               <AppIcon name="bell" :size="17" color="#09090B" />
               <view v-if="unread" class="profile__dot" />
             </view>
-            <view class="profile__icon" hover-class="profile__icon--active" @tap="go('/pages/settings/index')">
+            <view class="profile__icon" hover-class="profile__icon--active" @tap="open('/pages/settings/index')">
               <AppIcon name="settings" :size="17" color="#09090B" />
             </view>
           </view>
@@ -22,7 +22,7 @@
 
         <!-- 两组入口 -->
         <view class="entries">
-          <view class="entry" hover-class="entry--active" @tap="go('/pages/me/created')">
+          <view class="entry" hover-class="entry--active" @tap="open('/pages/me/created')">
             <view class="entry__icon">
               <AppIcon name="file-text" :size="18" color="#4F46E5" />
             </view>
@@ -36,7 +36,7 @@
             </view>
           </view>
 
-          <view class="entry" hover-class="entry--active" @tap="go('/pages/me/joined')">
+          <view class="entry" hover-class="entry--active" @tap="open('/pages/me/joined')">
             <view class="entry__icon">
               <AppIcon name="square-check" :size="18" color="#4F46E5" />
             </view>
@@ -53,7 +53,7 @@
       </view>
 
       <!-- 设计稿 40：帮助与反馈是底部一个居中链接，不是列表行 -->
-      <view class="page__help" @tap="go('/pages/support/index')">
+      <view class="page__help" @tap="open('/pages/support/index')">
         <text class="page__help-text">帮助与反馈</text>
       </view>
     </view>
@@ -73,6 +73,7 @@ import { useUserStore } from '@/stores/user'
 import { fetchMyPolls, fetchJoinedPolls } from '@/api/poll'
 import { getSafeArea } from '@/utils/platform'
 import { hideNativeTabBar } from '@/utils/tab'
+import { go, ROUTES } from '@/utils/router'
 
 /**
  * 40 我的
@@ -109,8 +110,8 @@ onMounted(async () => {
 /** H5 端会渲染原生 tabBar，进来就藏掉（微信端 custom=true，没有原生栏，静默失败） */
 onShow(hideNativeTabBar)
 
-function go(url: string) {
-  uni.navigateTo({ url })
+function open(url: string) {
+  go(url)
 }
 </script>
 

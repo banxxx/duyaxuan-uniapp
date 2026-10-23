@@ -10,6 +10,7 @@ import { useDraftStore } from '@/stores/draft'
 import type { DraftOption } from '@/stores/draft'
 import { charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { back, go, ROUTES } from '@/utils/router'
 
 /**
  * 29 创建 · ② 内容（投票）/ 62 创建 · ② 内容（问卷）/ 33 添加选项弹层
@@ -51,12 +52,12 @@ function syncToDraft() {
 
 function goBack() {
   syncToDraft()
-  uni.navigateBack()
+  back()
 }
 
 /** 问卷 → 投票：回到汇总页重新挑选项 */
 function goSummary() {
-  uni.navigateTo({ url: '/pages/summary/index' })
+  go(ROUTES.summary)
 }
 
 function openAdd() {
@@ -117,7 +118,7 @@ function next() {
     uni.showToast({ title: '至少添加 2 个选项', icon: 'none' })
     return
   }
-  uni.navigateTo({ url: '/pages/create/rules' })
+  go(ROUTES.createRules)
 }
 
 /** 从问卷汇总进来（83）：选项已经带入，这里只提示来源 */

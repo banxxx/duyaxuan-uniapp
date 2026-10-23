@@ -5,6 +5,7 @@ import AppAvatar from '@/components/base/AppAvatar.vue'
 import { useUserStore } from '@/stores/user'
 import { charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { back } from '@/utils/router'
 
 /**
  * 45 编辑资料
@@ -69,7 +70,7 @@ async function save() {
       avatar: avatar.value || undefined
     })
     uni.showToast({ title: '已保存', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 500)
+    setTimeout(back, 500)
   } catch {
     uni.showToast({ title: '保存失败，请重试', icon: 'none' })
   } finally {

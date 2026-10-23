@@ -8,6 +8,7 @@ import AppButton from '@/components/base/AppButton.vue'
 import StepBar from '@/components/business/StepBar.vue'
 import { useDraftStore } from '@/stores/draft'
 import { bottomInset } from '@/utils/platform'
+import { back, go, ROUTES } from '@/utils/router'
 
 /**
  * 28 创建 · ① 方式（含 82 来自问卷）
@@ -72,15 +73,15 @@ function next() {
   if (sourceSurveyId.value) {
     draft.patch({ sourceSurveyId: sourceSurveyId.value })
   }
-  uni.navigateTo({ url: '/pages/create/content' })
+  go(ROUTES.createContent)
 }
 
 function cancel() {
-  uni.navigateBack()
+  back()
 }
 
 function changeSource() {
-  uni.navigateBack()
+  back()
 }
 </script>
 

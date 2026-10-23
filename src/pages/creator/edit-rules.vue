@@ -12,6 +12,7 @@ import RuleRow from '@/components/business/RuleRow.vue'
 import { fetchPoll, updatePoll } from '@/api/poll'
 import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { back } from '@/utils/router'
 
 /**
  * 91 编辑投票 · 规则 / 94 编辑问卷 · 规则
@@ -102,7 +103,7 @@ async function save() {
       rules: poll.value.rules
     })
     uni.showToast({ title: '已保存', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 600)
+    setTimeout(back, 600)
   } catch {
     uni.showToast({ title: '保存失败，请重试', icon: 'none' })
   } finally {
@@ -111,7 +112,7 @@ async function save() {
 }
 
 function close() {
-  uni.navigateBack()
+  back()
 }
 
 /** 已锁定的规则项点一下给出解释，而不是静默无反应 */

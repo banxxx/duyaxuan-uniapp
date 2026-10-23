@@ -9,7 +9,7 @@ import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { useDraftStore } from '@/stores/draft'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
-import { switchTab, TAB_HOME } from '@/utils/tab'
+import { reset, ROUTES, switchTab } from '@/utils/router'
 
 /**
  * 39 发布成功 / 81 问卷发布成功
@@ -45,15 +45,17 @@ async function submit() {
 onLoad(submit)
 
 function goData() {
-  if (poll.value) uni.redirectTo({ url: `/pages/creator/data?id=${poll.value.id}` })
+  // 创建流程已经结束：把 type/content/rules 三层从栈里清掉，
+  // 否则从数据页返回会退回到填完的规则页，而不是首页
+  if (poll.value) reset(ROUTES.creatorData, { id: poll.value.id })
 }
 
 function goDetail() {
-  if (poll.value) uni.redirectTo({ url: `/pages/detail/index?id=${poll.value.id}` })
+  if (poll.value) reset(ROUTES.detail, { id: poll.value.id })
 }
 
 function goHome() {
-  switchTab(TAB_HOME)
+  switchTab(ROUTES.home)
 }
 
 onShareAppMessage(() =>

@@ -9,6 +9,7 @@ import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { fetchPoll, fetchMyAnswers, updateAnswer } from '@/api/poll'
 import { formatCreatedAt, formatRelative, formatRemaining, charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { back } from '@/utils/router'
 
 /**
  * 72 问卷 · 编辑回答
@@ -74,7 +75,7 @@ async function save() {
   try {
     await updateAnswer(poll.value.id, answerId.value, content.value.trim())
     uni.showToast({ title: '已保存', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 600)
+    setTimeout(back, 600)
   } catch {
     uni.showToast({ title: '保存失败，请重试', icon: 'none' })
   } finally {

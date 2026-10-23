@@ -7,6 +7,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import { fetchPoll, fetchMyVote } from '@/api/poll'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
+import { backTo, ROUTES } from '@/utils/router'
 
 /**
  * 13 投票成功
@@ -41,7 +42,7 @@ onMounted(async () => {
   canSeeResult.value = v === 'always' || v === 'after_vote'
 
   timer = setTimeout(() => {
-    uni.redirectTo({ url: `/pages/detail/index?id=${pollId.value}` })
+    backTo(ROUTES.detail, { id: pollId.value })
   }, 3000)
 })
 
@@ -51,7 +52,7 @@ onUnmounted(() => {
 
 function viewStatus() {
   if (timer) clearTimeout(timer)
-  uni.redirectTo({ url: `/pages/detail/index?id=${pollId.value}` })
+  backTo(ROUTES.detail, { id: pollId.value })
 }
 
 onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }))

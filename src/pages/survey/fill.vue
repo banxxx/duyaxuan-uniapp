@@ -11,6 +11,7 @@ import { fetchPoll, submitAnswer } from '@/api/poll'
 import { formatCreatedAt, formatRemaining, charCount } from '@/utils/format'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
+import { ROUTES, replace } from '@/utils/router'
 
 /**
  * 64 问卷 · 待填写（含 65 填写信息弹窗）
@@ -66,7 +67,7 @@ async function doSubmit() {
   try {
     await submitAnswer(poll.value.id, content.value.trim())
     infoVisible.value = false
-    uni.redirectTo({ url: `/pages/survey/done?id=${poll.value.id}` })
+    replace(ROUTES.surveyDone, { id: poll.value.id })
   } catch {
     uni.showToast({ title: '提交失败，请重试', icon: 'none' })
   } finally {

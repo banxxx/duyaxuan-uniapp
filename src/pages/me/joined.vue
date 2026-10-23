@@ -10,7 +10,7 @@ import AppTabBar from '@/components/base/AppTabBar.vue'
 import PollRow from '@/components/business/PollRow.vue'
 import { fetchJoinedPolls } from '@/api/poll'
 import { getSafeArea } from '@/utils/platform'
-import { switchTab, TAB_HOME } from '@/utils/tab'
+import { ROUTES, go, switchTab } from '@/utils/router'
 
 /**
  * 42 我参与的
@@ -68,7 +68,7 @@ function onFilter(v: string) {
 }
 
 function openDetail(poll: Poll) {
-  uni.navigateTo({ url: `/pages/detail/index?id=${poll.id}` })
+  go(ROUTES.detail, { id: poll.id })
 }
 
 /** 42 导航右上角是「···」：只有筛状态这类全局动作，不做行级管理 */
@@ -84,7 +84,7 @@ function openMore() {
 
 /** 空状态没有「发起」，回首页让用户自己挑一条参与 */
 function goHome() {
-  switchTab(TAB_HOME)
+  switchTab(ROUTES.home)
 }
 </script>
 

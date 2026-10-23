@@ -9,6 +9,7 @@ import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { fetchPoll, fetchMyAnswers } from '@/api/poll'
 import { formatRelative, charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { ROUTES, go } from '@/utils/router'
 
 /**
  * 71 我的提交记录
@@ -58,13 +59,11 @@ function edit(a: SurveyAnswer) {
     uni.showToast({ title: '问卷已截止，不能再修改', icon: 'none' })
     return
   }
-  uni.navigateTo({
-    url: `/pages/survey/edit-answer?id=${pollId.value}&answerId=${a.id}`
-  })
+  go(ROUTES.surveyEditAnswer, { id: pollId.value, answerId: a.id })
 }
 
 function fillAgain() {
-  uni.navigateTo({ url: `/pages/survey/fill?id=${pollId.value}` })
+  go(ROUTES.surveyFill, { id: pollId.value })
 }
 </script>
 

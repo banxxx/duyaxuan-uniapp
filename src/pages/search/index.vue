@@ -7,6 +7,7 @@ import TypeBadge from '@/components/business/TypeBadge.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import { searchPolls } from '@/api/poll'
 import { bottomInset } from '@/utils/platform'
+import { ROUTES, back, go } from '@/utils/router'
 
 /**
  * 04 搜索结果
@@ -76,11 +77,11 @@ function clearKeyword() {
 
 function openDetail(poll: Poll) {
   remember(keyword.value.trim())
-  uni.navigateTo({ url: `/pages/detail/index?id=${poll.id}` })
+  go(ROUTES.detail, { id: poll.id })
 }
 
 function cancel() {
-  uni.navigateBack()
+  back()
 }
 </script>
 

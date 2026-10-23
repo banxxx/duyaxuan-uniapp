@@ -10,6 +10,7 @@ import { fetchPoll, fetchMyVote, remindMe } from '@/api/poll'
 import { formatDate, formatDateTime, formatRelative, percent } from '@/utils/format'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
+import { backTo, go, ROUTES } from '@/utils/router'
 
 /**
  * 21 结果 · 实时统计 / 22 结果 · 待公布 / 23 结果 · 已关闭
@@ -102,11 +103,11 @@ async function onRemind() {
 }
 
 function goVoters() {
-  uni.navigateTo({ url: `/pages/detail/voters?id=${pollId.value}` })
+  go(ROUTES.detailVoters, { id: pollId.value })
 }
 
 function backToDetail() {
-  uni.redirectTo({ url: `/pages/detail/index?id=${pollId.value}` })
+  backTo(ROUTES.detail, { id: pollId.value })
 }
 
 onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }))

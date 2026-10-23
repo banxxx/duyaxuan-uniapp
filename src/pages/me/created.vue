@@ -14,6 +14,7 @@ import SwipeRow from '@/components/business/SwipeRow.vue'
 import { fetchMyPolls, fetchStats, deletePoll, restorePoll } from '@/api/poll'
 import { formatRemaining } from '@/utils/format'
 import { getSafeArea, bottomInset } from '@/utils/platform'
+import { ROUTES, go } from '@/utils/router'
 
 /**
  * 41 我发起的 + 88 左滑操作 + 89 更多操作 + 96 删除撤销
@@ -93,7 +94,7 @@ function onFilter(v: string) {
 }
 
 function openDetail(poll: Poll) {
-  uni.navigateTo({ url: `/pages/detail/index?id=${poll.id}` })
+  go(ROUTES.detail, { id: poll.id })
 }
 
 /** 89：底部操作面板 */
@@ -105,11 +106,11 @@ function openSheet(poll: Poll) {
 /** 编辑只有「内容」和「规则」两页，问卷和投票共用同一套页面，靠 type 分流渲染 */
 function goEdit(poll: Poll) {
   sheetVisible.value = false
-  uni.navigateTo({ url: `/pages/creator/edit-content?id=${poll.id}` })
+  go(ROUTES.creatorEditContent, { id: poll.id })
 }
 
 function goCreate() {
-  uni.navigateTo({ url: '/pages/create/type' })
+  go(ROUTES.createType)
 }
 
 function askDelete(poll: Poll) {

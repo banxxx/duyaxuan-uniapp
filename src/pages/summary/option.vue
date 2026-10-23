@@ -10,6 +10,7 @@ import { fetchSummaryCandidates } from '@/api/poll'
 import type { SummaryCandidate } from '@/mock/data'
 import { charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { back } from '@/utils/router'
 
 /**
  * 85 汇总 · 编辑选项
@@ -73,7 +74,7 @@ function onDelete() {
     confirmText: '删除',
     confirmColor: '#DC2626',
     success: (r) => {
-      if (r.confirm) uni.navigateBack()
+      if (r.confirm) back()
     }
   })
 }
@@ -84,11 +85,11 @@ function save() {
     return
   }
   uni.showToast({ title: '已保存', icon: 'none' })
-  setTimeout(() => uni.navigateBack(), 500)
+  setTimeout(back, 500)
 }
 
 function goBack() {
-  uni.navigateBack()
+  back()
 }
 </script>
 

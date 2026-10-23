@@ -97,6 +97,14 @@ export interface SafeArea {
   contentTop: number
   /** 导航栏右侧要给胶囊让出的宽度 */
   capsuleInset: number
+  /**
+   * 导航条本体高度（不含状态栏），按胶囊算出来 —— 让胶囊正好垂直居中。
+   *
+   * 用固定 52 的话，胶囊中心在 statusBar + 约 26，导航里的按钮中心也是
+   * statusBar + 26，看着差不多，但各家机型胶囊上下留白不同，实机上会差 2~4px。
+   * 统一成「状态栏 + 胶囊上下等距」之后，右侧按钮和胶囊落在同一条水平线上。
+   */
+  navBarHeight: number
   /** 底部小横条（home indicator）占掉的高度，单位 px */
   safeBottom: number
 }
@@ -124,22 +132,33 @@ export function getSafeArea(): SafeArea {
     /* 取不到就用兜底值 */
   }
 
-  let capsule: { left: number; bottom: number; height: number } | null = null
+  let capsule: { left: number; bottom: number; height: number; top: number } | null = null
   try {
     const rect = uni.getMenuButtonBoundingClientRect()
     // 部分平台（H5 / 老版本开发者工具）会返回全 0，视为没有胶囊
     if (rect && rect.left > 0 && rect.height > 0) {
-      capsule = { left: rect.left, bottom: rect.bottom, height: rect.height }
+      capsule = { left: rect.left, bottom: rect.bottom, height: rect.height, top: rect.top }
     }
   } catch {
     capsule = null
   }
+
+  /**
+   * 导航条高度：胶囊上下留白相等时最好看。
+   * 胶囊顶部距状态栏的距离 = capsule.top - statusBarHeight，记为 topGap，
+   * 那么 状态栏 + topGap + 胶囊高 + topGap = 导航条底边，即 52 左右。
+   * 量不到胶囊（H5）时退回设计稿的 52。
+   */
+  const navBarHeight = capsule
+    ? Math.max(capsule.height + 2 * Math.max(0, capsule.top - statusBarHeight), 44)
+    : 52
 
   safeArea = {
     statusBarHeight,
     // 有胶囊时内容要整体落到胶囊下沿再留 8，否则右上角第一排控件会被盖住
     contentTop: capsule ? Math.max(statusBarHeight + 8, capsule.bottom + 8) : statusBarHeight + 8,
     capsuleInset: capsule ? Math.max(0, windowWidth - capsule.left + 8) : 0,
+    navBarHeight,
     safeBottom
   }
   return safeArea

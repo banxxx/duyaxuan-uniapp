@@ -11,6 +11,7 @@ import { fetchPoll, fetchPollStats, endPoll } from '@/api/poll'
 import { formatDate, formatDateTime, formatRelative, formatRemaining, percent } from '@/utils/format'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
+import { ROUTES, go } from '@/utils/router'
 
 /**
  * 24 发布者 · 数据 · 进行中 / 25 发布者 · 数据 · 已结束
@@ -101,11 +102,11 @@ function onMore() {
 }
 
 function goVoters() {
-  uni.navigateTo({ url: `/pages/detail/voters?id=${pollId.value}` })
+  go(ROUTES.detailVoters, { id: pollId.value })
 }
 
 function goResult() {
-  uni.navigateTo({ url: `/pages/detail/result?id=${pollId.value}` })
+  go(ROUTES.detailResult, { id: pollId.value })
 }
 
 function exportData() {

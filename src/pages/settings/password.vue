@@ -4,6 +4,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import { changePassword } from '@/api/auth'
 import { bottomInset } from '@/utils/platform'
+import { back } from '@/utils/router'
 
 /**
  * 50 修改密码
@@ -35,7 +36,7 @@ async function save() {
   try {
     await changePassword(oldPwd.value, newPwd.value)
     uni.showToast({ title: '密码已修改', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 600)
+    setTimeout(back, 600)
   } catch {
     uni.showToast({ title: '原密码不正确', icon: 'none' })
   } finally {

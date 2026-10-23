@@ -4,6 +4,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import MenuRow from '@/components/business/MenuRow.vue'
 import { useUserStore } from '@/stores/user'
 import { getPlatform, bottomInset } from '@/utils/platform'
+import { go } from '@/utils/router'
 
 /**
  * 46 账号与安全
@@ -34,8 +35,8 @@ const bindDesc = computed(() => {
 
 const phoneDesc = computed(() => user.profile?.phone || '未绑定')
 
-function go(url: string) {
-  uni.navigateTo({ url })
+function open(url: string) {
+  go(url)
 }
 </script>
 
@@ -46,20 +47,20 @@ function go(url: string) {
     <scroll-view class="account__scroll" scroll-y>
       <view class="account__content" :style="{ paddingBottom: bottomInset(20) }">
         <view class="group">
-          <MenuRow :title="platformName" :desc="bindDesc" roomy strong @tap="go('/pages/settings/wechat')" />
+          <MenuRow :title="platformName" :desc="bindDesc" roomy strong @tap="open('/pages/settings/wechat')" />
           <view class="group__sep" />
-          <MenuRow title="手机号" :desc="phoneDesc" roomy strong @tap="go('/pages/settings/phone')" />
+          <MenuRow title="手机号" :desc="phoneDesc" roomy strong @tap="open('/pages/settings/phone')" />
         </view>
 
         <view class="group">
-          <MenuRow title="修改密码" roomy strong @tap="go('/pages/settings/password')" />
+          <MenuRow title="修改密码" roomy strong @tap="open('/pages/settings/password')" />
           <view class="group__sep" />
           <MenuRow
             title="注销账号"
             desc="永久删除账号及全部数据"
             roomy
             strong
-            @tap="go('/pages/settings/deactivate')"
+            @tap="open('/pages/settings/deactivate')"
           />
         </view>
       </view>

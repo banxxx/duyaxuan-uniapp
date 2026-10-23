@@ -7,6 +7,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import { fetchPoll, fetchMyAnswers } from '@/api/poll'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
+import { backTo, ROUTES } from '@/utils/router'
 
 /**
  * 66 问卷 · 提交成功
@@ -32,7 +33,7 @@ onMounted(async () => {
   answerText.value = answers[0]?.content ?? ''
 
   timer = setTimeout(() => {
-    uni.redirectTo({ url: `/pages/detail/index?id=${pollId.value}` })
+    backTo(ROUTES.detail, { id: pollId.value })
   }, 3000)
 })
 
@@ -42,7 +43,7 @@ onUnmounted(() => {
 
 function viewMine() {
   if (timer) clearTimeout(timer)
-  uni.redirectTo({ url: `/pages/detail/index?id=${pollId.value}` })
+  backTo(ROUTES.detail, { id: pollId.value })
 }
 
 onShareAppMessage(() =>

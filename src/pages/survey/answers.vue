@@ -10,6 +10,7 @@ import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { fetchPoll, fetchAnswers, endPoll } from '@/api/poll'
 import { formatDate, formatDateTime, formatRelative, formatRemaining, charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { ROUTES, go } from '@/utils/router'
 
 /**
  * 77 问卷数据 · 回答列表 / 78 问卷数据 · 已截止 · 可汇总
@@ -76,11 +77,11 @@ onPullDownRefresh(async () => {
 })
 
 function goSummary() {
-  uni.navigateTo({ url: `/pages/summary/index?surveyId=${pollId.value}` })
+  go(ROUTES.summary, { surveyId: pollId.value })
 }
 
 function goAllAnswers() {
-  uni.navigateTo({ url: `/pages/detail/voters?id=${pollId.value}` })
+  go(ROUTES.detailVoters, { id: pollId.value })
 }
 
 function exportData() {

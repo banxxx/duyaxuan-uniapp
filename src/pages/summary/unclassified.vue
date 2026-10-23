@@ -10,6 +10,7 @@ import AppSheet from '@/components/base/AppSheet.vue'
 import { fetchUnclassified, fetchSummaryCandidates } from '@/api/poll'
 import type { UnclassifiedAnswer, SummaryCandidate } from '@/mock/data'
 import { bottomInset } from '@/utils/platform'
+import { back } from '@/utils/router'
 
 /**
  * 86 汇总 · 未归类回答
@@ -97,7 +98,7 @@ function ignoreAll() {
 }
 
 function goBack() {
-  uni.navigateBack()
+  back()
 }
 </script>
 

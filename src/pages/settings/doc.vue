@@ -6,6 +6,7 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import { bottomInset } from '@/utils/platform'
+import { go } from '@/utils/router'
 
 /**
  * 47 用户协议 / 52 隐私政策 / 48 关于我们
@@ -96,8 +97,8 @@ onLoad((q) => {
   if (t === 'privacy' || t === 'about' || t === 'terms') type.value = t
 })
 
-function go(url: string) {
-  uni.navigateTo({ url })
+function open(url: string) {
+  go(url)
 }
 </script>
 
@@ -117,12 +118,12 @@ function go(url: string) {
         </view>
 
         <view class="group">
-          <view class="row" hover-class="row--active" @tap="go('/pages/settings/doc?type=terms')">
+          <view class="row" hover-class="row--active" @tap="open('/pages/settings/doc?type=terms')">
             <text class="row__title">用户协议</text>
             <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
           </view>
           <view class="group__sep" />
-          <view class="row" hover-class="row--active" @tap="go('/pages/settings/doc?type=privacy')">
+          <view class="row" hover-class="row--active" @tap="open('/pages/settings/doc?type=privacy')">
             <text class="row__title">隐私政策</text>
             <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
           </view>

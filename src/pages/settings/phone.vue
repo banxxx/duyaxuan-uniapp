@@ -5,6 +5,7 @@ import AppButton from '@/components/base/AppButton.vue'
 import { sendSmsCode, changePhone } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
 import { bottomInset } from '@/utils/platform'
+import { reset, ROUTES } from '@/utils/router'
 
 /**
  * 51 更换手机号
@@ -78,7 +79,7 @@ async function save() {
     // 后端已作废 token，本地登录态一起清掉，回登录页用新号重新授权
     setTimeout(() => {
       user.logout()
-      uni.reLaunch({ url: '/pages/login/index' })
+      reset(ROUTES.login)
     }, 800)
   } catch {
     uni.showToast({ title: '验证码不正确', icon: 'none' })

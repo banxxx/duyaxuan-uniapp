@@ -58,7 +58,7 @@ import { ref, computed } from 'vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import { useUserStore } from '@/stores/user'
 import { getPlatform, getSafeArea } from '@/utils/platform'
-import { switchTab, TAB_HOME } from '@/utils/tab'
+import { ROUTES, go, switchTab } from '@/utils/router'
 
 /**
  * 01 登录 · 授权
@@ -93,7 +93,7 @@ async function onLogin() {
   try {
     await user.login()
     // 首页是 tab 页：switchTab 会关掉登录页并复用首页实例
-    switchTab(TAB_HOME)
+    switchTab(ROUTES.home)
   } catch (e) {
     uni.showToast({ title: '登录失败，请重试', icon: 'none' })
   } finally {
@@ -102,7 +102,7 @@ async function onLogin() {
 }
 
 function openDoc(type: 'terms' | 'privacy') {
-  uni.navigateTo({ url: `/pages/settings/doc?type=${type}` })
+  go(ROUTES.settingsDoc, { type })
 }
 </script>
 

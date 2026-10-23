@@ -7,6 +7,7 @@ import { fetchMyPolls, fetchJoinedPolls } from '@/api/poll'
 import { deleteAccount } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
 import { bottomInset } from '@/utils/platform'
+import { reset, ROUTES } from '@/utils/router'
 
 /**
  * 53 注销账号
@@ -54,7 +55,7 @@ function submit() {
       try {
         await deleteAccount(password.value)
         user.logout()
-        uni.reLaunch({ url: '/pages/login/index' })
+        reset(ROUTES.login)
       } catch {
         uni.showToast({ title: '密码不正确', icon: 'none' })
       } finally {

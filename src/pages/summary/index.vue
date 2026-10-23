@@ -12,6 +12,7 @@ import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import type { Poll } from '@/types/api'
 import type { SummaryCandidate, UnclassifiedAnswer } from '@/mock/data'
+import { ROUTES, back, go } from '@/utils/router'
 
 /**
  * 84 汇总 · 整理回答
@@ -52,15 +53,15 @@ onLoad((q) => {
 onMounted(load)
 
 function editOption(c: SummaryCandidate) {
-  uni.navigateTo({ url: `/pages/summary/option?id=${c.id}` })
+  go(ROUTES.summaryOption, { id: c.id })
 }
 
 function goUnclassified() {
-  uni.navigateTo({ url: `/pages/summary/unclassified?id=${surveyId.value}` })
+  go(ROUTES.summaryUnclassified, { id: surveyId.value })
 }
 
 function goBack() {
-  uni.navigateBack()
+  back()
 }
 
 /** 「重新归并」：交给后端重跑一次相似度，前端只刷新 */
@@ -81,7 +82,7 @@ function goContent() {
     desc: `由 ${classifiedCount.value} 条问卷回答汇总而成，得票最高者即为最终方案。`,
     options: candidates.value.slice(0, 4).map((c) => ({ title: c.title, desc: c.desc }))
   })
-  uni.navigateTo({ url: '/pages/create/content' })
+  go(ROUTES.createContent)
 }
 </script>
 

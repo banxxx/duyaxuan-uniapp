@@ -10,6 +10,7 @@ import type { Notification } from '@/mock/data'
 import { useSettingsStore } from '@/stores/settings'
 import { formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { ROUTES, go } from '@/utils/router'
 
 /**
  * 44 消息通知 + 55 推送通知设置
@@ -43,7 +44,7 @@ onMounted(() => {
 
 function open(n: Notification) {
   n.read = true
-  if (n.pollId) uni.navigateTo({ url: `/pages/detail/index?id=${n.pollId}` })
+  if (n.pollId) go(ROUTES.detail, { id: n.pollId })
 }
 
 function markAllRead() {

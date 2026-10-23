@@ -2,18 +2,24 @@
 import { computed } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { getSafeArea } from '@/utils/platform'
-import { switchTab, TAB_HOME } from '@/utils/tab'
+import { back as goBack } from '@/utils/router'
 
 /**
- * 自定义导航栏
+ * 自定义导航栏（默认吸顶）
  *
  * 设计稿：状态栏（系统高度）+ 52 高导航条，标题居中，左侧返回、右侧操作。
  *
- * 真机上必须让开右上角的胶囊按钮（微信/QQ/抖音都有，约 87×32），
- * 否则右侧操作会被盖住。做法：量出胶囊左边界，把导航条的右内边距撑到那里，
- * 操作按钮就落在胶囊左边；标题用绝对定位在整条导航里居中，不受这个不对称影响。
+ * 两件事必须按真机来，不能照抄设计稿：
  *
- * 量不到胶囊（H5、部分开发者工具）时退回设计稿的 20 内边距。
+ * 1. 让开胶囊。微信/QQ/抖音右上角都有胶囊（约 87×32），右侧操作会被盖住。
+ *    量出胶囊左边界，把导航条的右内边距撑到那里，操作按钮就落在胶囊左边。
+ *
+ * 2. 和胶囊对齐。导航条高度不是写死 52，而是按「胶囊上下留白相等」算出来
+ *    （见 platform.ts 的 navBarHeight）。这样左侧返回键、右侧操作、
+ *    系统胶囊三者的中心落在同一条水平线上，看起来才规范。
+ *
+ * 吸顶：导航栏本身 position: fixed，外层容器撑出等高把内容顶下来，
+ * 否则第一屏会被盖住。
  */
 withDefaults(
   defineProps<{
@@ -24,20 +30,29 @@ withDefaults(
     align?: 'center' | 'left'
     /** 背景：页面底 or 白卡 */
     surface?: boolean
-    /** 是否吸顶 */
+    /**
+     * 是否吸顶。默认 true —— 设计稿所有二级页的导航条都是固定的，
+     * 只有内容区在滚。页面若用整页滚动（没有 scroll-view），必须保持 true。
+     */
     fixed?: boolean
+    /** 吸顶时底部是否加一条发丝线，滚动内容贴上来时用 */
+    hairline?: boolean
   }>(),
-  { back: true, align: 'center', surface: false, fixed: false }
+  { back: true, align: 'center', surface: false, fixed: true, hairline: false }
 )
 
 const emit = defineEmits<{ (e: 'back'): void }>()
 
 const GUTTER = 20
 
-const { statusBarHeight, capsuleInset } = getSafeArea()
+const { statusBarHeight, capsuleInset, navBarHeight } = getSafeArea()
+
+/** 导航条总高（含状态栏），页面据此留占位 */
+const totalHeight = computed(() => `${statusBarHeight + navBarHeight}px`)
 
 /** 右侧要让开胶囊，状态栏高度由外层 .nav 的 paddingTop 负责 */
 const barStyle = computed(() => ({
+  height: `${navBarHeight}px`,
   paddingRight: `${capsuleInset > GUTTER ? capsuleInset : GUTTER}px`
 }))
 
@@ -53,43 +68,47 @@ const titleStyle = computed(() => {
 
 function onBack() {
   emit('back')
-  const pages = getCurrentPages()
-  if (pages.length > 1) uni.navigateBack()
-  // 返回栈到底了：首页是 tab 页，必须 switchTab，reLaunch 会重建整页
-  else switchTab(TAB_HOME)
+  goBack()
 }
 </script>
 
 <template>
-  <view
-    class="nav"
-    :class="{ 'nav--fixed': fixed, 'nav--surface': surface }"
-    :style="{ paddingTop: `${statusBarHeight}px` }"
-  >
-    <view class="nav__bar" :style="barStyle">
-      <view class="nav__left">
-        <view v-if="back" class="nav__btn" hover-class="nav__btn--active" @tap="onBack">
-          <AppIcon name="chevron-left" :size="18" color="#09090B" />
+  <!--
+    单根节点：小程序端对多根节点组件支持有限（class/style 透传、样式隔离都会出问题），
+    所以占位不用兄弟节点，而是让外层容器自己撑出导航条的高度。
+    吸顶时 .nav 是 fixed（脱离文档流），外层容器的等高就把内容顶到导航条下面。
+  -->
+  <view class="nav-wrap" :style="{ height: fixed ? totalHeight : undefined }">
+    <view
+      class="nav"
+      :class="{ 'nav--fixed': fixed, 'nav--surface': surface, 'nav--hairline': hairline }"
+      :style="{ paddingTop: `${statusBarHeight}px` }"
+    >
+      <view class="nav__bar" :style="barStyle">
+        <view class="nav__left">
+          <view v-if="back" class="nav__btn" hover-class="nav__btn--active" @tap="onBack">
+            <AppIcon name="chevron-left" :size="18" color="#09090B" />
+          </view>
+          <slot name="left" />
         </view>
-        <slot name="left" />
-      </view>
 
-      <!-- 左对齐时标题跟在左侧按钮后面（创建流程的「取消」），走正常流式布局 -->
-      <view v-if="align === 'left'" class="nav__title nav__title--left">
-        <text class="nav__title-text">
-          <slot name="title">{{ title }}</slot>
-        </text>
-      </view>
+        <!-- 左对齐时标题跟在左侧按钮后面（创建流程的「取消」），走正常流式布局 -->
+        <view v-if="align === 'left'" class="nav__title nav__title--left">
+          <text class="nav__title-text">
+            <slot name="title">{{ title }}</slot>
+          </text>
+        </view>
 
-      <view class="nav__right">
-        <slot name="right" />
-      </view>
+        <view class="nav__right">
+          <slot name="right" />
+        </view>
 
-      <!-- 居中时标题绝对定位铺满，两侧按钮不参与它的排版 -->
-      <view v-if="align === 'center'" class="nav__title nav__title--center" :style="titleStyle">
-        <text class="nav__title-text">
-          <slot name="title">{{ title }}</slot>
-        </text>
+        <!-- 居中时标题绝对定位铺满，两侧按钮不参与它的排版 -->
+        <view v-if="align === 'center'" class="nav__title nav__title--center" :style="titleStyle">
+          <text class="nav__title-text">
+            <slot name="title">{{ title }}</slot>
+          </text>
+        </view>
       </view>
     </view>
   </view>
@@ -100,6 +119,10 @@ export default { name: 'AppNavBar' }
 </script>
 
 <style lang="scss" scoped>
+.nav-wrap {
+  flex-shrink: 0;
+}
+
 .nav {
   width: 100%;
   background: $bg;
@@ -117,10 +140,19 @@ export default { name: 'AppNavBar' }
     z-index: 100;
   }
 
-  /* 设计稿：52 高、左右各 20 */
+  &--hairline::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: $line;
+  }
+
+  /* 高度由内联 style 按胶囊算，不再写死 52 —— 见 platform.ts 的 navBarHeight */
   &__bar {
     position: relative;
-    height: $nav-height;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -142,7 +174,7 @@ export default { name: 'AppNavBar' }
     justify-content: flex-end;
   }
 
-  /* 设计稿：34×34、圆 16、白底、1px $line */
+  /* 设计稿：34×34、圆 17、白底、1px $line */
   &__btn {
     width: 34px;
     height: 34px;

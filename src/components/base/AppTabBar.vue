@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { getSafeArea } from '@/utils/platform'
 import { switchTab, TAB_HOME, TAB_ME } from '@/utils/tab'
+import { go, ROUTES } from '@/utils/router'
 
 /**
  * 底部 Tab：发现 / 创建（中间凸起主操作）/ 我的
@@ -17,9 +18,9 @@ defineProps<{ current: 'discover' | 'me' }>()
 /** 底部小横条高度：栏高 64 + 安全区，用 getSafeArea 量出，不用不可靠的 env() */
 const safeBottom = computed(() => `${getSafeArea().safeBottom}px`)
 
-function go(page: 'discover' | 'me' | 'create') {
+function onTab(page: 'discover' | 'me' | 'create') {
   if (page === 'create') {
-    uni.navigateTo({ url: '/pages/create/type' })
+    go(ROUTES.createType)
     return
   }
   switchTab(page === 'discover' ? TAB_HOME : TAB_ME)
@@ -29,7 +30,7 @@ function go(page: 'discover' | 'me' | 'create') {
 <template>
   <view class="tabbar" :style="{ height: `calc(64px + ${safeBottom})`, paddingBottom: safeBottom }">
     <view class="tabbar__hairline" />
-    <view class="tabbar__item" @tap="go('discover')">
+    <view class="tabbar__item" @tap="onTab('discover')">
       <AppIcon name="compass" :size="23" :color="current === 'discover' ? '#4F46E5' : '#A1A1AA'" />
       <text
         class="tabbar__label"
@@ -38,13 +39,13 @@ function go(page: 'discover' | 'me' | 'create') {
       >
     </view>
 
-    <view class="tabbar__item tabbar__item--center" @tap="go('create')">
+    <view class="tabbar__item tabbar__item--center" @tap="onTab('create')">
       <view class="tabbar__create">
         <AppIcon name="plus" :size="22" color="#FFFFFF" :stroke-width="2" />
       </view>
     </view>
 
-    <view class="tabbar__item" @tap="go('me')">
+    <view class="tabbar__item" @tap="onTab('me')">
       <AppIcon name="user" :size="23" :color="current === 'me' ? '#4F46E5' : '#A1A1AA'" />
       <text class="tabbar__label" :class="{ 'tabbar__label--active': current === 'me' }">我的</text>
     </view>

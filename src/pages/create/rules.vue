@@ -12,6 +12,7 @@ import RuleRow from '@/components/business/RuleRow.vue'
 import { useDraftStore } from '@/stores/draft'
 import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { back, go, ROUTES } from '@/utils/router'
 
 /**
  * 30 创建 · ③ 规则 · 单选 / 31 · 多选 / 63 · 问卷（含 32/34/35/36/37/38 六个弹层）
@@ -120,8 +121,8 @@ function applyCustomDeadline() {
 const todayStr = new Date().toISOString().slice(0, 10)
 customDate.value = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
 
-function back() {
-  uni.navigateBack()
+function onBack() {
+  back()
 }
 
 function publish() {
@@ -130,7 +131,7 @@ function publish() {
   // 上限写进规则，详情页和待办卡都读这一个值，不在各处再猜
   draft.draft.rules.maxChoice = typeMode.value === 'multiple' ? maxChoice.value : 1
   draft.patch({})
-  uni.navigateTo({ url: '/pages/create/success' })
+  go(ROUTES.createSuccess)
 }
 </script>
 
@@ -138,7 +139,7 @@ function publish() {
   <view class="rules">
     <AppNavBar :back="false">
       <template #left>
-        <text class="rules__cancel" @tap="back">取消</text>
+        <text class="rules__cancel" @tap="onBack">取消</text>
       </template>
       <template #title>
         <text class="rules__nav-title">新建{{ isSurvey ? '问卷' : '投票' }}</text>
@@ -387,7 +388,7 @@ function publish() {
     </scroll-view>
 
     <view class="rules__actions" :style="{ paddingBottom: bottomInset(20) }">
-      <view class="rules__prev" hover-class="rules__prev--active" @tap="back">
+      <view class="rules__prev" hover-class="rules__prev--active" @tap="onBack">
         <text class="rules__prev-text">上一步</text>
       </view>
       <view class="rules__next" @tap="publish">

@@ -8,6 +8,7 @@ import MenuRow from '@/components/business/MenuRow.vue'
 import { useUserStore } from '@/stores/user'
 import { useSettingsStore } from '@/stores/settings'
 import { bottomInset } from '@/utils/platform'
+import { ROUTES, go, reset } from '@/utils/router'
 
 /**
  * 43 设置（含 49 退出登录确认、56 清除缓存确认）
@@ -38,14 +39,14 @@ const sheet = ref<'logout' | 'cache' | null>(null)
 
 onMounted(() => settings.restore())
 
-function go(url: string) {
-  uni.navigateTo({ url })
+function open(url: string) {
+  go(url)
 }
 
 function confirmLogout() {
   user.logout()
   sheet.value = null
-  uni.reLaunch({ url: '/pages/login/index' })
+  reset(ROUTES.login)
 }
 
 function confirmClear() {
@@ -68,7 +69,7 @@ function confirmClear() {
             <text class="profile__name">{{ name }}</text>
             <text class="profile__meta">{{ meta }}</text>
           </view>
-          <view class="profile__edit" hover-class="profile__edit--active" @tap="go('/pages/settings/profile')">
+          <view class="profile__edit" hover-class="profile__edit--active" @tap="open('/pages/settings/profile')">
             <text class="profile__edit-text">编辑</text>
           </view>
         </view>
@@ -81,10 +82,10 @@ function confirmClear() {
               title="推送通知"
               icon="bell"
               :value="settings.settings.pushEnabled ? '开启' : '已关闭'"
-              @tap="go('/pages/settings/notifications?tab=push')"
+              @tap="open('/pages/settings/notifications?tab=push')"
             />
             <view class="group__sep" />
-            <MenuRow title="账号与安全" icon="user-round" @tap="go('/pages/settings/account')" />
+            <MenuRow title="账号与安全" icon="user-round" @tap="open('/pages/settings/account')" />
           </view>
         </view>
 
@@ -105,15 +106,15 @@ function confirmClear() {
         <view class="group">
           <text class="group__head">关于</text>
           <view class="group__card">
-            <MenuRow title="帮助与反馈" icon="info" @tap="go('/pages/support/index')" />
+            <MenuRow title="帮助与反馈" icon="info" @tap="open('/pages/support/index')" />
             <view class="group__sep" />
-            <MenuRow title="用户协议" icon="file-text" @tap="go('/pages/settings/doc?type=terms')" />
+            <MenuRow title="用户协议" icon="file-text" @tap="open('/pages/settings/doc?type=terms')" />
             <view class="group__sep" />
             <MenuRow
               title="关于我们"
               icon="info"
               :value="`v${version}`"
-              @tap="go('/pages/settings/doc?type=about')"
+              @tap="open('/pages/settings/doc?type=about')"
             />
           </view>
         </view>

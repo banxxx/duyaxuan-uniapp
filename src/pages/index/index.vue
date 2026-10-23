@@ -145,8 +145,9 @@ import { fetchPendingPolls, fetchMyPolls } from '@/api/poll'
 import type { PendingPoll } from '@/mock/data'
 import { useUserStore } from '@/stores/user'
 import { getSafeArea } from '@/utils/platform'
-import { hideNativeTabBar, switchTab, TAB_ME } from '@/utils/tab'
+import { hideNativeTabBar } from '@/utils/tab'
 import { formatDate, formatRemaining } from '@/utils/format'
+import { ROUTES, go, switchTab } from '@/utils/router'
 
 /**
  * 02 首页 · 待我投票（含 03 空状态、60 加载、61 网络错误）
@@ -207,28 +208,28 @@ onPullDownRefresh(async () => {
 })
 
 function openDetail(id: string) {
-  uni.navigateTo({ url: `/pages/detail/index?id=${id}` })
+  go(ROUTES.detail, { id })
 }
 
 function openSearch() {
-  uni.navigateTo({ url: '/pages/search/index' })
+  go(ROUTES.search)
 }
 
 function openNotifications() {
-  uni.navigateTo({ url: '/pages/settings/notifications' })
+  go(ROUTES.settingsNotifications)
 }
 
 function openMine() {
-  uni.navigateTo({ url: '/pages/me/created' })
+  go(ROUTES.meCreated)
 }
 
 /** 头像 → 40 我的（switchTab 复用页面实例，不重建、不闪） */
 function openMe() {
-  switchTab(TAB_ME)
+  switchTab(ROUTES.me)
 }
 
 function openCreate() {
-  uni.navigateTo({ url: '/pages/create/type' })
+  go(ROUTES.createType)
 }
 </script>
 

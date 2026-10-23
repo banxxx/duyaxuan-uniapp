@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { onLoad, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
+import { onLoad, onShow, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import type { Poll, Comment, SurveyAnswer } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
@@ -23,7 +23,7 @@ import { useUserStore } from '@/stores/user'
 import { formatCreatedAt, formatRemaining, formatRelative, charCount, percent } from '@/utils/format'
 import { buildShareMessage, buildTimelineMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
-import { switchTab, TAB_ME } from '@/utils/tab'
+import { backTo, go, replace, ROUTES } from '@/utils/router'
 
 /**
  * 详情页 —— 05~12、16~20、22~23、67~70、75~76 全部合成这一页
@@ -169,12 +169,14 @@ async function load() {
       const answers = await fetchMyAnswers(p.id)
       myAnswers.value = answers
       if (!answers.length && p.creatorId !== user.profile?.id && p.rules.endAt > Date.now()) {
-        uni.redirectTo({ url: `/pages/survey/fill?id=${p.id}` })
+        replace(ROUTES.surveyFill, { id: p.id })
         return
       }
     } else {
       myVote.value = await fetchMyVote(p.id)
-      selection.value = [...myVote.value]
+      // 从别的页面退回来时不清空用户已经点选但还没提交的选择 ——
+      // 否则去评论区看一眼再回来，选项全没了
+      if (!selection.value.length) selection.value = [...myVote.value]
     }
 
     if (p.rules.allowComment) {
@@ -210,6 +212,22 @@ onMounted(() => {
     return
   }
   load()
+})
+
+/**
+ * 从成功页 / 结果页 / 投票记录页退回来时要刷新。
+ *
+ * 这些页面都会改票数或投票状态（刚投完、撤回、别人投了），
+ * 而返回是复用同一个页面实例，不重新 mount —— 不在这里重拉，
+ * 用户看到的就是投票前的旧数据。
+ */
+let firstShow = true
+onShow(() => {
+  if (firstShow) {
+    firstShow = false
+    return
+  }
+  if (pollId.value) load()
 })
 
 /* ---------- 选项交互 ---------- */
@@ -248,7 +266,7 @@ async function doVote() {
     poll.value = next
     myVote.value = [...selection.value]
     infoVisible.value = false
-    uni.navigateTo({ url: `/pages/detail/success?id=${poll.value.id}` })
+    go(ROUTES.detailSuccess, { id: poll.value.id })
   } catch {
     uni.showToast({ title: '投票失败，请重试', icon: 'none' })
   } finally {
@@ -282,35 +300,35 @@ async function onRevoke() {
 /* ---------- 跳转 ---------- */
 
 function goResult() {
-  uni.navigateTo({ url: `/pages/detail/result?id=${pollId.value}` })
+  go(ROUTES.detailResult, { id: pollId.value })
 }
 
 function goVoters() {
-  uni.navigateTo({ url: `/pages/detail/voters?id=${pollId.value}` })
+  go(ROUTES.detailVoters, { id: pollId.value })
 }
 
 function goComments() {
-  uni.navigateTo({ url: `/pages/detail/comments?id=${pollId.value}` })
+  go(ROUTES.detailComments, { id: pollId.value })
 }
 
 function goData() {
-  uni.navigateTo({ url: `/pages/creator/data?id=${pollId.value}` })
+  go(ROUTES.creatorData, { id: pollId.value })
 }
 
 function goFill() {
-  uni.navigateTo({ url: `/pages/survey/fill?id=${pollId.value}` })
+  go(ROUTES.surveyFill, { id: pollId.value })
 }
 
 function goMine() {
-  uni.navigateTo({ url: `/pages/survey/mine?id=${pollId.value}` })
+  go(ROUTES.surveyMine, { id: pollId.value })
 }
 
 function goEditAnswer() {
-  uni.navigateTo({ url: `/pages/survey/edit-answer?id=${pollId.value}&answerId=${myAnswer.value?.id ?? ''}` })
+  go(ROUTES.surveyEditAnswer, { id: pollId.value, answerId: myAnswer.value?.id })
 }
 
 function goAnswers() {
-  uni.navigateTo({ url: `/pages/survey/answers?id=${pollId.value}` })
+  go(ROUTES.surveyAnswers, { id: pollId.value })
 }
 
 /** 发起人右上角「···」：和 41 列表里的面板同一套动作 */
@@ -319,7 +337,7 @@ function openManage() {
     itemList: ['编辑', '删除'],
     success: (r) => {
       if (r.tapIndex === 0) {
-        uni.navigateTo({ url: `/pages/creator/edit-content?id=${pollId.value}` })
+        go(ROUTES.creatorEditContent, { id: pollId.value })
       } else {
         uni.showModal({
           title: `删除这${isSurvey.value ? '份问卷' : '场投票'}？`,
@@ -330,8 +348,9 @@ function openManage() {
             if (!res.confirm) return
             const { deletePoll } = await import('@/api/poll')
             await deletePoll(pollId.value)
-            // 我发起的属于「我的」tab 下的二级页，用 switchTab 回不去，navigateBack 更稳
-            uni.navigateBack({ fail: () => switchTab(TAB_ME) })
+            // 详情页可能是从首页、我发起的、我参与的、搜索结果任意一处进来的，
+            // 删除后统一退回「我发起的」——那里才有撤销入口
+            backTo(ROUTES.meCreated)
           }
         })
       }
