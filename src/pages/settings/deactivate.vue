@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
+import AppSheet from '@/components/base/AppSheet.vue'
 import { fetchMyPolls, fetchJoinedPolls } from '@/api/poll'
 import { deleteAccount } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
@@ -15,16 +16,18 @@ import { reset, ROUTES } from '@/utils/router'
  * 三个数字（我创建的 N 个投票 / 我的 M 条投票记录）都从真实接口取，
  * 写死数字会让用户在注销那一刻发现对不上，反而更不敢点。
  *
- * 密码输入是必填的：注销不可逆，至少多一道门槛。
+ * 二次确认用 AppSheet 而不是原生 showModal：圆角和间距和整站一致，
+ * 和 43 的「退出登录确认」「清除缓存确认」是同一套视觉。
+ * 以前这里是输密码确认，现在登录只依赖平台授权、没有密码可验，所以改成弹窗。
  */
 const user = useUserStore()
 
 const createdCount = ref(0)
 const joinedCount = ref(0)
-const password = ref('')
+const confirming = ref(false)
 const submitting = ref(false)
 
-const canSubmit = computed(() => password.value.length > 0 && !submitting.value)
+const canSubmit = computed(() => !submitting.value)
 
 onMounted(async () => {
   try {
@@ -36,33 +39,34 @@ onMounted(async () => {
   }
 })
 
+/**
+ * 这三条要和服务端实际做的事对得上：
+ * 发起的投票软删除；投票记录只清身份、不删记录（删了会让别人看到的百分比凭空变化）；
+ * 账号本身打注销标记并清空昵称头像。
+ */
 const items = computed(() => [
-  { title: `我创建的 ${createdCount.value} 个投票`, desc: '将全部关闭并删除' },
-  { title: `我的 ${joinedCount.value} 条投票记录`, desc: '将从参与者列表移除' },
+  { title: `我创建的 ${createdCount.value} 个投票`, desc: '将全部关闭并从列表移除' },
+  { title: `我的 ${joinedCount.value} 条投票记录`, desc: '将清除你的身份信息' },
   { title: '我的个人资料', desc: '昵称与头像将被清空' }
 ])
 
 function submit() {
   if (!canSubmit.value) return
-  uni.showModal({
-    title: '确认注销账号？',
-    content: '账号及全部数据将被永久删除，无法恢复。',
-    confirmText: '确认注销',
-    confirmColor: '#DC2626',
-    success: async (r) => {
-      if (!r.confirm) return
-      submitting.value = true
-      try {
-        await deleteAccount(password.value)
-        user.logout()
-        reset(ROUTES.login)
-      } catch {
-        uni.showToast({ title: '密码不正确', icon: 'none' })
-      } finally {
-        submitting.value = false
-      }
-    }
-  })
+  confirming.value = true
+}
+
+async function confirmDeactivate() {
+  submitting.value = true
+  try {
+    await deleteAccount()
+    confirming.value = false
+    user.logout()
+    reset(ROUTES.login)
+  } catch {
+    uni.showToast({ title: '注销失败，请稍后重试', icon: 'none' })
+  } finally {
+    submitting.value = false
+  }
 }
 </script>
 
@@ -79,7 +83,7 @@ function submit() {
           </view>
           <view class="warn__text">
             <text class="warn__title">此操作不可恢复</text>
-            <text class="warn__desc">注销后，你的账号、创建的投票、投票记录将被永久删除。</text>
+            <text class="warn__desc">注销后，你的账号和你发起的投票将被删除，投票记录中的身份信息会被清除。</text>
           </view>
         </view>
 
@@ -98,25 +102,33 @@ function submit() {
           </template>
         </view>
 
-        <text class="deact__note">注销需要验证身份，请先输入登录密码。</text>
-
-        <view class="pwd">
-          <input
-            v-model="password"
-            class="pwd__input"
-            type="password"
-            password
-            maxlength="20"
-            placeholder="请输入登录密码"
-            placeholder-class="pwd__ph"
-          />
-        </view>
+        <text class="deact__note">注销后无法恢复，也无法找回这些投票数据。请确认这是你本人的操作。</text>
 
         <AppButton size="compact" type="danger" :disabled="!canSubmit" :loading="submitting" @tap="submit">
           确认注销
         </AppButton>
       </view>
     </scroll-view>
+
+    <!-- 二次确认 -->
+    <AppSheet
+      :visible="confirming"
+      variant="confirm"
+      title="确认注销账号？"
+      desc="账号及全部数据将被永久删除，无法恢复。"
+      @close="confirming = false"
+    >
+      <view class="confirm-actions">
+        <view class="flex-1">
+          <AppButton type="subtle" size="dialog" @tap="confirming = false">取消</AppButton>
+        </view>
+        <view class="flex-1">
+          <AppButton type="danger" size="dialog" :loading="submitting" @tap="confirmDeactivate">
+            注销账号
+          </AppButton>
+        </view>
+      </view>
+    </AppSheet>
   </view>
 </template>
 
@@ -235,21 +247,9 @@ export default { name: 'DeactivatePage' }
   }
 }
 
-.pwd {
-  padding: 14px 15px;
-  border-radius: 14px;
-  background: $surface;
-  border: 1px solid $line;
-
-  &__input {
-    font-size: 14px;
-    color: $ink;
-    height: 20px;
-  }
-
-  &__ph {
-    color: $faint;
-    font-size: 14px;
-  }
+.confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 </style>

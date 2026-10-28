@@ -27,11 +27,13 @@ const version = '1.2.0'
 const name = computed(() => user.profile?.nickname ?? '未登录')
 
 /** 设计稿这里写的是「ID 1024 · 产品部」，但数据模型里没有部门字段，
- *  换成和 40 一致的「加入 N 天」，两页对得上，也不用凭空造字段。 */
+ *  换成和 40 一致的「加入 N 天」，两页对得上，也不用凭空造字段。
+ *  用户 id 是内部标识，对用户没有意义，不往界面上放。 */
 const meta = computed(() => {
   const at = user.profile?.createdAt
   const days = at ? Math.floor((Date.now() - at) / (24 * 3600 * 1000)) : 0
-  return `ID ${user.profile?.id ?? '-'} · 加入 ${days} 天`
+  // 刚注册的账号写「加入 0 天」很怪
+  return days > 0 ? `加入 ${days} 天` : '今天加入'
 })
 
 /** 两个确认弹层 */
@@ -64,13 +66,15 @@ function confirmClear() {
       <view class="settings__content" :style="{ paddingBottom: bottomInset(20) }">
         <!-- 个人信息 -->
         <view class="profile">
-          <AppAvatar :src="user.profile?.avatar" :name="name" :size="52" />
+          <AppAvatar
+            :src="user.profile?.avatar"
+            :name="name"
+            :seed="user.profile?.id"
+            :size="52"
+          />
           <view class="profile__info">
             <text class="profile__name">{{ name }}</text>
             <text class="profile__meta">{{ meta }}</text>
-          </view>
-          <view class="profile__edit" hover-class="profile__edit--active" @tap="open('/pages/settings/profile')">
-            <text class="profile__edit-text">编辑</text>
           </view>
         </view>
 
@@ -135,8 +139,12 @@ function confirmClear() {
       @close="sheet = null"
     >
       <view class="confirm-actions">
-        <AppButton type="subtle" size="dialog" @tap="sheet = null">取消</AppButton>
-        <AppButton type="danger" size="dialog" @tap="confirmLogout">退出登录</AppButton>
+        <view class="flex-1">
+          <AppButton type="subtle" size="dialog" @tap="sheet = null">取消</AppButton>
+        </view>
+        <view class="flex-1">
+          <AppButton type="danger" size="dialog" @tap="confirmLogout">退出登录</AppButton>
+        </view>
       </view>
     </AppSheet>
 
@@ -149,8 +157,12 @@ function confirmClear() {
       @close="sheet = null"
     >
       <view class="confirm-actions">
-        <AppButton type="subtle" size="dialog" @tap="sheet = null">取消</AppButton>
-        <AppButton size="dialog" @tap="confirmClear">清除</AppButton>
+        <view class="flex-1">
+          <AppButton type="subtle" size="dialog" @tap="sheet = null">取消</AppButton>
+        </view>
+        <view class="flex-1">
+          <AppButton size="dialog" @tap="confirmClear">清除</AppButton>
+        </view>
       </view>
     </AppSheet>
 
@@ -208,24 +220,6 @@ export default { name: 'SettingsPage' }
   &__meta {
     font-size: 11px;
     color: $faint;
-  }
-
-  &__edit {
-    padding: 6px 12px;
-    border-radius: 8px;
-    background: $subtle;
-    display: flex;
-    align-items: center;
-
-    &--active {
-      opacity: 0.8;
-    }
-  }
-
-  &__edit-text {
-    font-size: 11px;
-    font-weight: 600;
-    color: $ink;
   }
 }
 

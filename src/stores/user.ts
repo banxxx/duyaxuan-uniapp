@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import type { UserProfile } from '@/types/api'
 import type { Platform } from '@/utils/platform'
 import { loginButtonText } from '@/utils/platform'
-import { loginByCode, updateProfile as apiUpdateProfile, isMockAuth } from '@/api/auth'
+import { loginByCode, fetchProfile, isMockAuth } from '@/api/auth'
 import { registerAuthHooks } from '@/utils/auth-token'
 
 const TOKEN_KEY = 'dyx_token'
@@ -110,14 +110,20 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  /** 服务端已经把新资料返回了（解绑、换手机号等），直接落到本地 */
+  /** 服务端已经把新资料返回了（解绑等），直接落到本地 */
   function applyProfile(next: UserProfile) {
     profile.value = next
     uni.setStorageSync(USER_KEY, JSON.stringify(next))
   }
 
-  async function updateProfile(patch: Partial<UserProfile>) {
-    applyProfile(await apiUpdateProfile(patch))
+  /** 启动时和服务端对齐一次资料，本地缓存只当兜底 */
+  async function refreshProfile() {
+    if (!token.value) return
+    try {
+      applyProfile(await fetchProfile())
+    } catch {
+      // 网络不好就先用缓存，不阻塞启动
+    }
   }
 
   // 把读写 token 的能力注册给请求层，打断 store ↔ request 的循环依赖
@@ -138,7 +144,7 @@ export const useUserStore = defineStore('user', () => {
     relogin,
     logout,
     touch,
-    updateProfile,
-    applyProfile
+    applyProfile,
+    refreshProfile
   }
 })

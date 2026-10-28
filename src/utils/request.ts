@@ -9,6 +9,7 @@
  */
 
 import { currentToken, tryRefreshToken } from './auth-token'
+import { API_BASE } from './api-base'
 
 export interface ApiResponse<T> {
   code: number
@@ -28,7 +29,7 @@ export interface RequestOptions {
   skipAuth?: boolean
 }
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.example.com'
+const BASE_URL = API_BASE
 const TIMEOUT = 15000
 
 let loadingCount = 0

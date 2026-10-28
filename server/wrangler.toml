@@ -1,0 +1,34 @@
+# 投票吧后端
+#
+# 部署前要做两件事：
+#   1. npx wrangler d1 create duyaxuan-db   → 把返回的 database_id 填到下面
+#   2. npx wrangler secret put WX_APPID / WX_SECRET / JWT_SECRET
+#      密钥不写进这个文件，也不进 git
+
+name = "duyaxuan-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+# binding 就是代码里 c.env.DB 的那个 DB。
+# wrangler d1 create 会建议 binding = "duyaxuan_db"（按库名推导的默认值），
+# 改不改都行 —— 只要这里和 src/ 里用的名字一致，用短一点更好读。
+binding = "DB"
+database_name = "duyaxuan-db"
+database_id = "b013e396-3d15-4a78-b58b-2b387aa1c948"
+
+# 头像存储
+#
+# 建桶：npx wrangler r2 bucket create duyaxuan-avatar
+# （R2 要先在控制台开通，免费额度 10GB 存储 / 每月 100 万次写）
+#
+# 图片不通过 r2.dev 公网地址对外，而是走 Worker 自己的 GET /files/*：
+# 这样和小程序接口同源，不用再备案一个域名，本地 wrangler dev 也能直接用。
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "duyaxuan-avatar"
+
+[vars]
+# token 有效期（天）。前端第 6 天会主动续，这里保持 7
+TOKEN_TTL_DAYS = "7"

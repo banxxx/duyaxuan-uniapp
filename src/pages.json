@@ -124,19 +124,7 @@
       "style": { "navigationStyle": "custom" }
     },
     {
-      "path": "pages/settings/profile",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
       "path": "pages/settings/account",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/settings/password",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/settings/phone",
       "style": { "navigationStyle": "custom" }
     },
     {

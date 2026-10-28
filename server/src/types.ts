@@ -1,0 +1,178 @@
+/**
+ * 后端共享类型
+ *
+ * 行类型（*Row）严格对应 schema.sql 的列，转换到前端的 Poll / UserProfile
+ * 统一在 db/ 层做（toPoll / toProfile），路由层只碰前端类型。
+ */
+
+export interface Env {
+  DB: D1Database
+  /** 头像存储，wrangler.toml 里开了 R2 才有 */
+  BUCKET?: R2Bucket
+  WX_APPID: string
+  WX_SECRET: string
+  JWT_SECRET: string
+  TOKEN_TTL_DAYS: string
+}
+
+/** Hono 的上下文泛型：Bindings 是 env，Variables 是中间件往下传的东西 */
+export interface AppEnv {
+  Bindings: Env
+  Variables: {
+    /** requireAuth 保证有值；optionalAuth 下可能是 null */
+    userId: string | null
+  }
+}
+
+/* ---------------- 数据库行 ---------------- */
+
+export interface UserRow {
+  id: string
+  nickname: string
+  avatar: string | null
+  bio: string | null
+  status: number
+  created_at: number
+  updated_at: number
+}
+
+export interface PollRow {
+  id: string
+  creator_id: string
+  type: string
+  title: string
+  desc: string | null
+  status: number
+  deleted_at: number | null
+  created_at: number
+  end_at: number
+  anonymous: number
+  allow_edit: number
+  allow_share: number
+  allow_comment: number
+  allow_repeat: number
+  limit_ip: number
+  max_choice: number
+  result_visibility: string
+  shuffle_options: number
+  hide_voter_count: number
+  join_method: string
+  profile_field: string | null
+  voter_count: number
+  answer_count: number
+  comment_count: number
+  view_count: number
+  source_survey_id: string | null
+}
+
+/** 列表/详情查询都会 LEFT JOIN users 取发起人信息 */
+export interface PollRowJoined extends PollRow {
+  creator_name: string | null
+  creator_avatar: string | null
+}
+
+export interface OptionRow {
+  id: string
+  poll_id: string
+  title: string
+  desc: string | null
+  sort: number
+  votes_count: number
+}
+
+export interface VoteRow {
+  id: string
+  poll_id: string
+  user_id: string
+  option_ids: string
+  profile_info: string | null
+  ip: string | null
+  created_at: number
+}
+
+export interface AnswerRow {
+  id: string
+  poll_id: string
+  user_id: string
+  seq: number
+  content: string
+  profile_info: string | null
+  created_at: number
+  updated_at: number
+}
+
+/* ---------------- 出参类型（与 src/types/api.d.ts 对齐） ---------------- */
+
+export type PollType = 'single' | 'multiple' | 'survey'
+export type PollStatusFilter = 'all' | 'ongoing' | 'ended'
+
+export interface PollRules {
+  anonymous: boolean
+  allowEdit: boolean
+  allowShare: boolean
+  limitIp: boolean
+  allowComment: boolean
+  allowRepeat?: boolean
+  maxChoice?: number
+  resultVisibility?: string
+  shuffleOptions?: boolean
+  hideVoterCount?: boolean
+  joinMethod: string
+  profileField: string | null
+  endAt: number
+}
+
+export interface PollOptionOut {
+  id: string
+  title: string
+  desc?: string
+  votes: number
+}
+
+export interface PollOut {
+  id: string
+  type: PollType
+  title: string
+  desc?: string
+  creatorId: string
+  creatorName: string
+  creatorAvatar?: string
+  createdAt: number
+  rules: PollRules
+  options: PollOptionOut[]
+  voterCount: number
+  commentCount: number
+  viewCount: number
+  answerCount?: number
+  sourceSurveyId?: string
+  myChoice?: string
+  myChoiceCount?: number
+  myAnswered?: boolean
+  deletedAt?: number | null
+}
+
+export interface UserProfileOut {
+  id: string
+  nickname: string
+  avatar?: string
+  bio?: string
+  createdAt: number
+  bound?: boolean
+}
+
+export interface SurveyAnswerOut {
+  id: string
+  pollId: string
+  content: string
+  createdAt: number
+  updatedAt?: number
+  user?: { id: string; name: string; avatar?: string }
+  profileInfo?: string
+}
+
+export interface Paged<T> {
+  list: T[]
+  cursor: string | null
+  hasMore: boolean
+  total: number
+}

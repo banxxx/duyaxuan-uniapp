@@ -440,7 +440,12 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
 
           <!-- 发起人 -->
           <view class="author">
-            <AppAvatar :src="poll.creatorAvatar" :name="poll.creatorName" :size="34" />
+            <AppAvatar
+              :src="poll.creatorAvatar"
+              :name="poll.creatorName"
+              :seed="poll.creatorId"
+              :size="34"
+            />
             <view class="author__info">
               <text class="author__name">
                 {{ poll.creatorName }} · {{ isOwner ? '我发起的' : '发起人' }}

@@ -9,6 +9,8 @@ onLaunch(() => {
   const user = useUserStore()
   user.setPlatform(platform)
   user.restore()
+  // 本地缓存的是登录时的快照，启动时静默对齐一次（失败就用缓存）
+  user.refreshProfile()
 
   console.log(`[app] launch on ${platform}`)
 })

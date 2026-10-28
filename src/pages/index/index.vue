@@ -16,7 +16,12 @@
             <view v-if="pending.length" class="home__dot" />
           </view>
           <view class="home__avatar" @tap="openMe">
-            <AppAvatar :src="user.profile?.avatar" :name="avatarName" :size="44" />
+            <AppAvatar
+              :src="user.profile?.avatar"
+              :name="avatarName"
+              :seed="user.profile?.id"
+              :size="44"
+            />
           </view>
         </view>
       </view>

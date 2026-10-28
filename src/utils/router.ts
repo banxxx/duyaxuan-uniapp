@@ -49,10 +49,7 @@ export const ROUTES = {
 
   settings: '/pages/settings/index',
   settingsNotifications: '/pages/settings/notifications',
-  settingsProfile: '/pages/settings/profile',
   settingsAccount: '/pages/settings/account',
-  settingsPassword: '/pages/settings/password',
-  settingsPhone: '/pages/settings/phone',
   settingsWechat: '/pages/settings/wechat',
   settingsDeactivate: '/pages/settings/deactivate',
   settingsDoc: '/pages/settings/doc',

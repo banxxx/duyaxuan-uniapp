@@ -9,8 +9,8 @@ import { go } from '@/utils/router'
 /**
  * 46 账号与安全
  *
- * 四行入口，各自一页（50 修改密码 / 51 更换手机号 / 54 授权 / 53 注销）。
- * 不塞弹层：修改密码、换手机号都是多字段表单，弹层里键盘一顶就没地方了。
+ * 两个入口：平台授权（53/54）和注销账号。
+ * 修改密码、手机号已经去掉 —— 登录完全依赖平台授权，不再有独立的凭据要维护。
  *
  * 「微信授权」这行的文案跟宿主走——QQ 包跑在 QQ 里时显示「QQ 授权」，
  * 抖音里显示「抖音授权」，否则用户会以为自己绑错了账号。
@@ -33,8 +33,6 @@ const bindDesc = computed(() => {
   return user.profile?.bound ? `已绑定 · ${name}` : '未绑定'
 })
 
-const phoneDesc = computed(() => user.profile?.phone || '未绑定')
-
 function open(url: string) {
   go(url)
 }
@@ -48,16 +46,12 @@ function open(url: string) {
       <view class="account__content" :style="{ paddingBottom: bottomInset(20) }">
         <view class="group">
           <MenuRow :title="platformName" :desc="bindDesc" roomy strong @tap="open('/pages/settings/wechat')" />
-          <view class="group__sep" />
-          <MenuRow title="手机号" :desc="phoneDesc" roomy strong @tap="open('/pages/settings/phone')" />
         </view>
 
         <view class="group">
-          <MenuRow title="修改密码" roomy strong @tap="open('/pages/settings/password')" />
-          <view class="group__sep" />
           <MenuRow
             title="注销账号"
-            desc="永久删除账号及全部数据"
+            desc="删除账号与你发起的投票"
             roomy
             strong
             @tap="open('/pages/settings/deactivate')"

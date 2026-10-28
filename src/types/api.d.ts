@@ -127,8 +127,6 @@ export interface UserProfile {
   avatar?: string
   bio?: string
   createdAt: number
-  /** 手机号，已脱敏（138****8888）；未绑定时为空 */
-  phone?: string
   /** 是否绑定了微信 / QQ / 抖音，用于 46 与 54 */
   bound?: boolean
 }

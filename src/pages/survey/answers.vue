@@ -298,8 +298,12 @@ async function doEnd() {
       @close="endSheet = false"
     >
       <view class="confirm-actions">
-        <AppButton type="subtle" size="dialog" @tap="endSheet = false">取消</AppButton>
-        <AppButton type="danger" size="dialog" @tap="doEnd">截止收集</AppButton>
+        <view class="flex-1">
+          <AppButton type="subtle" size="dialog" @tap="endSheet = false">取消</AppButton>
+        </view>
+        <view class="flex-1">
+          <AppButton type="danger" size="dialog" @tap="doEnd">截止收集</AppButton>
+        </view>
       </view>
     </AppSheet>
   </view>

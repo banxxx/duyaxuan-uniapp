@@ -70,7 +70,12 @@ async function doUnbind() {
         <text class="bind__group">当前绑定</text>
 
         <view class="card">
-          <AppAvatar :src="user.profile?.avatar" :name="name" :size="48" />
+          <AppAvatar
+            :src="user.profile?.avatar"
+            :name="name"
+            :seed="user.profile?.id"
+            :size="48"
+          />
           <view class="card__text">
             <text class="card__name">{{ name }}</text>
             <text class="card__desc">
@@ -122,8 +127,14 @@ async function doUnbind() {
       @close="confirmVisible = false"
     >
       <view class="actions">
-        <AppButton type="subtle" size="dialog" @tap="confirmVisible = false">取消</AppButton>
-        <AppButton type="danger" size="dialog" :loading="unbinding" @tap="doUnbind">解除绑定</AppButton>
+        <view class="flex-1">
+          <AppButton type="subtle" size="dialog" @tap="confirmVisible = false">取消</AppButton>
+        </view>
+        <view class="flex-1">
+          <AppButton type="danger" size="dialog" :loading="unbinding" @tap="doUnbind">
+            解除绑定
+          </AppButton>
+        </view>
       </view>
     </AppSheet>
   </view>

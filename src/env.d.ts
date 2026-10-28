@@ -1,5 +1,11 @@
 /// <reference types="@dcloudio/types" />
 
+/** 由 vite.config.ts 的 dyx:default-avatars 插件生成：src/static/avatars/ 下的图片路径 */
+declare module 'virtual:default-avatars' {
+  const avatars: string[]
+  export default avatars
+}
+
 declare module '*.vue' {
   import type { DefineComponent } from 'vue'
   const component: DefineComponent<{}, {}, any>
