@@ -113,6 +113,11 @@ function exportData() {
   uni.showToast({ title: '导出文件已发送到微信', icon: 'none' })
 }
 
+/** 27/80 分享页：海报 + 分享渠道 */
+function goShare() {
+  go(ROUTES.share, { id: pollId.value })
+}
+
 onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }))
 </script>
 
@@ -311,7 +316,7 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
       <AppButton type="subtle" size="cta" class="data__action" @tap="isEnded ? exportData() : (endSheet = true)">
         {{ isEnded ? '导出数据' : '提前结束' }}
       </AppButton>
-      <AppButton size="cta" icon="share-2" open-type="share" class="data__action">
+      <AppButton size="cta" icon="share-2" class="data__action" @tap="goShare">
         {{ isEnded ? '生成海报' : `分享${isSurvey ? '问卷' : '投票'}` }}
       </AppButton>
     </view>

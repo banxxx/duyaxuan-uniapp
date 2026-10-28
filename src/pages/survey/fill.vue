@@ -65,7 +65,7 @@ async function doSubmit() {
   if (!poll.value) return
   submitting.value = true
   try {
-    await submitAnswer(poll.value.id, content.value.trim())
+    await submitAnswer(poll.value.id, content.value.trim(), infoValue.value.trim() || undefined)
     infoVisible.value = false
     replace(ROUTES.surveyDone, { id: poll.value.id })
   } catch {

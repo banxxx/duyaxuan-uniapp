@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, toRef } from 'vue'
 import AppIcon from './AppIcon.vue'
 import { getSafeArea } from '@/utils/platform'
+import { usePresence } from '@/utils/presence'
 
 /**
  * 截止时间选择器 —— 设计稿 34（日期）/ 35（时间）
@@ -29,6 +30,9 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'confirm', value: number): void
 }>()
+
+/** 关闭时先播完下滑退场再卸载，和打开的上滑对称 */
+const { rendered, closing } = usePresence(toRef(props, 'visible'))
 
 type Tab = 'date' | 'time'
 
@@ -231,7 +235,7 @@ function onConfirm() {
 </script>
 
 <template>
-  <view v-if="visible" class="dtp">
+  <view v-if="rendered" class="dtp" :class="{ 'dtp--closing': closing }">
     <view class="dtp__mask anim anim--fade" @tap="emit('close')" />
 
     <view class="dtp__panel" :style="{ paddingBottom: panelPad }">
@@ -417,6 +421,19 @@ export default { name: 'AppDateTimePicker' }
   z-index: 200;
   display: flex;
   align-items: flex-end;
+
+  /* 退场：面板滑回屏幕外、遮罩淡出，和 AppSheet 保持同一套节奏 */
+  &--closing {
+    pointer-events: none;
+
+    .dtp__mask {
+      animation: dyx-mask-out $dur-base $ease-in both;
+    }
+
+    .dtp__panel {
+      animation: dyx-sheet-down $dur-base $ease-in both;
+    }
+  }
 
   &__mask {
     position: absolute;

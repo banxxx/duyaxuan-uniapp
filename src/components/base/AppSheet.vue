@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import { bottomInset } from '@/utils/platform'
+import { usePresence } from '@/utils/presence'
 
 /**
  * 底部弹层
@@ -12,7 +13,7 @@ import { bottomInset } from '@/utils/platform'
  *
  * 不用 uni.showModal：原生弹窗的圆角、间距、按钮排布都改不了，和设计稿对不上。
  */
-withDefaults(
+const props = withDefaults(
   defineProps<{
     visible: boolean
     title?: string
@@ -32,6 +33,12 @@ withDefaults(
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
+/**
+ * 关闭时先播 220ms 退场再卸载 —— 打开是滑上来 + 遮罩淡入，
+ * 关闭就该滑下去 + 遮罩淡出，而不是原地消失。
+ */
+const { rendered, closing } = usePresence(toRef(props, 'visible'))
+
 /** 面板下边距：设计稿 24 再叠底部小横条高度 */
 const panelPaddingBottom = computed(() => bottomInset(24))
 
@@ -41,7 +48,7 @@ function onMask() {
 </script>
 
 <template>
-  <view v-if="visible" class="sheet" @tap="maskClosable && onMask()">
+  <view v-if="rendered" class="sheet" :class="{ 'sheet--closing': closing }" @tap="maskClosable && onMask()">
     <!-- 遮罩单独一层：面板上滑时遮罩同时淡入，比整块一起位移更像原生 -->
     <view class="sheet__mask" />
     <view
@@ -89,6 +96,24 @@ export default { name: 'AppSheet' }
   z-index: 200;
   display: flex;
   align-items: flex-end;
+
+  /*
+   * 退场：怎么进来的就怎么出去 —— 面板滑回屏幕外，遮罩同步淡掉。
+   * 用 ease-in（先慢后快）收尾，和进场的 ease-out 正好对称。
+   * pointer-events: none 是因为这 220ms 里遮罩还挂在树上，
+   * 不该再拦着页面上的点击。
+   */
+  &--closing {
+    pointer-events: none;
+
+    .sheet__mask {
+      animation: dyx-mask-out $dur-base $ease-in both;
+    }
+
+    .sheet__panel {
+      animation: dyx-sheet-down $dur-base $ease-in both;
+    }
+  }
 
   /* 遮罩自己一层，只做透明度变化，不跟着面板位移 */
   &__mask {

@@ -37,6 +37,25 @@ button {
   }
 }
 
+/*
+ * 输入控件
+ *
+ * H5 端 uni-input 自带 height: 1.4em + overflow: hidden，而中文字形的高度
+ * 约 1.45em —— 输入后上下各被切掉一点，看起来就是「字被裁了」。
+ * 这里把盒高放宽到 1.5em，给字形留出行间余量；行高保持 uni 默认的 1.4em，
+ * 文字仍然垂直居中。页面自己用 class 写了 height 的优先级更高，不受影响。
+ *
+ * 小程序端没有 uni-input 这层壳，原生 input 默认 1.4rem，补一个下限兜底。
+ */
+uni-input {
+  height: 1.5em;
+  min-height: 1.5em;
+}
+
+input:not(.uni-input-input) {
+  min-height: 1.5em;
+}
+
 /* 文本省略：卡片标题单行、列表副标题单行都用它 */
 .ellipsis {
   overflow: hidden;

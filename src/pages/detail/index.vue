@@ -44,6 +44,8 @@ const user = useUserStore()
 const poll = ref<Poll | null>(null)
 const myVote = ref<string[]>([])
 const myAnswers = ref<SurveyAnswer[]>([])
+/** 75 发起人 · 我的问卷：还没答时展示最新回答，而不是一张空的「我的回答」卡 */
+const latestAnswers = ref<SurveyAnswer[]>([])
 const comments = ref<Comment[]>([])
 const loading = ref(true)
 const submitting = ref(false)
@@ -172,6 +174,21 @@ async function load() {
         replace(ROUTES.surveyFill, { id: p.id })
         return
       }
+
+      // 75：发起人自己还没填时，详情页要能看到「最新回答」，不是空的我的回答
+      const page = await fetchAnswers(p.id)
+      latestAnswers.value = page.list.slice(0, 3)
+
+      // 同一个人重复提交时头像只留一张，否则「林 林 林 周」看着像来了四个人
+      const seen = new Set<string>()
+      const avatars: Array<{ id: string; name: string; avatar?: string }> = []
+      page.list.forEach((a, i) => {
+        const u = a.user ?? { id: `anon${i}`, name: '匿' }
+        if (seen.has(u.id) || avatars.length >= 4) return
+        seen.add(u.id)
+        avatars.push(u)
+      })
+      voterAvatars.value = avatars
     } else {
       myVote.value = await fetchMyVote(p.id)
       // 从别的页面退回来时不清空用户已经点选但还没提交的选择 ——
@@ -183,17 +200,10 @@ async function load() {
       comments.value = await fetchComments(p.id)
     }
 
-    // 参与入口的头像叠层：投票取投票人，问卷取回答人（匿名时为各自的占位字）
-    if (hasVoted.value || isOwner.value) {
-      if (p.type === 'survey') {
-        const page = await fetchAnswers(p.id)
-        voterAvatars.value = page.list
-          .slice(0, 4)
-          .map((a, i) => a.user ?? { id: `anon${i}`, name: '匿' })
-      } else {
-        const voters = await fetchVoters(p.id)
-        voterAvatars.value = voters.slice(0, 4).map((v, i) => v.user ?? { id: `anon${i}`, name: '匿' })
-      }
+    // 参与入口的头像叠层：投票取投票人；问卷在上面已经按回答人取过了
+    if (p.type !== 'survey' && (hasVoted.value || isOwner.value)) {
+      const voters = await fetchVoters(p.id)
+      voterAvatars.value = voters.slice(0, 4).map((v, i) => v.user ?? { id: `anon${i}`, name: '匿' })
     }
   } catch {
     uni.showToast({ title: '加载失败', icon: 'none' })
@@ -262,7 +272,7 @@ async function doVote() {
   if (!poll.value) return
   submitting.value = true
   try {
-    const next = await votePoll(poll.value.id, selection.value)
+    const next = await votePoll(poll.value.id, selection.value, infoValue.value.trim() || undefined)
     poll.value = next
     myVote.value = [...selection.value]
     infoVisible.value = false
@@ -331,6 +341,11 @@ function goAnswers() {
   go(ROUTES.surveyAnswers, { id: pollId.value })
 }
 
+/** 27/80 分享页：海报 + 微信/朋友圈/更多 */
+function goShare() {
+  go(ROUTES.share, { id: pollId.value })
+}
+
 /** 发起人右上角「···」：和 41 列表里的面板同一套动作 */
 function openManage() {
   uni.showActionSheet({
@@ -388,7 +403,9 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             <view class="meta__left">
               <view v-if="hasVoted" class="meta__live meta__live--voted">
                 <AppIcon name="circle-check" :size="12" color="#4F46E5" :stroke-width="2" />
-                <text class="meta__live-text meta__live-text--voted">你已投票</text>
+                <text class="meta__live-text meta__live-text--voted">
+                  {{ isSurvey ? '你已提交' : '你已投票' }}
+                </text>
               </view>
               <view v-else class="meta__live" :class="{ 'meta__live--ended': isEnded }">
                 <view class="meta__dot" :class="{ 'meta__dot--ended': isEnded }" />
@@ -409,7 +426,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             </view>
 
             <view
-              v-if="hasVoted && !isSurvey && poll.rules.allowEdit && !isEnded"
+              v-if="hasVoted && !isSurvey && !isOwner && poll.rules.allowEdit && !isEnded"
               class="meta__revoke"
               @tap="onRevoke"
             >
@@ -551,16 +568,44 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             </view>
           </template>
 
-          <!-- ============ 问卷（已提交） ============ -->
+          <!-- ============ 问卷（未提交 / 已提交） ============ -->
           <template v-else>
             <view class="question">
               <text class="question__label">说说你的想法</text>
               <text class="question__hint">
-                自由填写 · 已提交{{ myAnswers.length > 1 ? ` ${myAnswers.length} 次` : '' }}
+                <template v-if="hasVoted">
+                  自由填写 · 已提交{{ myAnswers.length > 1 ? ` ${myAnswers.length} 次` : '' }}
+                </template>
+                <template v-else>自由填写</template>
               </text>
             </view>
 
-            <view class="answer">
+            <!-- 75 发起人还没填：先看最新回答，而不是一张空的「我的回答」 -->
+            <view v-if="!hasVoted" class="latest">
+              <view class="latest__head">
+                <text class="latest__title">最新回答</text>
+                <text class="latest__sub">共 {{ poll.answerCount ?? 0 }} 条</text>
+              </view>
+
+              <view v-for="a in latestAnswers" :key="a.id" class="latest__item">
+                <AppAvatar :src="a.user?.avatar" :name="a.user?.name ?? '匿'" :size="32" />
+                <view class="latest__body">
+                  <view class="latest__top">
+                    <text class="latest__name">{{ a.user?.name ?? `#${a.id}` }}</text>
+                    <text class="latest__time">{{ formatRelative(a.createdAt) }}</text>
+                  </view>
+                  <text class="latest__text">{{ a.content || '（跳过未答）' }}</text>
+                </view>
+              </view>
+
+              <view v-if="!latestAnswers.length" class="latest__empty">还没有人回答</view>
+
+              <view v-if="latestAnswers.length" class="latest__more" @tap="goAnswers">
+                <text class="latest__more-text">查看全部 {{ poll.answerCount ?? 0 }} 条回答</text>
+              </view>
+            </view>
+
+            <view v-else class="answer">
               <view class="answer__head">
                 <text class="answer__label">我的回答</text>
                 <view class="answer__badge">
@@ -578,11 +623,13 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
               </view>
             </view>
 
-            <view class="footer-stat">
+            <!-- 75 未提交时没有这一行：卡里已经是别人的回答，再补一句「剩 3 天」反而抢戏 -->
+            <view v-if="hasVoted" class="footer-stat">
               <text class="footer-stat__text">{{ remainingText }}</text>
             </view>
 
-            <view v-if="poll.rules.allowComment" class="discuss">
+            <!-- 一条评论都没有时不摆空卡：只剩「讨论 0 / 查看全部」两行字，像没加载出来 -->
+            <view v-if="poll.rules.allowComment && poll.commentCount > 0" class="discuss">
               <view class="discuss__head">
                 <text class="discuss__title">讨论 {{ poll.commentCount }}</text>
                 <text class="discuss__all" @tap="goComments">查看全部</text>
@@ -641,7 +688,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             </AppButton>
           </view>
           <view class="actions__main">
-            <AppButton size="submit" icon="share-2" open-type="share">分享投票</AppButton>
+            <AppButton size="submit" icon="share-2" @tap="goShare">分享投票</AppButton>
           </view>
         </template>
 
@@ -659,7 +706,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
           </view>
         </template>
 
-        <!-- 问卷 · 已提交（69/70/76：并列按钮等分整行） -->
+        <!-- 问卷 · 未提交（75：发起人也要能直接去填写）/ 已提交（69/70/76） -->
         <template v-else>
           <view v-if="isOwner" class="actions__half">
             <AppButton type="subtle" size="action" icon="chart-no-axes-column" @tap="goData">
@@ -667,7 +714,13 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             </AppButton>
           </view>
 
-          <template v-if="canRepeat">
+          <view v-if="!hasVoted" class="actions__half">
+            <AppButton size="action" icon="square-pen" :disabled="isEnded" @tap="goFill">
+              {{ isEnded ? '问卷已截止' : '提交回答' }}
+            </AppButton>
+          </view>
+
+          <template v-else-if="canRepeat">
             <view class="actions__half">
               <AppButton type="subtle" size="action" icon="history" @tap="goMine">我的提交</AppButton>
             </view>
@@ -681,7 +734,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
           </view>
 
           <view v-else class="actions__half">
-            <AppButton type="subtle" size="action" icon="share-2" open-type="share">
+            <AppButton type="subtle" size="action" icon="share-2" @tap="goShare">
               分享问卷
             </AppButton>
           </view>
@@ -1266,6 +1319,105 @@ export default { name: 'PollDetailPage' }
   &__time,
   &__count {
     font-size: 11px;
+    color: $faint;
+  }
+}
+
+/* 75：发起人还没填时展示的最新回答 */
+.latest {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: 16px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 12px;
+  }
+
+  &__title {
+    font-size: 14px;
+    font-weight: 600;
+    color: $ink;
+  }
+
+  &__sub {
+    font-size: 11px;
+    color: $faint;
+  }
+
+  /* 分割线从正文左沿开始（让出 32 头像 + 10 间距），不横穿头像 */
+  &__item {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    padding: 12px 0;
+  }
+
+  &__item + &__item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 42px;
+    right: 0;
+    height: 1px;
+    background: $line;
+  }
+
+  &__more {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__more-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: $accent-ink;
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__name {
+    font-size: 12px;
+    font-weight: 500;
+    color: $ink;
+  }
+
+  &__time {
+    font-size: 10px;
+    color: $faint;
+  }
+
+  &__text {
+    font-size: 12px;
+    line-height: 1.5;
+    color: $muted;
+  }
+
+  &__empty {
+    padding: 16px 0 4px;
+    text-align: center;
+    font-size: 12px;
     color: $faint;
   }
 }

@@ -274,7 +274,8 @@ export default { name: 'SupportPage' }
 
   &__input {
     width: 100%;
-    height: 44px;
+    /* 跟着 84 高的灰框走：写死 44 的话下面空一截，多打两行还会被截 */
+    height: 100%;
     font-size: 12px;
     color: $ink;
     line-height: 1.5;

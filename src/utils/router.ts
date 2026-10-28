@@ -22,6 +22,7 @@ export const ROUTES = {
   detailResult: '/pages/detail/result',
   detailVoters: '/pages/detail/voters',
   detailComments: '/pages/detail/comments',
+  share: '/pages/share/index',
 
   createType: '/pages/create/type',
   createContent: '/pages/create/content',
@@ -99,6 +100,23 @@ export function replace(path: string, query?: RouteQuery): void {
  */
 export function reset(path: string, query?: RouteQuery): void {
   uni.reLaunch({ url: buildUrl(path, query) })
+}
+
+/**
+ * 退出一个多步流程（如创建投票的三步向导），回到进入流程前的那一页。
+ *
+ * 不能用 reLaunch：H5 上它会把整棵页面树拆掉再重建，中间闪一帧白屏，
+ * 用户看到的就是「点取消 → 白一下 → 回到首页」。
+ * 栈里还有上一页时直接 navigateBack 把流程页一起弹掉，页面实例还在，不会闪；
+ * 只有从分享卡片直接进来（栈里只有一页）时才退回首页。
+ */
+export function exitFlow(fallback: string = ROUTES.home): void {
+  const pages = getCurrentPages()
+  if (pages.length > 1) {
+    uni.navigateBack({ delta: pages.length - 1 })
+    return
+  }
+  switchTab(fallback)
 }
 
 /** 切 tab 页（复用页面实例，不重建） */

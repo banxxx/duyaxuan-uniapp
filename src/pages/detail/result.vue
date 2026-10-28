@@ -110,6 +110,11 @@ function backToDetail() {
   backTo(ROUTES.detail, { id: pollId.value })
 }
 
+/** 27 分享页：海报 + 分享渠道 */
+function goShare() {
+  go(ROUTES.share, { id: pollId.value })
+}
+
 onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }))
 </script>
 
@@ -276,9 +281,9 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
       </view>
     </scroll-view>
 
-    <!-- 21 底部只有一个「分享给同事」，open-type=share 直接拉起分享面板 -->
+    <!-- 21 底部只有一个「分享给同事」，进 27 分享页拿海报 -->
     <view v-if="poll && mode === 'visible'" class="result__actions" :style="{ paddingBottom: bottomInset(20) }">
-      <AppButton type="subtle" size="cta" icon="link" open-type="share">分享给同事</AppButton>
+      <AppButton type="subtle" size="cta" icon="link" @tap="goShare">分享给同事</AppButton>
     </view>
   </view>
 </template>

@@ -26,6 +26,9 @@ const USE_MOCK = useMock()
 
 const delay = (ms = 180) => new Promise((r) => setTimeout(r, ms))
 
+/** mock：记录我填过的「需个人信息」，真实后端由 votes/answers 表保存 */
+const mockMyProfileInfo: Record<string, string> = {}
+
 function paginate<T>(list: T[], cursor?: string | null, size = 20): Paged<T> {
   const start = cursor ? Number(cursor) : 0
   const slice = list.slice(start, start + size)
@@ -69,6 +72,12 @@ export async function fetchJoinedPolls(
         const ended = p.rules.endAt <= Date.now()
         return status === 'ended' ? ended : !ended
       })
+      // 问卷列表行要显示「已回答 / 待填写」，后端在列表接口里一并给出
+      .map((p) =>
+        p.type === 'survey'
+          ? { ...p, myAnswered: (mockMyAnswers[p.id]?.length ?? 0) > 0 }
+          : p
+      )
     return paginate(list, cursor)
   }
   return http.get<Paged<Poll>>('/polls/joined', { status, cursor })
@@ -122,7 +131,11 @@ export async function fetchStats(): Promise<Array<{ value: string | number; labe
   return http.get<Array<{ value: string | number; label: string }>>('/polls/stats')
 }
 
-export async function votePoll(pollId: string, optionIds: string[]): Promise<Poll> {
+export async function votePoll(
+  pollId: string,
+  optionIds: string[],
+  profileInfo?: string
+): Promise<Poll> {
   if (USE_MOCK) {
     await delay(300)
     const poll = mockPolls.find((p) => p.id === pollId)
@@ -132,9 +145,10 @@ export async function votePoll(pollId: string, optionIds: string[]): Promise<Pol
     })
     poll.voterCount += 1
     mockMyVotes[pollId] = [...optionIds]
+    if (profileInfo) mockMyProfileInfo[pollId] = profileInfo
     return JSON.parse(JSON.stringify(poll))
   }
-  return http.post<Poll>(`/polls/${pollId}/vote`, { optionIds })
+  return http.post<Poll>(`/polls/${pollId}/vote`, { optionIds, profileInfo })
 }
 
 /** 撤回我这一票（仅在「允许修改选择」且未截止时可用） */
@@ -257,14 +271,19 @@ export async function fetchAnswers(pollId: string, cursor?: string | null): Prom
   return http.get<Paged<SurveyAnswer>>(`/polls/${pollId}/answers`, { cursor })
 }
 
-export async function submitAnswer(pollId: string, content: string): Promise<SurveyAnswer> {
+export async function submitAnswer(
+  pollId: string,
+  content: string,
+  profileInfo?: string
+): Promise<SurveyAnswer> {
   if (USE_MOCK) {
     await delay(300)
     const answer: SurveyAnswer = {
       id: `a${Date.now()}`,
       pollId,
       content,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      profileInfo
     }
     mockAnswers.unshift(answer)
     mockMyAnswers[pollId] = [...(mockMyAnswers[pollId] ?? []), answer.id]
@@ -272,7 +291,7 @@ export async function submitAnswer(pollId: string, content: string): Promise<Sur
     if (poll) poll.answerCount = (poll.answerCount ?? 0) + 1
     return answer
   }
-  return http.post<SurveyAnswer>(`/polls/${pollId}/answers`, { content })
+  return http.post<SurveyAnswer>(`/polls/${pollId}/answers`, { content, profileInfo })
 }
 
 /** 我在这份问卷里提交过的回答，按时间倒序（71 我的提交记录） */

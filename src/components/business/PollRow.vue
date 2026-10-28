@@ -74,9 +74,15 @@ const countText = computed(() => {
   return `${props.poll.voterCount} 票`
 })
 
-/** 问卷没有「投了哪项」，有回答就显示「已回答」；投票按单选/多选给不同措辞 */
+/**
+ * 问卷没有「投了哪项」，只有「我答没答」。
+ * 不能用 answerCount 判断：那是所有人回答的总数，别人答了 34 条不代表我答过。
+ */
 const myChoice = computed(() => {
-  if (isSurvey.value) return props.poll.answerCount ? '已回答 · 可修改' : ''
+  if (isSurvey.value) {
+    if (!props.poll.myAnswered) return ''
+    return props.poll.rules.allowEdit && !isEnded.value ? '已回答 · 可修改' : '已回答'
+  }
   if (props.poll.myChoiceCount) return `你投了 ${props.poll.myChoiceCount} 项`
   return props.poll.myChoice ? `你投了：${props.poll.myChoice}` : ''
 })

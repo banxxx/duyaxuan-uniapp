@@ -6,7 +6,8 @@ import type { Poll, Comment, SurveyAnswer } from '@/types/api'
  * 后端还没起来时用它跑通页面；接后端后把 .env 的 VITE_USE_MOCK 关掉即可。
  * 数据口径沿用设计稿：
  *   「部门月度之星评选」42 票 / 9 条评论（41 列表首行，编辑页 90/91 编辑的就是它）
- *   「公司文化衫设计建议」问卷 34 条回答 / 3 条评论（已截止）
+ *   「关于下季度团建」问卷 34 条回答 / 3 条评论（已截止，可汇总）
+ *   「团建预算怎么分配？」问卷 12 条回答（进行中，我在 71 里有 3 次提交）
  *   「下季度团建地点」89 人已投票，41/28/14/6 票（05/09/21 详情页）
  */
 
@@ -102,8 +103,8 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_shirt',
     type: 'survey',
-    title: '公司文化衫设计建议',
-    desc: '想让文化衫好看一点，说说你喜欢的风格或图案。',
+    title: '关于下季度团建，你有什么想法？',
+    desc: '随便聊聊想去哪、想玩什么，我们会根据大家的回答整理成投票方案。',
     creatorId: '1024',
     creatorName: '林小满',
     createdAt: now - 2 * DAY,
@@ -119,6 +120,28 @@ export const mockPolls: Poll[] = [
     answerCount: 34,
     commentCount: 3,
     viewCount: 210
+  },
+  {
+    id: 'p_survey_team',
+    type: 'survey',
+    title: '团建预算怎么分配？',
+    desc: '说说你希望预算花在哪些地方，比如住宿、餐饮、活动。',
+    creatorId: 'u_zhou',
+    creatorName: '周子墨',
+    createdAt: now - 2 * DAY,
+    rules: {
+      ...baseRules,
+      allowEdit: true,
+      // 允许重复提交：详情页才会出现「再填一次」，也才对得上我在 71 里的 3 条记录
+      allowRepeat: true,
+      resultVisibility: undefined,
+      endAt: now + 2 * DAY
+    },
+    options: [],
+    voterCount: 12,
+    answerCount: 12,
+    commentCount: 0,
+    viewCount: 64
   },
   {
     id: 'p_team',
@@ -244,30 +267,174 @@ export const mockComments: Comment[] = [
     createdAt: now - 46 * 60 * 1000,
     likeCount: 5,
     user: { id: '1024', name: '林小满' }
+  },
+  {
+    id: 'c4',
+    pollId: 'p_shirt',
+    content: '安吉的竹林晚上会冷，记得带件外套。',
+    createdAt: now - 3 * HOUR,
+    likeCount: 4,
+    user: { id: 'u_zhou', name: '周子墨' }
+  },
+  {
+    id: 'c5',
+    pollId: 'p_shirt',
+    content: '千岛湖骑行强度还好，慢慢骑就行。',
+    createdAt: now - 2 * HOUR,
+    likeCount: 2,
+    user: { id: 'u_chen', name: '陈一' }
+  },
+  {
+    id: 'c6',
+    pollId: 'p_shirt',
+    content: '预算 300 够吗？住宿好像会超。',
+    createdAt: now - 1 * HOUR,
+    likeCount: 1,
+    user: { id: '1024', name: '林小满' }
   }
 ]
 
+/**
+ * 「关于下季度团建，你有什么想法？」的 34 条回答（匿名，所以不带 user）
+ *
+ * 前 30 条正好落进 84 汇总页的 4 个候选（安吉 10 / 千岛湖 8 / 莫干山 7 / 苏州 5），
+ * 后 4 条就是 86 里的未归类 —— 汇总页三块统计相加必须等于 34，
+ * 否则「34 条回答已整理好」下面写着 30 + 4 会少 4 条。
+ */
+const SHIRT_ANSWERS: string[] = [
+  // 安吉 · 竹林露营 ×10
+  '想去安吉，竹林露营住一晚，第二天轻徒步。',
+  '投安吉一票，竹林露营听起来就很放松。',
+  '安吉吧，露营加徒步，两天一夜节奏刚好。',
+  '安吉 · 竹林露营，能住帐篷最好。',
+  '想去安吉看竹林，顺便露营一晚。',
+  '安吉，露营住一晚再徒步，不用赶路。',
+  '安吉竹林露营 +1，想去很久了。',
+  '安吉，露营和徒步都能玩到。',
+  '安吉吧，竹林拍照也好看。',
+  '安吉 · 竹林露营，那边蚊虫多不多？',
+  // 千岛湖 · 环湖骑行 ×8
+  '千岛湖吧，环湖骑行强度适中，还能坐船。',
+  '千岛湖，骑行加游船，内容比较丰富。',
+  '想去千岛湖骑车，环湖风景应该很好。',
+  '千岛湖一票，环湖路线成熟，不容易迷路。',
+  '千岛湖，骑累了还能坐船休息。',
+  '千岛湖吧，强度不大，适合所有人。',
+  '千岛湖 · 环湖骑行，想试试。',
+  '千岛湖，游船那段最期待。',
+  // 莫干山 · 山野民宿 ×7
+  '莫干山，民宿条件好，晚上还能看星星。',
+  '莫干山吧，想住山里的民宿。',
+  '莫干山一票，安静一点，能真正休息。',
+  '莫干山，徒步路线也不累。',
+  '想去莫干山，民宿加篝火。',
+  '莫干山，适合放松，不用折腾。',
+  '莫干山 · 山野民宿，晚上看星星。',
+  // 苏州古镇 ×5
+  '其实更想去苏州古镇，节奏慢一点，拍照也好看。',
+  '苏州吧，古镇走走挺舒服。',
+  '苏州古镇，人文路线，基本不用体力。',
+  '苏州一票，慢慢逛，吃点当地小吃。',
+  '苏州古镇，两天一夜刚刚好。',
+  // 未归类 ×4（对应 86 的 4 条）
+  '都可以，听大家的。',
+  '不太想去太远的地方，车程两小时以内。',
+  '有没有海边？想看海。',
+  '预算能再低点就好，200 以内。'
+]
+
 export const mockAnswers: SurveyAnswer[] = [
-  {
-    id: 'a89',
+  ...SHIRT_ANSWERS.map((content, i) => ({
+    id: String(89 - i),
     pollId: 'p_shirt',
-    content: '想要简约一点的，深色底 + 小logo，通勤也能穿。',
-    createdAt: now - 2 * 60 * 1000,
+    content,
+    createdAt: now - (2 + i * 3) * 60 * 1000,
     user: undefined
+  })),
+  // 「团建预算怎么分配？」12 条，其中前 3 条是我（1024）重复提交的
+  {
+    id: 'sa3',
+    pollId: 'p_survey_team',
+    content: '住宿多分一点吧，住得舒服最重要。',
+    createdAt: now - 26 * 60 * 1000,
+    user: { id: '1024', name: '林小满' }
   },
   {
-    id: 'a88',
-    pollId: 'p_shirt',
-    content: '纯棉宽松版型，颜色选藏青或者米白，别太花。',
-    createdAt: now - 18 * 60 * 1000,
-    user: undefined
+    id: 'sa2',
+    pollId: 'p_survey_team',
+    content: '餐饮和住宿各一半，活动留一点。',
+    createdAt: now - 54 * 60 * 1000,
+    user: { id: '1024', name: '林小满' }
   },
   {
-    id: 'a87',
-    pollId: 'p_shirt',
-    content: '可以印一句团队口号在背后，前面只放小图标。',
-    createdAt: now - 42 * 60 * 1000,
-    user: undefined
+    id: 'sa1',
+    pollId: 'p_survey_team',
+    content: '活动预算别砍太多，篝火和烧烤还是要有的。',
+    createdAt: now - 3 * HOUR,
+    user: { id: '1024', name: '林小满' }
+  },
+  {
+    id: 'sb9',
+    pollId: 'p_survey_team',
+    content: '住宿 40%，餐饮 35%，活动 25% 这样分。',
+    createdAt: now - 4 * HOUR,
+    user: { id: 'u_zhou', name: '周子墨' }
+  },
+  {
+    id: 'sb8',
+    pollId: 'p_survey_team',
+    content: '希望餐饮能多给一点，上次团建吃得太简单。',
+    createdAt: now - 5 * HOUR,
+    user: { id: 'u_chen', name: '陈一' }
+  },
+  {
+    id: 'sb7',
+    pollId: 'p_survey_team',
+    content: '活动可以少花点，主要是住和吃。',
+    createdAt: now - 6 * HOUR,
+    user: { id: 'u_sun', name: '孙悦' }
+  },
+  {
+    id: 'sb6',
+    pollId: 'p_survey_team',
+    content: '住宿标准不用太高，干净就行，钱留给活动。',
+    createdAt: now - 8 * HOUR,
+    user: { id: 'u_wang', name: '王思远' }
+  },
+  {
+    id: 'sb5',
+    pollId: 'p_survey_team',
+    content: '交通也算在预算里吗？如果含交通，住宿就得降一点。',
+    createdAt: now - 10 * HOUR,
+    user: { id: 'u_li', name: '李然' }
+  },
+  {
+    id: 'sb4',
+    pollId: 'p_survey_team',
+    content: '平均分就好，别太纠结比例。',
+    createdAt: now - 12 * HOUR,
+    user: { id: 'u_wu', name: '吴桐' }
+  },
+  {
+    id: 'sb3',
+    pollId: 'p_survey_team',
+    content: '建议留 10% 做机动，临时买水买零食。',
+    createdAt: now - 1 * DAY,
+    user: { id: 'u_zhao', name: '赵敏' }
+  },
+  {
+    id: 'sb2',
+    pollId: 'p_survey_team',
+    content: '活动预算多一点，不然两天一夜会很无聊。',
+    createdAt: now - 1 * DAY - 2 * HOUR,
+    user: { id: 'u_zhou', name: '周子墨' }
+  },
+  {
+    id: 'sb1',
+    pollId: 'p_survey_team',
+    content: '都可以，按人头均摊最省事。',
+    createdAt: now - 1 * DAY - 5 * HOUR,
+    user: { id: 'u_chen', name: '陈一' }
   }
 ]
 
@@ -341,7 +508,10 @@ export const mockMyVotes: Record<string, string[]> = {
 }
 
 /** pollId → 我提交的问卷回答 id（可重复提交时有多条） */
-export const mockMyAnswers: Record<string, string[]> = {}
+export const mockMyAnswers: Record<string, string[]> = {
+  // 「团建预算怎么分配？」我重复提交了 3 次，详情页显示「已提交 3 次」
+  p_survey_team: ['sa3', 'sa2', 'sa1']
+}
 
 /* ============================================================
  * 44 消息通知
@@ -469,28 +639,28 @@ export const mockCandidates: SummaryCandidate[] = [
     id: 'c_anji',
     title: '安吉 · 竹林露营',
     desc: '竹林露营住一晚，第二天轻徒步',
-    answerCount: 14,
+    answerCount: 10,
     sample: '想去安吉，竹林露营住一晚，第二天徒步…'
   },
   {
     id: 'c_qiandao',
     title: '千岛湖 · 环湖骑行',
     desc: '环湖骑行 + 坐船，强度适中',
-    answerCount: 12,
+    answerCount: 8,
     sample: '千岛湖吧，环湖骑行强度适中，还能坐船…'
   },
   {
     id: 'c_moganshan',
     title: '莫干山 · 山野民宿',
     desc: '民宿住一晚，晚上还能看星星',
-    answerCount: 11,
+    answerCount: 7,
     sample: '莫干山，民宿条件好，晚上还能看星星…'
   },
   {
     id: 'c_suzhou',
     title: '苏州古镇 · 慢节奏',
     desc: '古镇慢游，拍照也好看',
-    answerCount: 9,
+    answerCount: 5,
     sample: '其实更想去苏州古镇，节奏慢一点，拍照…'
   }
 ]

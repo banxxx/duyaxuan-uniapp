@@ -235,7 +235,6 @@ function goRules() {
               :maxlength="DESC_MAX"
               placeholder="补充背景、规则或预算，帮助参与者判断"
               placeholder-class="field__ph"
-              auto-height
             />
           </view>
           <view class="field__foot field__foot--end">

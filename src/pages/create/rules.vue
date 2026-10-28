@@ -13,7 +13,7 @@ import RuleRow from '@/components/business/RuleRow.vue'
 import { useDraftStore } from '@/stores/draft'
 import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
-import { back, go, reset, ROUTES } from '@/utils/router'
+import { back, exitFlow, go, ROUTES } from '@/utils/router'
 
 /**
  * 30 创建 · ③ 规则 · 单选 / 31 · 多选 / 63 · 问卷（含 32/34/35/36/37/38 六个弹层）
@@ -137,12 +137,14 @@ function onBack() {
 }
 
 /**
- * 左上角「取消」= 放弃整个创建流程，回首页。
+ * 左上角「取消」= 放弃整个创建流程，回进入流程前的那一页。
  * 底部「上一步」才是退到上一步骤，两者语义不同，不能共用。
  * 草稿保留，下次进来还能续上。
+ *
+ * 退出走 exitFlow()，别用 reLaunch：H5 上会先白屏一帧再回到首页。
  */
 function cancel() {
-  reset(ROUTES.home)
+  exitFlow()
 }
 
 function publish() {
@@ -171,10 +173,13 @@ function publish() {
       </template>
     </AppNavBar>
 
+    <!-- 步骤条和导航栏一起吸顶：它不在 scroll-view 里，所以只有下面的内容在滚 -->
+    <view class="rules__steps">
+      <StepBar :current="3" />
+    </view>
+
     <scroll-view class="rules__scroll" scroll-y>
       <view class="rules__inner">
-        <StepBar :current="3" />
-
         <view class="head">
           <text class="head__title">{{ isSurvey ? '问卷规则' : '投票规则' }}</text>
           <text class="head__sub">
@@ -531,7 +536,12 @@ export default { name: 'CreateRulesPage' }
 
 <style lang="scss" scoped>
 .rules {
-  min-height: 100vh;
+  /*
+   * 定高而不是 min-height：容器 auto 高时里面的 scroll-view 会被内容撑开，
+   * 变成整页在滚、底部操作栏跟着跑。定成 100vh 后滚动交给 scroll-view，
+   * 导航栏、步骤条、操作栏三块才固定得住。
+   */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -561,13 +571,27 @@ export default { name: 'CreateRulesPage' }
     color: $accent;
   }
 
+  /*
+   * 步骤条：和导航栏一起固定在顶部，不进 scroll-view。
+   * 放在滚动容器外面比 sticky 稳 —— 小程序里 sticky 在 scroll-view 内并不可靠。
+   */
+  &__steps {
+    flex-shrink: 0;
+    /* 下边留 8：滚动内容在这里被裁掉，贴着「1 方式 2 内容 3 规则」会显得很挤 */
+    padding: 4px $gutter 8px;
+    background: $bg;
+  }
+
   &__scroll {
     flex: 1;
     height: 0;
+    /* flex 项默认 min-height: auto，会被内容撑开而不是内部滚动 —— 步骤条就白吸顶了 */
+    min-height: 0;
   }
 
+  /* 上内边距和步骤条的下边距合起来，还是原来那条 16 的间距 */
   &__inner {
-    padding: 4px $gutter 20px;
+    padding: 8px $gutter 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;

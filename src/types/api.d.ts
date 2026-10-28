@@ -77,6 +77,12 @@ export interface Poll {
    */
   myChoice?: string
   myChoiceCount?: number
+  /**
+   * 问卷：我是否已经提交过回答。
+   * 列表里不能拿 answerCount 判断——那是所有人回答的总数，
+   * 别人答了 34 条不代表我答过。
+   */
+  myAnswered?: boolean
   deletedAt?: number | null
 }
 
@@ -87,6 +93,8 @@ export interface Vote {
   createdAt: number
   /** 匿名投票时不返回 */
   user?: { id: string; name: string; avatar?: string }
+  /** 发起人要求填写的个人信息，仅发起人可见 */
+  profileInfo?: string
 }
 
 export interface SurveyAnswer {
@@ -97,6 +105,8 @@ export interface SurveyAnswer {
   updatedAt?: number
   /** 匿名收集时不返回 */
   user?: { id: string; name: string; avatar?: string }
+  /** 发起人要求填写的个人信息，仅发起人可见 */
+  profileInfo?: string
   /** 汇总时归到哪个选项 */
   optionId?: string | null
 }

@@ -7,7 +7,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import { fetchPoll, fetchMyAnswers } from '@/api/poll'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
-import { backTo, ROUTES } from '@/utils/router'
+import { backTo, go, ROUTES } from '@/utils/router'
 
 /**
  * 66 问卷 · 提交成功
@@ -46,6 +46,12 @@ function viewMine() {
   backTo(ROUTES.detail, { id: pollId.value })
 }
 
+/** 80 分享页：先停掉自动返回，否则 3 秒后会把分享页一起弹掉 */
+function goShare() {
+  if (timer) clearTimeout(timer)
+  go(ROUTES.share, { id: pollId.value })
+}
+
 onShareAppMessage(() =>
   poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }
 )
@@ -75,10 +81,10 @@ onShareAppMessage(() =>
         <view class="done__primary" hover-class="done__primary--active" @tap="viewMine">
           <text class="done__primary-text">查看我的回答</text>
         </view>
-        <button class="done__secondary" hover-class="done__secondary--active" open-type="share">
+        <view class="done__secondary" hover-class="done__secondary--active" @tap="goShare">
           <AppIcon name="share-2" :size="17" color="#09090B" />
           <text class="done__secondary-text">邀请同事一起填</text>
-        </button>
+        </view>
       </view>
 
       <text class="done__note">3 秒后自动返回问卷详情</text>

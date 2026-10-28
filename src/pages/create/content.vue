@@ -10,7 +10,7 @@ import { useDraftStore } from '@/stores/draft'
 import type { DraftOption } from '@/stores/draft'
 import { charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
-import { back, go, reset, ROUTES } from '@/utils/router'
+import { back, exitFlow, go, ROUTES } from '@/utils/router'
 
 /**
  * 29 创建 · ② 内容（投票）/ 62 创建 · ② 内容（问卷）/ 33 添加选项弹层
@@ -62,10 +62,13 @@ function goBack() {
  * 不能和底部「上一步」共用 back() —— 那只是退回上一个步骤，
  * 用户点「取消」的语义是「不建了」，必须一次性退出向导。
  * 草稿仍然保留，下次进来能续上。
+ *
+ * 退出走 exitFlow()：一次性弹掉向导页而不是 reLaunch 重建首页，
+ * 否则 H5 上会先白屏一帧再回到首页。
  */
 function cancel() {
   syncToDraft()
-  reset(ROUTES.home)
+  exitFlow()
 }
 
 /** 问卷 → 投票：回到汇总页重新挑选项 */
@@ -172,10 +175,13 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
       </template>
     </AppNavBar>
 
+    <!-- 步骤条和导航栏一起吸顶：它不在 scroll-view 里，所以只有下面的内容在滚 -->
+    <view class="content__steps">
+      <StepBar :current="2" />
+    </view>
+
     <scroll-view class="content__scroll" scroll-y>
       <view class="content__inner">
-        <StepBar :current="2" />
-
         <!-- 投票主题 -->
         <view class="field">
           <text class="field__label">{{ isSurvey ? '问卷主题' : '投票主题' }}</text>
@@ -212,7 +218,6 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
                   : '补充背景、规则或预算，帮助参与者判断'
               "
               placeholder-class="field__ph"
-              auto-height
               @blur="syncToDraft"
             />
           </view>
@@ -383,7 +388,12 @@ export default { name: 'CreateContentPage' }
 
 <style lang="scss" scoped>
 .content {
-  min-height: 100vh;
+  /*
+   * 这里必须是定高而不是 min-height：容器高度 auto 时，里面的 scroll-view
+   * （flex: 1; height: 0）会被内容撑开，结果是整页在滚、底部操作栏跟着跑。
+   * 定成 100vh 后滚动交给 scroll-view，导航栏、步骤条、操作栏三块才是固定的。
+   */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -413,13 +423,28 @@ export default { name: 'CreateContentPage' }
     color: $accent;
   }
 
+  /*
+   * 步骤条：和导航栏一起固定在顶部，不进 scroll-view。
+   * 放在滚动容器外面比 sticky 稳 —— 小程序里 sticky 在 scroll-view 内并不可靠。
+   * 背景铺 $bg，滚动时内容不会从它两侧透出来。
+   */
+  &__steps {
+    flex-shrink: 0;
+    /* 下边留 8：滚动内容在这里被裁掉，贴着「1 方式 2 内容 3 规则」会显得很挤 */
+    padding: 4px $gutter 8px;
+    background: $bg;
+  }
+
   &__scroll {
     flex: 1;
     height: 0;
+    /* flex 项默认 min-height: auto，会被内容撑开而不是内部滚动 —— 步骤条就白吸顶了 */
+    min-height: 0;
   }
 
+  /* 上内边距和步骤条的下边距合起来，还是原来那条 16 的间距 */
   &__inner {
-    padding: 4px $gutter 20px;
+    padding: 8px $gutter 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;

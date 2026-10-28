@@ -1,6 +1,7 @@
 <template>
-  <view class="home" :style="{ paddingTop: `${contentTop}px` }">
-    <view class="home__content">
+  <view class="home">
+    <!-- 吸顶区：问候 + 搜索。整页滚动时这两块停在胶囊下方，内容从下面穿过去 -->
+    <view class="home__sticky" :style="{ paddingTop: `${contentTop}px` }">
       <!-- Header：问候 + 铃铛 + 头像（设计稿 02：Greeting 宽度自适应，不参与撑满） -->
       <view class="home__header">
         <view class="home__greeting">
@@ -24,7 +25,9 @@
         <AppIcon name="search" :size="18" color="#A1A1AA" />
         <text class="home__search-text">搜索投票或问卷</text>
       </view>
+    </view>
 
+    <view class="home__content">
       <!-- 61 网络错误：整页换成错误态，下拉可重试 -->
       <view v-if="error" class="home__body">
         <AppEmpty
@@ -161,6 +164,10 @@ import { ROUTES, go, switchTab } from '@/utils/router'
  *
  * 布局对齐设计稿 02：整页是一条竖向流（gap 18、padding [8,20,18,20]），
  * 不再给每个区块单独加 padding —— 那样区块间距会变成 22+12，和设计稿差一倍。
+ *
+ * 问候和搜索被拆成独立的吸顶区（.home__sticky）：往下滚时它们停在顶部，
+ * 其余区块从下面穿过去。视觉节奏没变——吸顶区下内边距 0，内容区上内边距 18，
+ * 合起来还是原来那条 18 的间距。
  */
 const user = useUserStore()
 
@@ -247,13 +254,32 @@ export default { name: 'HomePage' }
   display: flex;
   flex-direction: column;
 
-  /* 设计稿 Content：竖向流，gap 18，padding [8,20,18,20] */
+  /*
+   * 吸顶区：问候 + 搜索。
+   *
+   * 用 position: sticky 而不是 fixed —— 页面靠原生下拉刷新滚动，
+   * fixed 会脱出文档流，还得自己补高度；sticky 跟着流走，滚到顶就停住。
+   * 背景必须是不透明的 $bg：内容从下面穿过去，透出来就花了。
+   * padding-top 由 contentTop 内联给，停在胶囊下沿，不会顶到状态栏。
+   */
+  &__sticky {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: $bg;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 8px $gutter 0;
+  }
+
+  /* 设计稿 Content：竖向流，gap 18；上内边距承接吸顶区与首个区块的 18 间距 */
   &__content {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: 18px;
-    padding: 8px $gutter 18px;
+    padding: 18px $gutter 18px;
   }
 
   &__header {

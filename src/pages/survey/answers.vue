@@ -7,7 +7,13 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
-import { fetchPoll, fetchAnswers, endPoll } from '@/api/poll'
+import {
+  fetchPoll,
+  fetchAnswers,
+  fetchSummaryCandidates,
+  fetchUnclassified,
+  endPoll
+} from '@/api/poll'
 import { formatDate, formatDateTime, formatRelative, formatRemaining, charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
@@ -31,6 +37,10 @@ const loading = ref(true)
 const pollId = ref('')
 const endSheet = ref(false)
 
+/** 78 汇总入口的三块统计：候选数、已归类、未归类，全部按真实汇总结果算 */
+const summaryCandidates = ref<Array<{ answerCount: number }>>([])
+const summaryUnclassified = ref<Array<unknown>>([])
+
 const isEnded = computed(() => !!poll.value && poll.value.rules.endAt <= Date.now())
 const canSummarize = computed(() => isEnded.value && answers.value.length > 0)
 
@@ -45,22 +55,48 @@ const avgChars = computed(() => {
 /** 跳过未答：空内容的条数（设计稿写 11 人，这里按真实空回答数算） */
 const skipped = computed(() => answers.value.filter((a) => !a.content.trim()).length)
 
-/** 汇总统计：候选选项数、已归类、未归类 —— 由后端算，这里给设计稿口径的占位 */
+/** 汇总统计：候选选项数、已归类、未归类 —— 跟 84 汇总页用同一份数据，避免两边数字打架 */
 const summaryMeta = computed(() => ({
-  candidates: 12,
-  classified: answers.value.length - 13,
-  unclassified: 13
+  candidates: summaryCandidates.value.length,
+  classified: summaryCandidates.value.reduce((s, c) => s + c.answerCount, 0),
+  unclassified: summaryUnclassified.value.length
 }))
 
 const progress = computed(() => (isEnded.value ? 100 : 37))
+
+/**
+ * 这一页要出「平均字数 / 跳过未答」两个统计，只拿第一页算出来的数是错的。
+ * 逐页取完（最多 10 页兜底），列表和统计才和顶部的「已收到回答 34 份」对得上。
+ */
+async function loadAllAnswers(id: string): Promise<SurveyAnswer[]> {
+  const first = await fetchAnswers(id)
+  let list = first.list
+  let cursor = first.cursor
+  let more = first.hasMore
+  let guard = 0
+  while (more && guard++ < 10) {
+    const next = await fetchAnswers(id, cursor)
+    list = [...list, ...next.list]
+    cursor = next.cursor
+    more = next.hasMore
+  }
+  return list
+}
 
 async function load() {
   loading.value = true
   try {
     const p = await fetchPoll(pollId.value)
     poll.value = p
-    const res = await fetchAnswers(p.id)
-    answers.value = res.list
+    const ended = p.rules.endAt <= Date.now()
+    const [list, candidates, unclassified] = await Promise.all([
+      loadAllAnswers(p.id),
+      ended ? fetchSummaryCandidates(p.id) : Promise.resolve([]),
+      ended ? fetchUnclassified(p.id) : Promise.resolve([])
+    ])
+    answers.value = list
+    summaryCandidates.value = candidates
+    summaryUnclassified.value = unclassified
   } finally {
     loading.value = false
   }
@@ -80,12 +116,13 @@ function goSummary() {
   go(ROUTES.summary, { surveyId: pollId.value })
 }
 
-function goAllAnswers() {
-  go(ROUTES.detailVoters, { id: pollId.value })
-}
-
 function exportData() {
   uni.showToast({ title: '导出文件已发送到微信', icon: 'none' })
+}
+
+/** 80 分享页：海报 + 分享渠道 */
+function goShare() {
+  go(ROUTES.share, { id: pollId.value })
 }
 
 /** 导航栏「···」：设计稿 77/78 右侧只有一个操作入口 */
@@ -228,9 +265,6 @@ async function doEnd() {
               desc="分享出去，邀请同事来填写吧"
             />
 
-            <view v-if="answers.length" class="responses__more" @tap="goAllAnswers">
-              <text class="responses__more-text">查看全部 {{ answers.length }} 条回答</text>
-            </view>
           </view>
         </view>
       </scroll-view>
@@ -247,9 +281,8 @@ async function doEnd() {
         <AppButton
           size="cta"
           :icon="canSummarize ? 'sparkles' : 'share-2'"
-          :open-type="canSummarize ? undefined : 'share'"
           class="answers__action"
-          @tap="canSummarize ? goSummary() : undefined"
+          @tap="canSummarize ? goSummary() : goShare()"
         >
           {{ canSummarize ? '汇总成投票' : '邀请填写' }}
         </AppButton>
@@ -581,18 +614,6 @@ export default { name: 'SurveyAnswersPage' }
     color: $faint;
   }
 
-  &__more {
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  &__more-text {
-    font-size: 12px;
-    font-weight: 600;
-    color: $accent-ink;
-  }
 }
 
 .response {

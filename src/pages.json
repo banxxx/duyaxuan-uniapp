@@ -40,6 +40,10 @@
       "style": { "navigationStyle": "custom" }
     },
     {
+      "path": "pages/share/index",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
       "path": "pages/create/type",
       "style": { "navigationStyle": "custom" }
     },

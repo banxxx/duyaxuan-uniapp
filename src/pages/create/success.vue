@@ -9,7 +9,7 @@ import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { useDraftStore } from '@/stores/draft'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
-import { reset, ROUTES, switchTab } from '@/utils/router'
+import { go, reset, ROUTES, switchTab } from '@/utils/router'
 
 /**
  * 39 发布成功 / 81 问卷发布成功
@@ -56,6 +56,11 @@ function goDetail() {
 
 function goHome() {
   switchTab(ROUTES.home)
+}
+
+/** 27/80 分享页：海报 + 分享渠道 */
+function goShare() {
+  if (poll.value) go(ROUTES.share, { id: poll.value.id })
 }
 
 onShareAppMessage(() =>
@@ -116,10 +121,10 @@ onShareAppMessage(() =>
             <text class="poster__info-desc">
               已生成专属邀请海报，扫码即可{{ isSurvey ? '参与填写' : '参与投票' }}
             </text>
-            <button class="poster__open" open-type="share">
+            <view class="poster__open" @tap="goShare">
               <text class="poster__open-text">查看并分享</text>
               <AppIcon name="chevron-right" :size="13" color="#4F46E5" />
-            </button>
+            </view>
           </view>
         </view>
 

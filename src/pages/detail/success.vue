@@ -7,7 +7,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import { fetchPoll, fetchMyVote } from '@/api/poll'
 import { buildShareMessage } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
-import { backTo, ROUTES } from '@/utils/router'
+import { backTo, go, ROUTES } from '@/utils/router'
 
 /**
  * 13 投票成功
@@ -55,6 +55,12 @@ function viewStatus() {
   backTo(ROUTES.detail, { id: pollId.value })
 }
 
+/** 27 分享页：先停掉自动返回，否则 3 秒后会把分享页一起弹掉 */
+function goShare() {
+  if (timer) clearTimeout(timer)
+  go(ROUTES.share, { id: pollId.value })
+}
+
 onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }))
 </script>
 
@@ -87,10 +93,10 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
         <view class="success__primary" hover-class="success__primary--active" @tap="viewStatus">
           <text class="success__primary-text">{{ canSeeResult ? '查看投票结果' : '查看投票状态' }}</text>
         </view>
-        <button class="success__secondary" hover-class="success__secondary--active" open-type="share">
+        <view class="success__secondary" hover-class="success__secondary--active" @tap="goShare">
           <AppIcon name="share-2" :size="17" color="#09090B" />
           <text class="success__secondary-text">邀请同事一起投</text>
-        </button>
+        </view>
       </view>
 
       <text class="success__note">3 秒后自动返回投票详情</text>

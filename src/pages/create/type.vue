@@ -7,7 +7,7 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import StepBar from '@/components/business/StepBar.vue'
 import { useDraftStore } from '@/stores/draft'
-import { bottomInset } from '@/utils/platform'
+import { bottomInset, getSafeArea } from '@/utils/platform'
 import { back, go, ROUTES } from '@/utils/router'
 
 /**
@@ -30,6 +30,13 @@ interface TypeItem {
 }
 
 const draft = useDraftStore()
+
+/**
+ * 步骤条吸顶要停在导航栏下沿，而导航栏是 fixed 的，
+ * 所以 sticky 的 top 得自己算：状态栏 + 导航条。
+ */
+const { statusBarHeight, navBarHeight } = getSafeArea()
+const navTotal = statusBarHeight + navBarHeight
 
 const selected = ref<PollType>('single')
 const sourceSurveyId = ref('')
@@ -114,7 +121,10 @@ function changeSource() {
         <text class="source__change" @tap="changeSource">更换</text>
       </view>
 
-      <StepBar :current="1" />
+      <!-- 这一页是整页原生滚动，步骤条用 sticky 贴在导航栏下沿 -->
+      <view class="type-page__steps" :style="{ top: `${navTotal}px` }">
+        <StepBar :current="1" />
+      </view>
 
       <view class="head">
         <text class="head__title">选择投票方式</text>
@@ -218,6 +228,22 @@ export default { name: 'CreateTypePage' }
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  /*
+   * 步骤条吸顶。
+   *
+   * 这一页没有 scroll-view（内容靠原生页面滚动），所以用 sticky：
+   * top 由内联 style 给（状态栏 + 导航条），正好停在导航栏下沿。
+   * 左右负外边距出血到屏幕边缘 —— 内容区有 20 的左右内边距，
+   * 不出血的话滚动时内容会从步骤条两侧露出来。
+   */
+  &__steps {
+    position: sticky;
+    z-index: 20;
+    margin: 0 (-$gutter);
+    padding: 4px $gutter;
+    background: $bg;
   }
 
   &__actions {
