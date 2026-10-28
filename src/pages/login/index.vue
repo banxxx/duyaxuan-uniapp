@@ -38,11 +38,24 @@
       </view>
 
       <view class="login__bottom">
-        <view class="login__action" hover-class="login__action--active" @tap="onLogin">
+        <view
+          class="login__action"
+          :class="{ 'login__action--off': !agreed }"
+          :hover-class="agreed ? 'login__action--active' : 'none'"
+          @tap="onLogin"
+        >
           <view v-if="loading" class="login__spinner" />
-          <text class="login__action-text">{{ buttonText }}</text>
+          <text class="login__action-text" :class="{ 'login__action-text--off': !agreed }">{{ buttonText }}</text>
         </view>
         <view class="login__terms">
+          <view
+            class="login__check"
+            :class="{ 'login__check--on': agreed }"
+            hover-class="is-pressed"
+            @tap="agreed = !agreed"
+          >
+            <AppIcon v-if="agreed" name="check" :size="10" color="#FFFFFF" :stroke-width="3" />
+          </view>
           <text class="login__terms-pre">登录即表示同意</text>
           <text class="login__link" @tap="openDoc('terms')">《用户协议》</text>
           <text class="login__terms-pre">与</text>
@@ -72,6 +85,13 @@ import { ROUTES, go, switchTab } from '@/utils/router'
 const user = useUserStore()
 const loading = ref(false)
 
+/**
+ * 协议勾选：默认勾上。
+ * 取消勾选后主按钮置灰并拦住登录 —— 勾选框是「同意」的唯一凭据，
+ * 不勾还能登录的话，这个框就没有意义了。
+ */
+const agreed = ref(true)
+
 /** 状态栏高度只取一次，模板里不直接调 uni API */
 const { statusBarHeight } = getSafeArea()
 
@@ -88,6 +108,11 @@ const buttonText = computed(() => {
 })
 
 async function onLogin() {
+  if (!agreed.value) {
+    // 按钮已经是灰的，再给一句提示，否则用户以为是按钮坏了
+    uni.showToast({ title: '请先阅读并同意用户协议', icon: 'none' })
+    return
+  }
   if (loading.value) return
   loading.value = true
   try {
@@ -221,12 +246,21 @@ export default { name: 'LoginPage' }
     &--active {
       opacity: 0.88;
     }
+
+    /* 未勾选协议：和 AppButton 的 disabled 用同一套灰，视觉上是「不可点」而不是「换了个按钮」 */
+    &--off {
+      background: $subtle;
+    }
   }
 
   &__action-text {
     font-size: 15px;
     font-weight: 600;
     color: #fff;
+
+    &--off {
+      color: $faint;
+    }
   }
 
   &__spinner {
@@ -243,6 +277,26 @@ export default { name: 'LoginPage' }
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
+  }
+
+  /* 协议勾选框：16 方块、5 圆角，选中填 $accent 并显示白勾 */
+  &__check {
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    border: 1px solid $line;
+    background: $surface;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-right: 6px;
+    transition: background $dur-fast $ease-both, border-color $dur-fast $ease-both;
+
+    &--on {
+      background: $accent;
+      border-color: $accent;
+    }
   }
 
   &__terms-pre {

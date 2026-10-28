@@ -18,6 +18,7 @@ const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
       :key="opt.value"
       class="chips__item"
       :class="{ 'chips__item--on': modelValue === opt.value }"
+      hover-class="is-pressed"
       @tap="emit('update:modelValue', opt.value)"
     >
       <text class="chips__text" :class="{ 'chips__text--on': modelValue === opt.value }">

@@ -28,7 +28,12 @@ const emit = defineEmits<{ (e: 'tap'): void }>()
 </script>
 
 <template>
-  <view class="rule" :class="{ 'rule--locked': locked }" @tap.stop="!locked && clickable && emit('tap')">
+  <view
+    class="rule"
+    :class="{ 'rule--locked': locked }"
+    :hover-class="locked || !clickable ? 'none' : 'is-pressed'"
+    @tap.stop="!locked && clickable && emit('tap')"
+  >
     <view class="rule__main">
       <view class="rule__text">
         <text class="rule__title">{{ title }}</text>

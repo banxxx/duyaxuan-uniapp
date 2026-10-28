@@ -88,12 +88,13 @@ onShareAppMessage(() =>
 
     <scroll-view v-else-if="poll" class="published__scroll" scroll-y>
       <view class="published__content" :style="{ paddingBottom: bottomInset(24) }">
-        <view class="mark">
+        <!-- 和 71 投票成功页同一套入场：图标先弹出来，文字依次跟上 -->
+        <view class="mark anim anim--success">
           <AppIcon name="party-popper" :size="44" color="#4F46E5" :stroke-width="2" />
         </view>
 
-        <text class="published__title">{{ isSurvey ? '问卷已发布' : '投票已发布' }}</text>
-        <text class="published__desc">
+        <text class="published__title anim anim--fade-up anim--stagger-2">{{ isSurvey ? '问卷已发布' : '投票已发布' }}</text>
+        <text class="published__desc anim anim--fade-up anim--stagger-3">
           分享出去，邀请更多同事{{ isSurvey ? '填写' : '参与' }}吧
         </text>
 

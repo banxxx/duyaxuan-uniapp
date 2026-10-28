@@ -78,11 +78,11 @@ defineExpose({ close: () => (offset.value = 0) })
 <template>
   <view class="swipe">
     <view class="swipe__actions" :style="{ width: `${actionWidth}px` }">
-      <view class="swipe__action swipe__action--edit" @tap="emit('edit')">
+      <view class="swipe__action swipe__action--edit" hover-class="is-pressed" @tap="emit('edit')">
         <AppIcon name="square-pen" :size="18" color="#09090B" />
         <text class="swipe__label">编辑</text>
       </view>
-      <view v-if="canDelete" class="swipe__action swipe__action--delete" @tap="emit('delete')">
+      <view v-if="canDelete" class="swipe__action swipe__action--delete" hover-class="is-pressed" @tap="emit('delete')">
         <AppIcon name="trash-2" :size="18" color="#FFFFFF" />
         <text class="swipe__label swipe__label--light">删除</text>
       </view>

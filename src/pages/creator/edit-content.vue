@@ -753,12 +753,15 @@ export default { name: 'EditContentPage' }
   flex-shrink: 0;
 }
 
-/* 33 的提示行：12 号图标 + 10 号灰字 */
+/*
+ * 33 的提示行：12 号图标 + 10 号灰字。
+ * 弹层 body 是普通 view，没有 gap —— 间距得自己给，否则会紧贴上面的输入框。
+ */
 .sheet-tip {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: -4px;
+  margin-top: 12px;
 
   &__text {
     font-size: 10px;

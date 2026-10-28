@@ -30,7 +30,7 @@ function onTab(page: 'discover' | 'me' | 'create') {
 <template>
   <view class="tabbar" :style="{ height: `calc(64px + ${safeBottom})`, paddingBottom: safeBottom }">
     <view class="tabbar__hairline" />
-    <view class="tabbar__item" @tap="onTab('discover')">
+    <view class="tabbar__item" hover-class="is-pressed" @tap="onTab('discover')">
       <AppIcon name="compass" :size="23" :color="current === 'discover' ? '#4F46E5' : '#A1A1AA'" />
       <text
         class="tabbar__label"
@@ -40,12 +40,12 @@ function onTab(page: 'discover' | 'me' | 'create') {
     </view>
 
     <view class="tabbar__item tabbar__item--center" @tap="onTab('create')">
-      <view class="tabbar__create">
+      <view class="tabbar__create" hover-class="tabbar__create--pressed">
         <AppIcon name="plus" :size="22" color="#FFFFFF" :stroke-width="2" />
       </view>
     </view>
 
-    <view class="tabbar__item" @tap="onTab('me')">
+    <view class="tabbar__item" hover-class="is-pressed" @tap="onTab('me')">
       <AppIcon name="user" :size="23" :color="current === 'me' ? '#4F46E5' : '#A1A1AA'" />
       <text class="tabbar__label" :class="{ 'tabbar__label--active': current === 'me' }">我的</text>
     </view>
@@ -97,6 +97,8 @@ export default { name: 'AppTabBar' }
     font-weight: 500;
     color: $faint;
     line-height: 1;
+    /* 选中态只过渡颜色，不加位移 —— 底部栏是常驻元素，动了反而抢视线 */
+    transition: color $dur-fast $ease-both;
 
     &--active {
       color: $accent;
@@ -112,6 +114,12 @@ export default { name: 'AppTabBar' }
     display: flex;
     align-items: center;
     justify-content: center;
+    /* 主操作按钮按下缩一点，松手弹回，和 AppButton 的手感对齐 */
+    transition: transform $dur-fast $ease-both;
+
+    &--pressed {
+      transform: scale(0.92);
+    }
   }
 }
 </style>

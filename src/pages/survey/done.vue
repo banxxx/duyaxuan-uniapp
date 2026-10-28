@@ -62,14 +62,15 @@ onShareAppMessage(() =>
     <AppNavBar :back="false" />
 
     <view class="done__content" :style="{ paddingBottom: bottomInset(28) }">
-      <view class="done__icon">
+      <!-- 和 71 投票成功页同一套入场：勾先弹出来，文字依次跟上 -->
+      <view class="done__icon anim anim--success">
         <AppIcon name="check" :size="42" color="#FFFFFF" :stroke-width="2.4" />
       </view>
 
-      <text class="done__title">回答已提交</text>
-      <text class="done__desc">你的回答已记录，发起人可逐条查看</text>
+      <text class="done__title anim anim--fade-up anim--stagger-2">回答已提交</text>
+      <text class="done__desc anim anim--fade-up anim--stagger-3">你的回答已记录，发起人可逐条查看</text>
 
-      <view class="recap">
+      <view class="recap anim anim--fade-up anim--stagger-4">
         <text class="recap__label">你的回答</text>
         <view class="recap__row">
           <AppIcon name="message-square-text" :size="15" color="#4F46E5" />

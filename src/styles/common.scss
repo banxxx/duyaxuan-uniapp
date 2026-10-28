@@ -80,6 +80,20 @@ input:not(.uni-input-input) {
 }
 
 /*
+ * 全局按压态
+ *
+ * 小程序里 :active 不可靠（微信只在部分元素上生效），所以统一走 hover-class。
+ * hover-class 只能引用样式表里真实存在的类，而页面自己写的类各组件互不可见，
+ * 所以在这里放一个全局类，任何页面直接 hover-class="is-pressed" 就能用。
+ *
+ * 不做过渡：微信原生列表的点击态就是「按下即亮、松手即灭」，
+ * 加缓动反而比系统控件慢半拍。已有的业务类（如 .add--active）保留各自的写法。
+ */
+.is-pressed {
+  opacity: 0.6;
+}
+
+/*
  * H5 端不支持 tabBar.custom，会照常渲染一条原生 tabBar。
  * 页面 onShow 里已经调 uni.hideTabBar() 把它藏掉，但那是异步的 ——
  * 首帧会先画出来再消失，看起来就是闪一下。这里直接按元素屏蔽掉，
