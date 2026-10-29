@@ -52,6 +52,26 @@ npm run db:remote    # 建线上库
 npm run db:local     # 建本地库（wrangler dev 用）
 ```
 
+> **从旧版本升级**：`schema.sql` 只有 `CREATE TABLE IF NOT EXISTS`，不会给已存在的表
+> 补列。之前已经建过库的，重跑 `db:remote` 后还要补这两句：
+>
+> ```bash
+> npx wrangler d1 execute duyaxuan-db --remote \
+>   --command "ALTER TABLE wx_push_prefs ADD COLUMN updated INTEGER NOT NULL DEFAULT 0"
+> npx wrangler d1 execute duyaxuan-db --remote \
+>   --command "ALTER TABLE answers ADD COLUMN ip TEXT"
+> ```
+>
+> 新表 `wx_push_log` 由 `db:remote` 直接建好，不用单独处理。
+>
+> 结果通知的唯一索引 `ux_notifications_result` 也会在重跑 `db:remote` 时创建；
+> `schema.sql` 会先按 `(user_id, poll_id)` 清掉历史重复的 `result` 通知再建索引，
+> 老库直接跑一遍即可。
+>
+> 另外，问卷汇总的自动分组 id 现在带上了 `poll_id`，修复了不同问卷相同回答
+> 互相串数据的问题。线上如果已经有旧的汇总结果，进入对应问卷的汇总页点一次
+> 「重新归并」，让它按新规则重新生成即可。
+
 ### 2. 配密钥
 
 **这三个值不要写进代码、不要发给我、不要提交 git。** 直接在你自己的终端里执行：
@@ -70,6 +90,18 @@ npx wrangler secret put JWT_SECRET
 
 这些值会写进 Cloudflare 的加密环境变量，`wrangler deploy` 时注入，
 本地 `wrangler dev` 则读 `.dev.vars`（已在 `.gitignore` 里）。
+
+**订阅消息模板要单独配线上的一份**：`.dev.vars` 只影响本地，线上不会自动继承。
+五类共用一个模板就只配通用模板：
+
+```bash
+npx wrangler secret put WX_TMPL_NOTIFY   # 粘贴模板 ID
+npx wrangler secret put WX_TMPL_FIELDS   # {"title":"thing4","content":"thing2","time":"time20"}
+```
+
+想按类型用不同模板，就分别配 `WX_TMPL_JOINED` / `WX_TMPL_COMMENT` /
+`WX_TMPL_DEADLINE` / `WX_TMPL_RESULT` / `WX_TMPL_UPDATED`，没配的类型会回退到
+`WX_TMPL_NOTIFY`。配完可以用 `GET /notifications/templates` 检查返回了哪几类。
 
 小程序码还要注意两点：
 
@@ -132,6 +164,35 @@ npm run dev                      # http://127.0.0.1:8787
 真机上看到的是旧界面（甚至个别页面空白）时，先重新「预览」或重新「上传」，
 再判断是不是代码问题。
 
+### 连云端 D1 / R2 调试
+
+`npm run dev` 默认只碰本地库。想让开发者工具和真机看到同一份云端数据：
+
+| 方式 | 命令 / 配置 | 说明 |
+| --- | --- | --- |
+| 直接连已部署的 Worker（现在用的） | 前端 `VITE_API_BASE_URL=https://api.banxxx.cc.cd` | 不用本地服务，最接近线上；国内必须走自定义域名 |
+| 远程绑定 | `npm run dev:remote` | 本地起服务、D1/R2 走云端；需要能稳定连上 Cloudflare |
+| 全离线 | `npm run dev` | 最快，但数据只写本地 `.wrangler/state` |
+
+> Wrangler 4 里 `wrangler dev --remote` 已经不起作用（绑定仍然是本地的，
+> 写进去的数据在本地库里）。要用 `wrangler.toml` 的 `remote = true` 字段；
+> `npm run dev` 带 `--local`，会忽略它。
+
+云端库第一次用要先建表 / 补列：
+
+```bash
+npm run db:remote      # schema.sql 幂等，可以反复跑
+npm run seed:remote    # 可选：灌演示数据，会真实写云端 D1
+```
+
+`CREATE TABLE IF NOT EXISTS` 不会给已存在的表加列。云端库如果是早期版本建的，
+缺的列要手动补：
+
+```bash
+npx wrangler d1 execute duyaxuan-db --remote --command "ALTER TABLE polls ADD COLUMN invite_code TEXT"
+npx wrangler d1 execute duyaxuan-db --remote --command "ALTER TABLE answers ADD COLUMN ip TEXT"
+```
+
 ---
 
 ## 三、部署
@@ -140,8 +201,18 @@ npm run dev                      # http://127.0.0.1:8787
 npm run deploy
 ```
 
-部署完会得到一个 `https://duyaxuan-api.<你的子域>.workers.dev` 地址，
-`curl https://.../health` 能看到 `{"ok":true}` 就说明活了。
+`wrangler.toml` 的 `routes` 里绑了自定义域名 `api.banxxx.cc.cd`，
+部署时 Cloudflare 会自动建 DNS 记录并签发证书（首次可能要等一两分钟）。
+
+```bash
+curl https://api.banxxx.cc.cd/health   # {"ok":true,...} 就说明活了
+```
+
+> `*.workers.dev` 在境内被 DNS 污染（解析到 Facebook 的 IP），
+> 所以部署后默认关掉 workers.dev，只走自定义域名。
+
+`[triggers]` 里的 Cron 会随这次部署一起注册，但**生效可能要几分钟（最长 15 分钟）**。
+在 Cloudflare 控制台 Workers → 你的 Worker → Triggers 里能看到 `*/5 * * * *`。
 
 ### 前端切换
 
@@ -149,7 +220,7 @@ npm run deploy
 
 ```ini
 # .env.development
-VITE_API_BASE_URL=https://duyaxuan-api.<你的子域>.workers.dev
+VITE_API_BASE_URL=https://api.banxxx.cc.cd
 VITE_USE_MOCK=false
 ```
 
@@ -166,7 +237,7 @@ VITE_USE_MOCK=false
 
 | 阶段 | 怎么做 |
 | --- | --- |
-| 开发联调 | 开发者工具勾选「不校验合法域名」，直接连 `workers.dev` 或本机，不需要备案 |
+| 开发联调 | 开发者工具勾选「不校验合法域名」，直接连 `api.banxxx.cc.cd` 或本机，不需要备案 |
 | 真机 / 体验版 | 需要已备案域名，且在小程序后台「开发 → 开发管理 → 服务器域名」里按**完整主机名**逐个添加（不支持通配符，最多 20 个） |
 | 正式上线 | 同上；如果要做境内备案，通常得有一台境内服务器作为接入商 |
 
@@ -199,29 +270,117 @@ Worker 直接请求 `api.weixin.qq.com` 就行，和请求合法域名是两码�
 
 | 变量 | 用途 |
 | --- | --- |
-| `WX_TMPL_JOINED` | 有人参与了你的投票 / 收到新的回答 |
-| `WX_TMPL_COMMENT` | 新的评论、回复 |
-| `WX_TMPL_DEADLINE` | 「截止时提醒我」到点提醒 |
-| `WX_TMPL_RESULT` | 预留，目前没有业务产生这类通知 |
+| `WX_TMPL_NOTIFY` | **通用模板**，五类通知共用，通常只配这一个 |
+| `WX_TMPL_JOINED` | 单独指定「有人参与 / 收到回答」，优先于通用模板 |
+| `WX_TMPL_COMMENT` | 单独指定「新的评论、回复」 |
+| `WX_TMPL_DEADLINE` | 单独指定「结束前 2 小时提醒」 |
+| `WX_TMPL_RESULT` | 单独指定「结果公布」（参与者 + 发起人） |
+| `WX_TMPL_UPDATED` | 单独指定「我参与的内容有更新」 |
 
 **一个都不配也能跑**：只发站内消息，页面和接口照常。本地写 `.dev.vars`，
-线上用 `npx wrangler secret put WX_TMPL_JOINED` 等逐个配置。
+线上用 `npx wrangler secret put WX_TMPL_NOTIFY` 配置。
 
-模板字段默认按 `thing1`（标题）/ `time2`（时间）/ `thing3`（备注）发送。
+代码默认按这个模板格式发送：
+
+```
+活动名称{{thing4.DATA}}    ← 单选投票 / 多选投票 / 问卷收集（见 src/lib/poll-type.ts）
+活动内容{{thing2.DATA}}    ← 投票 / 问卷标题
+活动日期{{time20.DATA}}    ← 发送时间，格式「2026年10月29日 20:30」
+```
+
+以后加新类型（排序、打分、报名……）只要在 `src/lib/poll-type.ts` 里补一行文案，
+通知链路不用动；没登记的类型会退回「投票」，不会把英文枚举发给用户。
+
 选到的模板字段名不一样时（微信返回 `47003`），不用改代码，配一个覆盖：
 
 ```ini
-WX_TMPL_FIELDS={"title":"thing1","time":"time2","remark":"thing3"}
+WX_TMPL_FIELDS={"title":"thing4","content":"thing2","time":"time20"}
 ```
+
+> 五类通知共用同一个模板时，额度也是共用的（一个模板一份额度），
+> 用户点一次授权只能换一条消息，不分类型。想按类型分开授权，就配独立的模板 ID。
 
 两个微信侧的硬规则，接的时候容易踩：
 
-1. **一次授权、一条消息**。用户点开关/提醒按钮时弹窗同意一次，服务端只能发一条，
-   发完额度归零，下次还得再点。额度存在 `wx_subscriptions`，上限 3 条；
-   发送返回 `43101`（用户拒收）时清零，避免每次白调接口。
+1. **一次授权、一条消息**（一次性订阅）。用户点开关/提醒按钮时弹窗同意一次，
+   服务端只能发一条，发完额度归零，下次还得再点。额度存在 `wx_subscriptions`，
+   上限 3 条（这是代码里的 `MAX_QUOTA`，不是微信的设置项 —— 微信侧没有可配置的额度）；
+   发送前先用一条带 `remaining > 0` 的 `UPDATE` 原子扣额度，并发请求只有一个能扣到，
+   不会出现两个请求都看到「还有额度」各发一条。`updated` 的每小时节流也用
+   `wx_push_log` 的原子 upsert 先占位，并发编辑不会推出两条。发送返回 `43101`
+   （用户拒收）时清零；网络异常或其他错误码会把刚扣的额度退回。
+   长期订阅只对政务民生、医疗、交通、金融、教育等少数类目开放，一般小程序没有，
+   代码按一次性订阅设计。
 2. **授权必须在点击事件里同步发起**。所以前端在页面加载时先把模板 ID
    （`GET /notifications/templates`）缓存好，点击回调里只调
    `uni.requestSubscribeMessage`，中间不能插 `await`。
+
+前端触发授权的位置（都是用户主动点击）：
+
+| 位置 | 请求的模板 |
+| --- | --- |
+| 发布成功页「开启消息提醒」 | `joined` + `comment` |
+| 设置 → 推送通知，打开某个开关 | 对应类型 |
+| 结果页「结束前 2 小时提醒我」 | `deadline` |
+
+### 五类通知分别什么时候发
+
+| 类型 | 收件人 | 站内消息 | 微信推送 |
+| --- | --- | --- | --- |
+| `joined` | 发起人 | 每条都写 | **只在第一次参与时推** |
+| `comment` | 发起人；回复时再加被回复者 | 每条都写 | 每条都推（回复是定向的） |
+| `deadline` | 点了「提醒我」的人 | 一条 | 一条（结束前 2 小时；总时长不足 2 小时不提醒） |
+| `result` | 发起人（投票和问卷都发）；投票参与者 | 一条，带参与人数（唯一索引兜底，重复结束 / 补发不会写两条） | 一条 |
+| `updated` | 投过票 / 答过卷的人（不含发起人） | 每条都写 | 同一投票每小时最多一条 |
+
+> 人数多时，站内消息按每批 50 条批量写入（单次最多 400 条）；微信推送受免费套餐
+> 单次 50 个子请求限制，结果通知和内容更新单次最多推 4 人。结果通知没推到的用户
+> 由 Cron / 下次拉通知时补；内容更新没推到的用户仍能在消息中心看到站内消息。
+
+> 为什么参与通知只在第一次推：订阅额度是**五类共享**的，每来一票就推会迅速把
+> 额度吃光，等投票结束、最该收到的「结果公布」反而发不出去。站内消息不受额度
+> 影响，每条都记，用户点开消息中心就能看到全部参与记录。
+>
+> 微信订阅消息是「一次授权、一条消息」，设置页的开关只控制**要不要推微信服务通知**，
+> 关掉不会让站内消息消失。
+
+### 定时任务（Cron Trigger）
+
+截止提醒和「自然到期」的结果通知需要在没人访问时也发出去，所以 Worker 导出了
+`scheduled` 处理器，`wrangler.toml` 里默认配了 5 分钟一次：
+
+```toml
+[triggers]
+crons = ["*/5 * * * *"]
+```
+
+免费套餐就支持（账号上限 5 个 Cron Trigger），每次触发算 1 次请求：
+5 分钟一次 = 每天 288 次，对比免费额度 10 万次/天可以忽略。真正要注意的是
+**免费套餐每次调用只有 50 个子请求、10ms CPU**，所以 `flushScheduled` 每轮
+只取 2 个用户、每人最多 1 条结果通知、最多推 1 条提醒；处理不完的下一轮继续
+（提醒发完即删，结果通知按「已有 result 通知」去重，重复跑不会重复发）。
+
+本地手动触发：
+
+```bash
+curl http://127.0.0.1:8787/cdn-cgi/local/scheduled
+```
+
+不想用定时任务：删掉 `[triggers]` 整段再部署，`deadline` 和自然到期的
+`result` 会退回「用户下次拉通知时补发」的逻辑，不会丢，只是不实时。
+
+几个边界：
+
+- 定时任务没部署 / 没触发时，`deadline` 和自然到期的 `result` 仍然会在用户下次拉
+  `/notifications` 或 `/notifications/unread-count` 时判断并补发。
+- **结果不公开**（`resultVisibility = hidden`）时，`result` 只发给发起人，
+  参与者不发 —— 通知说「结果已公布」但他看不到，是假的。
+- **问卷**没有「参与者结果通知」，只有发起人收到「你的问卷已结束」。
+- `updated` 只比内容：标题、描述、截止时间、规则、选项标题/描述有变化才发；
+  只点保存没改动不打扰。
+
+服务端没配模板时，发布成功页不显示这个入口，设置页会说明「现在只会收到站内消息」，
+其余功能不受影响。
 
 ---
 
@@ -251,11 +410,11 @@ WX_TMPL_FIELDS={"title":"thing1","time":"time2","remark":"thing3"}
 | GET | `/polls/search` | `?keyword=` |
 | POST | `/polls` | 创建，body 就是前端 draft 的形状 |
 | GET | `/polls/:id` | 详情（软删除的只有发起人能看） |
-| PUT | `/polls/:id` | 编辑 |
+| PUT | `/polls/:id` | 编辑；只传要改的字段，`rules` 里没传的规则沿用原值 |
 | DELETE | `/polls/:id` | 软删除 |
 | POST | `/polls/:id/restore` | 从回收站恢复 |
-| POST | `/polls/:id/end` | 提前结束 |
-| POST | `/polls/:id/remind` | 记一条截止提醒，截止后第一次拉通知时补发 |
+| POST | `/polls/:id/end` | 提前结束（不可逆；重复调用不会重复发结果通知，也不能靠改截止时间重新打开） |
+| POST | `/polls/:id/remind` | 记一条截止提醒；已结束或总时长不足 2 小时返回 400 |
 | GET | `/polls/:id/qrcode` | 小程序码（`→ /files/qrcodes/...png`），关掉分享后非发起人 403 |
 | GET | `/polls/:id/invite-code` | 邀请码，仅发起人 |
 | POST | `/polls/:id/join` | 分享落地：邀请码模式校验码，链接模式只记来源 |
@@ -288,7 +447,7 @@ WX_TMPL_FIELDS={"title":"thing1","time":"time2","remark":"thing3"}
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/notifications` | 消息列表（分页），拉取时会补发到期的「提醒我」 |
+| GET | `/notifications` | 消息列表（分页），拉取时补发到期的截止提醒和结果通知 |
 | GET | `/notifications/unread-count` | 未读数，给「我的」铃铛红点用 |
 | POST | `/notifications/read` | `{ids?}`，不传就是全部已读，返回剩余未读数 |
 | GET | `/notifications/templates` | 已配置的订阅消息模板（kind → template_id），没配就是 `{}` |
@@ -330,11 +489,34 @@ WX_TMPL_FIELDS={"title":"thing1","time":"time2","remark":"thing3"}
 **规则在服务端生效，不只是前端藏**：`resultVisibility` 不允许看结果时，
 接口直接把 `options[].votes` 置 0；`hideVoterCount` 会把 `voterCount` 置 0（发起人除外）；
 `shuffleOptions` 按「投票 + 查看者」做稳定打乱，刷新不会换顺序，发起人看原顺序。
-只在前端隐藏等于没隐藏 —— 抓个接口就看到票数了。
+投票记录（`/voters`）和数据页（`/stats`）也走同一套判断：结果不可见时非发起人
+拿不到记录，`/stats` 只允许发起人访问。只在前端隐藏等于没隐藏 —— 抓个接口就看到票数了。
+
+匿名投票的站内通知也不带昵称（统一写「有人」），否则发起人从消息列表就能
+把匿名投票人认出来，和投票记录页的规则自相矛盾。
+
+**匿名不能事后关闭**：已经有人投票 / 回答后，把 `anonymous` 从开改成关会直接
+返回 400。参与者当初是按匿名投的，不能因为发起人改规则就把身份翻出来。
 
 **邀请码不是凭证，是门槛**：`join_method=invite` 的投票，投票/回答时后端会查
 `invites` 里有没有这个人；邀请码只是让用户能写进 `invites` 的钥匙。
 邀请码存在 `polls.invite_code`，一个投票一个码，发起人可分享给多人。
+参与记录（`/voters`）和问卷回答（`/answers`）也只对发起人和受邀者开放，
+不能靠知道 poll id 绕过邀请码读取。已经投过票 / 答过卷的人视为已受邀，
+发起人中途改成邀请制不会把老参与者锁在外面。
+
+**关掉分享的投票不进公开列表**：`allow_share=0` 时不出现在 `/polls/discover`
+和搜索结果里（发起人自己仍能搜到）。关的是公开曝光，不是访问控制 ——
+已经拿到链接的人仍然能打开，只是不会在发现页被陌生人刷到。
+
+**回答和评论谁能看**：问卷回答只对发起人和提交过回答的人开放，链接模式也一样，
+不能靠知道 poll id 把所有人的回答读走；邀请制投票的评论只对发起人和参与者开放，
+链接模式的评论仍然公开可读。详情页遇到这两种 403 时按空列表处理，
+不会把公开预览的整页打成错误态。
+
+**结果通知不会重复**：`notifications` 上有 `(user_id, poll_id, kind)` 的部分唯一索引
+（仅 `kind='result'`），写入统一用 `INSERT OR IGNORE`。并发结束投票或 Cron 补发时，
+即使两个请求都查到「还没通知过」，也只有一条能写进去；只有真正写进去的请求才推送。
 
 **已有票数的选项不能删**：删了那些票就凭空消失，别人看到的百分比会变。
 后端会直接返回 400。
@@ -355,12 +537,15 @@ WX_TMPL_FIELDS={"title":"thing1","time":"time2","remark":"thing3"}
    最简分组：重复出现 2 次以上的回答成为候选，其余进未归类。
    接模型只需要替换 `db/polls.ts` 里的 `summaryGroups()`。
 3. **通知**：站内消息始终写；订阅消息要配模板 ID，并且用户逐次授权
-   （一次授权换一条，`wx_subscriptions` 记额度）。没有定时任务 ——
-   「提醒我」在截止后第一次拉通知列表时补发，站内消息和订阅消息一起发。
-   真要做定时，加一个 `scheduled` handler 跑同一段 `flushDueReminders` 即可。
+   （一次授权换一条，`wx_subscriptions` 记额度）。截止提醒（结束前 2 小时）
+   和自然到期的结果通知由 `[triggers]` 的 Cron 每 5 分钟补发一轮；
+   没配 Cron 或还没触发时，用户下一次拉通知也会补发。免费套餐单次调用
+   子请求有限，所以 Cron 每轮只处理少量用户，剩余的下轮继续。
 4. **头像 / 小程序码** 已接 R2：`POST /user/avatar`（multipart，字段 `file`）→
    `avatars/<userId>/<时间戳>.<ext>`；小程序码 → `qrcodes/<pollId>-<版本>.png`。
    两者都经 `GET /files/<key>` 对外（白名单只放这两个前缀），旧头像在新图落库后异步删除。
+   头像地址只接受本人目录（防止把别人的文件设成头像后被旧图删除逻辑误删），
+   读文件时按扩展名返回图片 MIME 并加 `nosniff`，不信任上传时的 Content-Type。
    上线前要先在控制台开通 R2 并 `wrangler r2 bucket create duyaxuan-avatar`。
 5. **QQ / 抖音登录** 未实现，`/auth/login` 传这两个平台会返回 501。
    表结构（`user_platforms`）已经按多平台设计，接的时候只改 `lib/oauth.ts`。

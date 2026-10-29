@@ -46,6 +46,9 @@ export default { name: 'FilterChips' }
     border: 1px solid $line;
     display: flex;
     align-items: center;
+    transition:
+      background-color $dur-fast $ease-both,
+      border-color $dur-fast $ease-both;
 
     &--on {
       background: $accent;
@@ -58,6 +61,7 @@ export default { name: 'FilterChips' }
     font-weight: 500;
     color: $muted;
     line-height: 1;
+    transition: color $dur-fast $ease-both;
 
     &--on {
       color: #fff;

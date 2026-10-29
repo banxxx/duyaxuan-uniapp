@@ -217,6 +217,8 @@ onShow(() => {
   // H5 端会渲染原生 tabBar，进来就藏掉（微信端 custom=true，没有原生栏，静默失败）
   hideNativeTabBar()
   refreshUnread()
+  // 头像/昵称可能在另一台设备上改过，每次进「我的」都对齐一次
+  user.refreshProfile()
 })
 
 function open(url: string) {

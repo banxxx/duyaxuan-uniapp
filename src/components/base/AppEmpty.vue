@@ -27,7 +27,7 @@ const emit = defineEmits<{ (e: 'action'): void }>()
 </script>
 
 <template>
-  <view class="empty">
+  <view class="empty anim anim--fade-up">
     <view class="empty__icon">
       <view v-if="loading" class="empty__spinner" />
       <AppIcon v-else :name="icon" :size="38" color="#A1A1AA" :stroke-width="1.5" />
@@ -96,9 +96,13 @@ export default { name: 'AppEmpty' }
     display: flex;
     align-items: center;
     gap: 7px;
+    transition:
+      opacity $dur-fast $ease-both,
+      transform $dur-fast $ease-both;
 
     &--active {
       opacity: 0.85;
+      transform: scale(0.97);
     }
   }
 

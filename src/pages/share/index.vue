@@ -360,7 +360,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
 
         <!-- 分享渠道：发起人关掉分享时整块收起来，海报仍然可以保存 -->
         <view v-if="poll.rules.allowShare" class="channels">
-          <button class="channel" open-type="share" @tap="onWechat">
+          <button class="channel" hover-class="channel--active" open-type="share" @tap="onWechat">
             <AppIcon name="message-circle" :size="21" color="#09090B" :stroke-width="2" />
             <text class="channel__text">微信</text>
           </button>
@@ -656,6 +656,7 @@ export default { name: 'SharePage' }
   justify-content: center;
   gap: 8px;
   line-height: normal;
+  transition: background-color $dur-fast $ease-both;
 
   /* 原生 button 的默认边框要去掉，否则白卡外面多一圈灰 */
   &::after {

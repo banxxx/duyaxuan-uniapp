@@ -16,7 +16,7 @@ import { mockNotifications } from '@/mock/data'
 const USE_MOCK = useMock()
 const PAGE_SIZE = 20
 
-export type PushKind = 'joined' | 'comment' | 'deadline' | 'result'
+export type PushKind = 'joined' | 'comment' | 'deadline' | 'result' | 'updated'
 
 /** 服务端的推送偏好；和小程序本地开关是两回事，这个决定「服务端发不发」 */
 export interface PushPrefs {
@@ -25,6 +25,7 @@ export interface PushPrefs {
   comment: boolean
   deadline: boolean
   result: boolean
+  updated: boolean
 }
 
 const delay = (ms = 160) => new Promise((r) => setTimeout(r, ms))

@@ -46,11 +46,18 @@ interface AnswerRow {
   content: string
 }
 
-/** 原文 → 稳定的候选 id：同一段原文反复归并不会重复建选项 */
-function contentKey(content: string): string {
+/**
+ * 原文 → 稳定的候选 id：同一份问卷里同一段原文反复归并不会重复建选项。
+ *
+ * id 必须带上 pollId：不同问卷很容易出现相同的短回答（“同意”“可以”），
+ * 只哈希原文会让第二份问卷的候选 id 和第一份撞车，INSERT OR IGNORE 直接
+ * 把它的候选吞掉，回答就永远显示不出来。
+ */
+function contentKey(pollId: string, content: string): string {
   let h = 0
-  for (let i = 0; i < content.length; i++) {
-    h = (Math.imul(h, 31) + content.charCodeAt(i)) >>> 0
+  const text = `${pollId}\u0000${content}`
+  for (let i = 0; i < text.length; i++) {
+    h = (Math.imul(h, 31) + text.charCodeAt(i)) >>> 0
   }
   return `c_${h.toString(36)}`
 }
@@ -111,7 +118,7 @@ export async function ensureGrouped(db: D1Database, pollId: string): Promise<voi
 
   for (const [text, ids] of groups) {
     if (ids.length >= 2) {
-      const id = contentKey(text)
+      const id = contentKey(pollId, text)
       statements.push(
         db
           .prepare(
@@ -166,12 +173,13 @@ export async function listCandidates(db: D1Database, pollId: string): Promise<Su
                 SELECT ans.content
                 FROM summary_assignments sa2
                 JOIN answers ans ON ans.id = sa2.answer_id
-                WHERE sa2.option_id = o.id AND sa2.ignored = 0
+                WHERE sa2.option_id = o.id AND sa2.poll_id = o.poll_id AND sa2.ignored = 0
                 ORDER BY sa2.updated_at DESC
                 LIMIT 1
               ), '') AS sample
        FROM summary_options o
-       LEFT JOIN summary_assignments sa ON sa.option_id = o.id AND sa.ignored = 0
+       LEFT JOIN summary_assignments sa
+         ON sa.option_id = o.id AND sa.poll_id = o.poll_id AND sa.ignored = 0
        WHERE o.poll_id = ?
        GROUP BY o.id
        ORDER BY answer_count DESC, o.sort ASC, o.created_at ASC`
@@ -221,10 +229,10 @@ export async function getOption(
       `SELECT ans.id, ans.created_at, ans.content
        FROM summary_assignments sa
        JOIN answers ans ON ans.id = sa.answer_id
-       WHERE sa.option_id = ? AND sa.ignored = 0
+       WHERE sa.option_id = ? AND sa.poll_id = ? AND sa.ignored = 0
        ORDER BY ans.created_at DESC`
     )
-    .bind(optionId)
+    .bind(optionId, pollId)
     .all<AnswerRow>()
 
   const answers = results.map((r) => ({ id: r.id, createdAt: r.created_at, content: r.content }))
@@ -271,13 +279,25 @@ export async function deleteOption(db: D1Database, pollId: string, optionId: str
 
 /** 只保留属于这份问卷的回答 id，防止跨问卷塞数据 */
 async function ownAnswerIds(db: D1Database, pollId: string, rawIds: unknown): Promise<string[]> {
-  const ids = Array.isArray(rawIds) ? rawIds.map((x) => String(x)).filter(Boolean) : []
+  const ids = Array.isArray(rawIds)
+    ? [...new Set(rawIds.map((x) => String(x)).filter(Boolean))]
+    : []
   if (!ids.length) return []
-  const { results } = await db
-    .prepare(`SELECT id FROM answers WHERE poll_id = ? AND id IN (${ids.map(() => '?').join(',')})`)
-    .bind(pollId, ...ids)
-    .all<{ id: string }>()
-  return results.map((r) => r.id)
+
+  // D1 单条 SQL 最多 100 个绑定参数，pollId 占一个，所以每次最多查 90 个。
+  // 「忽略全部未归类」一次会传 100 条，不分批会直接报参数过多。
+  const owned: string[] = []
+  for (let i = 0; i < ids.length; i += 90) {
+    const chunk = ids.slice(i, i + 90)
+    const { results } = await db
+      .prepare(
+        `SELECT id FROM answers WHERE poll_id = ? AND id IN (${chunk.map(() => '?').join(',')})`
+      )
+      .bind(pollId, ...chunk)
+      .all<{ id: string }>()
+    owned.push(...results.map((r) => r.id))
+  }
+  return owned
 }
 
 async function assertOption(db: D1Database, pollId: string, optionId: string) {

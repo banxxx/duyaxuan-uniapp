@@ -38,7 +38,11 @@ function detect(): Platform {
   if (uniPlatform === 'mp-toutiao' || uniPlatform === 'mp-lark') return 'toutiao'
   if (uniPlatform === 'web' || uniPlatform === 'h5') return 'h5'
 
-  // 兜底：QQ 小程序宿主里 uniPlatform 会报 mp-weixin，但 app 字段是 QQ
+  // 兜底：拿不到 uniPlatform 时，用宿主 app 字段猜。
+  //
+  // 注意：uniPlatform 是编译期常量，微信包里恒为 mp-weixin，上面已经 return 了。
+  // 所以「QQ 里直接跑微信小程序」（互通版）会走 weixin 分支，登录仍然拿微信 code，
+  // 不会被下面的 app 判断误判成 qq —— 这一点对登录很关键。
   const app = (info.app ?? '').toLowerCase()
   if (app.includes('qq')) return 'qq'
 

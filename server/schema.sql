@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS answers (
   seq          INTEGER NOT NULL DEFAULT 1,
   content      TEXT NOT NULL,
   profile_info TEXT,
+  ip           TEXT,                        -- 限同 IP 提交时用；老数据为空
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL
 );
@@ -201,6 +202,21 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS ix_notifications_user ON notifications(user_id, created_at DESC);
 
+-- 结果通知每个收件人每条投票只应有一条。
+-- 并发「结束投票」或 Cron 补发时，两个请求可能都查到「还没通知过」，
+-- 靠这个唯一索引在数据库层兜底（代码里用 INSERT OR IGNORE）。
+-- 升级前的老数据可能已经有重复，先按 (user_id, poll_id) 各留一条再建索引。
+DELETE FROM notifications
+WHERE kind = 'result' AND poll_id IS NOT NULL
+  AND rowid NOT IN (
+    SELECT MIN(rowid) FROM notifications
+    WHERE kind = 'result' AND poll_id IS NOT NULL
+    GROUP BY user_id, poll_id
+  );
+CREATE UNIQUE INDEX IF NOT EXISTS ux_notifications_result
+  ON notifications(user_id, poll_id, kind)
+  WHERE kind = 'result' AND poll_id IS NOT NULL;
+
 -- 「提醒我」：截止后给点了提醒的人发一条。
 -- 没有定时任务，截止后第一次拉通知列表时补发（flushDueReminders），
 -- 这样本地开发不用等 cron 也能验证。
@@ -262,5 +278,17 @@ CREATE TABLE IF NOT EXISTS wx_push_prefs (
   comment    INTEGER NOT NULL DEFAULT 1,
   deadline   INTEGER NOT NULL DEFAULT 1,
   result     INTEGER NOT NULL DEFAULT 1,
+  updated    INTEGER NOT NULL DEFAULT 0,   -- 「我参与的投票有更新」，默认关
   updated_at INTEGER NOT NULL
+);
+
+-- 推送节流：同一用户 + 同一投票 + 同一类型，记录上次发送尝试的时间。
+-- 发送前用原子 upsert 占位（不是发成功后才写），并发编辑时只有一个请求能占到。
+-- 目前只有「内容更新」用到（同一投票每小时最多一条），避免发起人反复编辑刷屏。
+CREATE TABLE IF NOT EXISTS wx_push_log (
+  user_id   TEXT NOT NULL,
+  poll_id   TEXT NOT NULL,
+  kind      TEXT NOT NULL,
+  pushed_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, poll_id, kind)
 );

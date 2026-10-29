@@ -105,7 +105,8 @@ function goContent() {
     sourceSurveyId: surveyId.value,
     title: poll.value ? `${poll.value.title} · 汇总投票` : '',
     desc: `由 ${classifiedCount.value} 条问卷回答汇总而成，得票最高者即为最终方案。`,
-    options: candidates.value.slice(0, 4).map((c) => ({ title: c.title, desc: c.desc }))
+    // 创建页最多 12 个选项；这里不要截成 4，否则第 5 个以后的候选会被静默丢掉
+    options: candidates.value.slice(0, 12).map((c) => ({ title: c.title, desc: c.desc }))
   })
   go(ROUTES.createContent)
 }
@@ -169,9 +170,10 @@ function goContent() {
             </view>
 
             <view
-              v-for="c in candidates"
+              v-for="(c, i) in candidates"
               :key="c.id"
-              class="cand"
+              class="cand anim anim--fade-up"
+              :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
               hover-class="cand--active"
               @tap="editOption(c)"
             >
@@ -308,6 +310,7 @@ export default { name: 'SummaryIndexPage' }
   display: flex;
   align-items: center;
   gap: 8px;
+  transition: opacity $dur-fast $ease-both;
 
   &--active {
     opacity: 0.85;
@@ -386,6 +389,7 @@ export default { name: 'SummaryIndexPage' }
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  transition: background-color $dur-fast $ease-both;
 
   &--active {
     background: $subtle;

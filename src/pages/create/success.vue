@@ -11,7 +11,11 @@ import { useSettingsStore } from '@/stores/settings'
 import type { PushPrefs } from '@/api/notification'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
-import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
+import {
+  hasSubscribeTemplates,
+  preloadSubscribeTemplates,
+  requestSubscribe
+} from '@/utils/subscribe'
 import { go, reset, ROUTES, switchTab } from '@/utils/router'
 
 /**
@@ -33,6 +37,8 @@ const failed = ref(false)
 const isSurvey = ref(false)
 /** 本次是否已经同意过订阅（只影响按钮文案，不代表永久订阅） */
 const notifyOn = ref(false)
+/** 服务端配了订阅模板才显示入口，否则点了也不会弹授权框 */
+const canNotify = ref(false)
 
 async function submit() {
   loading.value = true
@@ -52,7 +58,9 @@ async function submit() {
 onLoad(() => {
   settings.restore()
   // 模板 ID 提前拉好，点「开启消息提醒」时才能同步弹授权框
-  preloadSubscribeTemplates()
+  preloadSubscribeTemplates().then(() => {
+    canNotify.value = hasSubscribeTemplates()
+  })
   submit()
 })
 
@@ -82,7 +90,8 @@ function enableNotify() {
     joined: s.pushJoined,
     comment: s.pushComment,
     deadline: s.pushDeadline,
-    result: s.pushResult
+    result: s.pushResult,
+    updated: s.pushUpdated
   }
   requestSubscribe(['joined', 'comment'], prefs, (accepted) => {
     if (!accepted.length) return
@@ -173,6 +182,7 @@ onShareAppMessage(() =>
             <text class="actions__secondary-text">查看{{ isSurvey ? '问卷' : '投票' }}详情</text>
           </view>
           <view
+            v-if="canNotify"
             class="actions__secondary"
             :class="{ 'actions__secondary--on': notifyOn }"
             hover-class="actions__secondary--active"

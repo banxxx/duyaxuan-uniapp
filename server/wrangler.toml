@@ -10,6 +10,18 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+# 自定义域名
+#
+# workers.dev 在境内被 DNS 污染（解析到 Facebook 的 IP），小程序真机根本连不上，
+# 所以给 Worker 绑一个自己域名下的子域。custom_domain = true 会由 Cloudflare
+# 自动建 DNS 记录并签发证书，deploy 时一起生效。
+#
+# 注意：这个域名是开发/测试用，没有备案；小程序正式发布前要换成已备案域名
+# （微信后台 → 开发管理 → 服务器域名）。
+routes = [
+  { pattern = "api.banxxx.cc.cd", custom_domain = true }
+]
+
 [[d1_databases]]
 # binding 就是代码里 c.env.DB 的那个 DB。
 # wrangler d1 create 会建议 binding = "duyaxuan_db"（按库名推导的默认值），
@@ -17,6 +29,10 @@ compatibility_flags = ["nodejs_compat"]
 binding = "DB"
 database_name = "duyaxuan-db"
 database_id = "b013e396-3d15-4a78-b58b-2b387aa1c948"
+# 远程绑定：`npm run dev:remote` 时读写云端 D1（真机 / 跨设备联调用）。
+# `npm run dev` 带 --local，会把这条忽略，继续用 .wrangler/state 里的本地库。
+# 注意 Wrangler 4 的 `wrangler dev --remote` 已经不再生效，必须用这个字段。
+remote = true
 
 # 头像存储
 #
@@ -28,7 +44,21 @@ database_id = "b013e396-3d15-4a78-b58b-2b387aa1c948"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "duyaxuan-avatar"
+# 同上：dev:remote 时头像直接写云端 R2，手机和电脑看到的才是同一张图
+remote = true
 
 [vars]
 # token 有效期（天）。前端第 6 天会主动续，这里保持 7
 TOKEN_TTL_DAYS = "7"
+
+# 定时任务：补发截止提醒 / 结果通知。
+#
+# 免费套餐就支持 Cron Trigger（账号上限 5 个），每次触发算 1 次请求，
+# 5 分钟一次 = 每天 288 次，远低于免费额度 10 万次/天。
+# 但免费套餐每次调用只有 50 个子请求、10ms CPU，所以代码里每轮只处理
+# 少量用户，处理不完下一轮继续。
+#
+# 改频率直接改这里；不想用定时任务就删掉 [triggers] 整段，
+# 截止 / 结果通知会在用户下次打开消息中心时补发。
+[triggers]
+crons = ["*/5 * * * *"]

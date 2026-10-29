@@ -30,11 +30,18 @@ export interface Env {
   WX_TMPL_JOINED?: string
   WX_TMPL_COMMENT?: string
   WX_TMPL_DEADLINE?: string
-  /** 预留：结果公布。目前没有产生这类通知的业务，配了也不会发 */
+  /** 结果公布：投票/问卷结束后通知参与者与发起人 */
   WX_TMPL_RESULT?: string
+  /** 我参与的投票 / 问卷有更新 */
+  WX_TMPL_UPDATED?: string
   /**
-   * 模板字段名，JSON：{"title":"thing1","time":"time2","remark":"thing3"}。
-   * 不同模板的字段名不一样（thing1 / phrase2 / character_string3），
+   * 通用模板：五类通知共用一个模板时填这个。
+   * 单独配置了某一类（上面四个）时以单独配置为准。
+   */
+  WX_TMPL_NOTIFY?: string
+  /**
+   * 模板字段名，JSON：{"title":"thing4","content":"thing2","time":"time20"}。
+   * 不同模板的字段名不一样（thing4 / phrase2 / character_string3），
    * 对不上时微信返回 47003，改这个变量即可，不用改代码。
    */
   WX_TMPL_FIELDS?: string

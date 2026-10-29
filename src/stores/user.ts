@@ -5,10 +5,23 @@ import type { Platform } from '@/utils/platform'
 import { loginButtonText } from '@/utils/platform'
 import { loginByCode, devLogin, fetchProfile, isMockAuth } from '@/api/auth'
 import { registerAuthHooks } from '@/utils/auth-token'
+import { ApiError } from '@/utils/request'
 
 const TOKEN_KEY = 'dyx_token'
 const USER_KEY = 'dyx_user'
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 6 // 后端签发 7 天，前端提前 1 天续
+
+/**
+ * 资料同步的并发闸门。
+ *
+ * onLaunch、tab 页 onShow、从后台回前台都会触发 refreshProfile，
+ * 一次冷启动可能连着调三次。这里只放一个请求出去，后面的直接复用，
+ * 免得同一份资料在三秒内拉三遍。
+ */
+let refreshing: Promise<void> | null = null
+
+/** 本地资料版本号：上传头像/解绑等本地写入会 +1，防止慢请求把新资料覆盖回旧的 */
+let profileRevision = 0
 
 interface LoginResult {
   token: string
@@ -44,6 +57,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   function persist(result: LoginResult) {
+    profileRevision++
     token.value = result.token
     profile.value = result.user
     loginAt.value = Date.now()
@@ -104,6 +118,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   function logout() {
+    profileRevision++
     token.value = ''
     profile.value = null
     loginAt.value = 0
@@ -122,18 +137,37 @@ export const useUserStore = defineStore('user', () => {
 
   /** 服务端已经把新资料返回了（解绑等），直接落到本地 */
   function applyProfile(next: UserProfile) {
+    profileRevision++
     profile.value = next
     uni.setStorageSync(USER_KEY, JSON.stringify(next))
   }
 
-  /** 启动时和服务端对齐一次资料，本地缓存只当兜底 */
+  /**
+   * 和服务端对齐资料，本地缓存只当兜底。
+   *
+   * 不只在启动时调用：头像/昵称可能在另一台设备上改过，
+   * 每次回到首页或「我的」都静默拉一次，跨设备才不会一直显示旧头像。
+   */
   async function refreshProfile() {
     if (!token.value) return
-    try {
-      applyProfile(await fetchProfile())
-    } catch {
-      // 网络不好就先用缓存，不阻塞启动
-    }
+    if (refreshing) return refreshing
+    const rev = profileRevision
+    refreshing = (async () => {
+      try {
+        const next = await fetchProfile()
+        // 请求期间本地刚传过头像/解绑过，就不要再拿旧结果覆盖
+        if (rev === profileRevision) applyProfile(next)
+      } catch (err) {
+        // 服务端已经没有这个账号（换库、在别处注销、被清理）：
+        // 本地 token 再留着只会一直拿到 404，还会显示一个指向旧库的头像。
+        // 这里直接清掉登录态，下次操作会自动重新登录并建号。
+        if (err instanceof ApiError && err.code === 404) logout()
+        // 其余错误（网络不好）就先沿用缓存，不阻塞启动
+      } finally {
+        refreshing = null
+      }
+    })()
+    return refreshing
   }
 
   // 把读写 token 的能力注册给请求层，打断 store ↔ request 的循环依赖

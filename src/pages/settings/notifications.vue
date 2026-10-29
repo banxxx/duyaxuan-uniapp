@@ -14,7 +14,11 @@ import {
   type PushPrefs
 } from '@/api/notification'
 import { useSettingsStore } from '@/stores/settings'
-import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
+import {
+  hasSubscribeTemplates,
+  preloadSubscribeTemplates,
+  requestSubscribe
+} from '@/utils/subscribe'
 import { formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
@@ -47,10 +51,15 @@ onLoad((q) => {
   if (q?.tab === 'push') tab.value = 'push'
 })
 
+/** 服务端没配模板时，开关仍然保存，但不会弹订阅授权框 —— 说明一下免得以为坏了 */
+const noTemplates = ref(false)
+
 onMounted(() => {
   settings.restore()
   // 模板 ID 要提前拿到：用户点开关时再请求就赶不上「点击手势」了
-  preloadSubscribeTemplates()
+  preloadSubscribeTemplates().then(() => {
+    noTemplates.value = !hasSubscribeTemplates()
+  })
   load()
 })
 
@@ -117,7 +126,8 @@ const KIND_OF: Partial<Record<SwitchKey, PushKind>> = {
   pushJoined: 'joined',
   pushComment: 'comment',
   pushDeadline: 'deadline',
-  pushResult: 'result'
+  pushResult: 'result',
+  pushUpdated: 'updated'
 }
 
 /** 本地开关 → 服务端偏好（订阅消息由服务端发，本地开关拦不住） */
@@ -128,7 +138,8 @@ function prefsOf(): PushPrefs {
     joined: s.pushJoined,
     comment: s.pushComment,
     deadline: s.pushDeadline,
-    result: s.pushResult
+    result: s.pushResult,
+    updated: s.pushUpdated
   }
 }
 
@@ -163,6 +174,8 @@ function iconOf(kind: Notification['kind']) {
       return 'trophy'
     case 'joined':
       return 'users'
+    case 'updated':
+      return 'square-pen'
     default:
       return 'circle-check'
   }
@@ -204,10 +217,11 @@ function iconOf(kind: Notification['kind']) {
           </view>
 
           <view
-            v-for="n in shown"
+            v-for="(n, i) in shown"
             :key="n.id"
-            class="msg"
+            class="msg anim anim--fade-up"
             :class="{ 'msg--unread': !n.read }"
+            :style="{ animationDelay: `${Math.min(i, 8) * 35}ms` }"
             hover-class="msg--active"
             @tap="open(n)"
           >
@@ -261,13 +275,13 @@ function iconOf(kind: Notification['kind']) {
           </view>
         </view>
 
-        <text class="notif__group">提醒类型</text>
+        <text class="notif__group">微信服务通知</text>
 
         <view class="card" :class="{ 'card--off': !settings.settings.pushEnabled }">
           <view class="row">
             <view class="row__text">
               <text class="row__title">投票即将截止</text>
-              <text class="row__desc">截止前 1 天提醒</text>
+              <text class="row__desc">结束前 2 小时提醒（时长不足 2 小时的投票不提醒）</text>
             </view>
             <AppSwitch
               :model-value="settings.settings.pushDeadline"
@@ -281,7 +295,7 @@ function iconOf(kind: Notification['kind']) {
           <view class="row">
             <view class="row__text">
               <text class="row__title">有人参与我的投票</text>
-              <text class="row__desc">实时提醒</text>
+              <text class="row__desc">仅第一次有人参与时提醒</text>
             </view>
             <AppSwitch
               :model-value="settings.settings.pushJoined"
@@ -323,7 +337,7 @@ function iconOf(kind: Notification['kind']) {
           <view class="row">
             <view class="row__text">
               <text class="row__title">我参与的投票有更新</text>
-              <text class="row__desc">发起人修改了投票</text>
+              <text class="row__desc">发起人修改后提醒（每小时最多一条）</text>
             </view>
             <AppSwitch
               :model-value="settings.settings.pushUpdated"
@@ -333,8 +347,11 @@ function iconOf(kind: Notification['kind']) {
           </view>
         </view>
 
-        <text class="notif__note">
-          微信订阅消息是「一次授权、一条消息」：打开开关时会弹窗征求同意，每同意一次只能收到一条，之后需要再次开启。若系统层关闭通知，本页开关将不生效。
+        <text v-if="noTemplates" class="notif__note">
+          服务端还没有配置订阅消息模板，现在只会收到站内消息；开关会保存，配置模板后自动生效。
+        </text>
+        <text v-else class="notif__note">
+          站内消息始终记录在消息中心，本页开关只控制是否推送微信服务通知。微信订阅消息是「一次授权、一条消息」：打开开关时会弹窗征求同意，每同意一次只能收到一条，之后需要再次开启。若系统层关闭通知，本页开关将不生效。
         </text>
       </view>
     </scroll-view>
@@ -440,6 +457,7 @@ export default { name: 'NotificationsPage' }
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color $dur-fast $ease-both;
 
     &--on {
       background: $surface;
@@ -450,6 +468,7 @@ export default { name: 'NotificationsPage' }
     font-size: 12px;
     font-weight: 500;
     color: $muted;
+    transition: color $dur-fast $ease-both;
 
     &--on {
       color: $ink;
@@ -466,6 +485,7 @@ export default { name: 'NotificationsPage' }
   display: flex;
   gap: 11px;
   align-items: flex-start;
+  transition: background-color $dur-fast $ease-both;
 
   &--active {
     background: $subtle;

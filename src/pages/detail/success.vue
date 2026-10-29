@@ -4,6 +4,7 @@ import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
 import type { Poll } from '@/types/api'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppNavBar from '@/components/base/AppNavBar.vue'
+import AppEmpty from '@/components/base/AppEmpty.vue'
 import { fetchPoll, fetchMyVote } from '@/api/poll'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
@@ -26,26 +27,35 @@ let timer: ReturnType<typeof setTimeout> | null = null
 
 const choices = ref<string[]>([])
 const canSeeResult = ref(false)
+const error = ref(false)
 
 onLoad((q) => {
   pollId.value = (q?.id as string) ?? ''
 })
 
-onMounted(async () => {
+async function load() {
   if (!pollId.value) return
-  const [p, mine] = await Promise.all([fetchPoll(pollId.value), fetchMyVote(pollId.value)])
-  poll.value = p
-  syncShareMenu(p.rules.allowShare)
-  myVote.value = mine
-  choices.value = p.options.filter((o) => mine.includes(o.id)).map((o) => o.title)
+  error.value = false
+  try {
+    const [p, mine] = await Promise.all([fetchPoll(pollId.value), fetchMyVote(pollId.value)])
+    poll.value = p
+    syncShareMenu(p.rules.allowShare)
+    myVote.value = mine
+    choices.value = p.options.filter((o) => mine.includes(o.id)).map((o) => o.title)
 
-  const v = p.rules.resultVisibility ?? 'after_vote'
-  canSeeResult.value = v === 'always' || v === 'after_vote'
+    const v = p.rules.resultVisibility ?? 'after_vote'
+    canSeeResult.value = v === 'always' || v === 'after_vote'
 
-  timer = setTimeout(() => {
-    backTo(ROUTES.detail, { id: pollId.value })
-  }, 3000)
-})
+    timer = setTimeout(() => {
+      backTo(ROUTES.detail, { id: pollId.value })
+    }, 3000)
+  } catch {
+    // 加载失败时不能停在空白页：给重试和返回，用户至少能退出去
+    error.value = true
+  }
+}
+
+onMounted(load)
 
 onUnmounted(() => {
   if (timer) clearTimeout(timer)
@@ -67,9 +77,19 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
 
 <template>
   <view class="success">
-    <AppNavBar :back="false" />
+    <AppNavBar :back="error" />
 
-    <view class="success__content" :style="{ paddingBottom: bottomInset(28) }">
+    <AppEmpty
+      v-if="error"
+      icon="wifi-off"
+      title="加载失败"
+      desc="网络不太稳定，重试一下就好"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
+
+    <view v-else class="success__content" :style="{ paddingBottom: bottomInset(28) }">
       <view class="success__icon anim anim--success">
         <AppIcon name="check" :size="42" color="#FFFFFF" :stroke-width="2.4" />
       </view>

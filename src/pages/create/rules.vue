@@ -194,7 +194,7 @@ function publish() {
         </view>
 
         <!-- ================= 投票 ================= -->
-        <view v-if="!isSurvey" class="card">
+        <view v-if="!isSurvey" class="card anim anim--fade-up">
           <RuleRow
             title="选择方式"
             :desc="typeMode === 'single' ? '每人只能选 1 项' : '每人可勾选多项'"
@@ -313,7 +313,7 @@ function publish() {
         </view>
 
         <!-- ================= 问卷 ================= -->
-        <view v-else class="card">
+        <view v-else class="card anim anim--fade-up">
           <RuleRow title="匿名收集" desc="回答者身份不公开">
             <AppSwitch
               :model-value="draft.draft.rules.anonymous"
@@ -374,7 +374,7 @@ function publish() {
         </view>
 
         <!-- 截止时间（投票 / 问卷共用）· 设计稿 30 的独立一节 -->
-        <view class="deadline">
+        <view class="deadline anim anim--fade-up" :style="{ animationDelay: '80ms' }">
           <view class="deadline__head">
             <text class="deadline__title">截止时间</text>
             <text class="deadline__req">必填</text>
@@ -402,7 +402,11 @@ function publish() {
             </view>
           </view>
 
-          <view class="deadline__value" @tap="openDeadlinePicker">
+          <view
+            class="deadline__value"
+            hover-class="deadline__value--active"
+            @tap="openDeadlinePicker"
+          >
             <AppIcon name="calendar" :size="16" color="#71717A" />
             <text class="deadline__value-text">{{ formatDateTime(draft.draft.rules.endAt) }}</text>
             <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
@@ -415,7 +419,7 @@ function publish() {
       <view class="rules__prev" hover-class="rules__prev--active" @tap="onBack">
         <text class="rules__prev-text">上一步</text>
       </view>
-      <view class="rules__next" @tap="publish">
+      <view class="rules__next" hover-class="rules__next--active" @tap="publish">
         <text class="rules__next-text">发布</text>
       </view>
     </view>
@@ -441,7 +445,7 @@ function publish() {
           </view>
           <view
             v-if="draft.draft.rules.joinMethod === o.value"
-            class="picker__check"
+            class="picker__check anim anim--pop"
           >
             <AppIcon name="check" :size="11" color="#FFFFFF" :stroke-width="3" />
           </view>
@@ -470,7 +474,7 @@ function publish() {
           </view>
           <view
             v-if="draft.draft.rules.resultVisibility === o.value"
-            class="picker__check"
+            class="picker__check anim anim--pop"
           >
             <AppIcon name="check" :size="11" color="#FFFFFF" :stroke-width="3" />
           </view>
@@ -613,6 +617,7 @@ export default { name: 'CreateRulesPage' }
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color $dur-fast $ease-both;
 
     &--active {
       background: $subtle;
@@ -633,6 +638,11 @@ export default { name: 'CreateRulesPage' }
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: opacity $dur-fast $ease-both;
+
+    &--active {
+      opacity: 0.85;
+    }
   }
 
   &__next-text {
@@ -692,6 +702,7 @@ export default { name: 'CreateRulesPage' }
     border-radius: 7px;
     display: flex;
     align-items: center;
+    transition: background-color $dur-fast $ease-both;
 
     &--on {
       background: $surface;
@@ -701,6 +712,7 @@ export default { name: 'CreateRulesPage' }
   &__text {
     font-size: 12px;
     color: $muted;
+    transition: color $dur-fast $ease-both;
 
     &--on {
       color: $ink;
@@ -725,6 +737,7 @@ export default { name: 'CreateRulesPage' }
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: opacity $dur-fast $ease-both;
 
     &--active {
       opacity: 0.6;
@@ -778,6 +791,9 @@ export default { name: 'CreateRulesPage' }
     display: flex;
     align-items: center;
     justify-content: center;
+    transition:
+      background-color $dur-fast $ease-both,
+      border-color $dur-fast $ease-both;
 
     &--on {
       background: $accent;
@@ -789,6 +805,7 @@ export default { name: 'CreateRulesPage' }
     font-size: 12px;
     font-weight: 500;
     color: $muted;
+    transition: color $dur-fast $ease-both;
 
     &--on {
       color: #fff;
@@ -805,6 +822,11 @@ export default { name: 'CreateRulesPage' }
     display: flex;
     align-items: center;
     gap: 10px;
+    transition: background-color $dur-fast $ease-both;
+
+    &--active {
+      background: $subtle;
+    }
   }
 
   &__value-text {
@@ -829,6 +851,9 @@ export default { name: 'CreateRulesPage' }
     display: flex;
     align-items: center;
     gap: 12px;
+    transition:
+      background-color $dur-fast $ease-both,
+      border-color $dur-fast $ease-both;
 
     &--on {
       background: $accent-soft;

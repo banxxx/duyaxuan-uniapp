@@ -32,6 +32,7 @@ function toggle() {
   <view
     class="switch"
     :class="{ 'switch--on': on, 'switch--disabled': disabled }"
+    :hover-class="disabled ? 'none' : 'switch--active'"
     @tap="toggle"
   >
     <view class="switch__knob" />
@@ -52,10 +53,19 @@ export default { name: 'AppSwitch' }
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  transition: background 0.2s ease;
+  transition: background-color $dur-fast $ease-both;
 
   &--on {
     background: $accent;
+  }
+
+  /* 按下时圆点缩一点，松手回弹；位移和缩放分开写，避免切换时两段动画打架 */
+  &--active &__knob {
+    transform: scale(0.9);
+  }
+
+  &--on.switch--active &__knob {
+    transform: translateX(18px) scale(0.9);
   }
 
   /* 锁定态：轨道灰掉，圆点仍停在原来的位置 */
@@ -73,7 +83,9 @@ export default { name: 'AppSwitch' }
     border-radius: 10px;
     background: #fff;
     box-shadow: 0 1px 3px rgba(9, 9, 11, 0.16);
-    transition: transform 0.2s ease;
+    transition:
+      transform $dur-fast $ease-both,
+      box-shadow $dur-fast $ease-both;
   }
 
   &--on &__knob {

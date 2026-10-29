@@ -135,13 +135,15 @@ function changeSource() {
 
       <view class="list">
         <view
-          v-for="t in types"
+          v-for="(t, i) in types"
           :key="t.key"
-          class="item"
+          class="item anim anim--fade-up"
           :class="{
             'item--on': selected === t.key && !isDisabled(t),
             'item--off': isDisabled(t)
           }"
+          :style="{ animationDelay: `${i * 40}ms` }"
+          :hover-class="isDisabled(t) ? 'none' : 'item--active'"
           @tap="pick(t)"
         >
           <view class="item__icon" :class="{ 'item__icon--on': selected === t.key && !isDisabled(t) }">
@@ -165,7 +167,10 @@ function changeSource() {
             </text>
           </view>
 
-          <view v-if="selected === t.key && !isDisabled(t)" class="item__check">
+          <view
+            v-if="selected === t.key && !isDisabled(t)"
+            class="item__check anim anim--pop"
+          >
             <AppIcon name="check" :size="12" color="#FFFFFF" :stroke-width="3" />
           </view>
 
@@ -333,11 +338,22 @@ export default { name: 'CreateTypePage' }
   display: flex;
   align-items: center;
   gap: 12px;
+  /* 选中时描边加粗用内阴影补，不改 border-width，避免内容区缩 1px 抖动 */
+  transition:
+    background-color $dur-fast $ease-both,
+    border-color $dur-fast $ease-both,
+    box-shadow $dur-fast $ease-both;
+
+  /* 卡片本身带进场动画（transform 会被 animation 的 fill-mode 占住），
+     按压反馈落在图标块上，效果一样但不打架 */
+  &--active &__icon {
+    transform: scale(0.92);
+  }
 
   &--on {
     background: $accent-soft;
-    border: 2px solid $accent;
-    padding: 13px;
+    border-color: $accent;
+    box-shadow: inset 0 0 0 1px $accent;
   }
 
   /* 82：不可选（已从问卷发起）整块退成 $subtle，标题也变浅 */
@@ -358,6 +374,9 @@ export default { name: 'CreateTypePage' }
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    transition:
+      background-color $dur-fast $ease-both,
+      transform $dur-fast $ease-both;
 
     &--on {
       background: $accent;
@@ -376,6 +395,7 @@ export default { name: 'CreateTypePage' }
     font-size: 14px;
     font-weight: 600;
     color: $ink;
+    transition: color $dur-fast $ease-both;
 
     &--on {
       color: $accent-ink;

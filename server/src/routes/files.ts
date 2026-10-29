@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types'
 import { fail } from '../lib/response'
-import { isPublicKey } from '../lib/storage'
+import { isPublicKey, publicFileMime } from '../lib/storage'
 
 /**
  * 读文件：GET /files/<key>
@@ -28,7 +28,10 @@ files.get('/*', async (c) => {
 
   return new Response(obj.body, {
     headers: {
-      'Content-Type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+      // 不信任对象里存的 Content-Type：旧头像可能是按客户端 MIME 存进去的。
+      // 这里只按扩展名返回图片类型，再加 nosniff，避免被当成 HTML 执行。
+      'Content-Type': publicFileMime(key),
+      'X-Content-Type-Options': 'nosniff',
       // 键里带时间戳，同一个键的内容永远不会变，可以放心长缓存
       'Cache-Control': 'public, max-age=31536000, immutable',
       ETag: obj.httpEtag

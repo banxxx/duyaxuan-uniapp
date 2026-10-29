@@ -82,10 +82,20 @@ function confirmLogout() {
 }
 
 function confirmClear() {
-  settings.clearCache()
+  const cleared = settings.clearCache()
   sheet.value = null
-  uni.showToast({ title: '已清除', icon: 'none' })
+  uni.showToast({
+    title: cleared === '0 KB' ? '没有可清理的缓存' : `已清除 ${cleared}`,
+    icon: 'none'
+  })
 }
+
+/** 缓存为 0 时换一句提示，避免出现「将清除 0 KB」这种别扭文案 */
+const cacheDesc = computed(() =>
+  settings.settings.cacheSize === '0 KB'
+    ? '当前没有可清理的本地缓存。'
+    : `将清除草稿、搜索历史等 ${settings.settings.cacheSize} 本地数据，不会影响账号和投票记录。`
+)
 </script>
 
 <template>
@@ -186,7 +196,7 @@ function confirmClear() {
       :visible="sheet === 'cache'"
       variant="confirm"
       title="清除缓存？"
-      :desc="`将清除 ${settings.settings.cacheSize} 的图片与离线数据，不会影响你的投票记录。`"
+      :desc="cacheDesc"
       @close="sheet = null"
     >
       <view class="confirm-actions">

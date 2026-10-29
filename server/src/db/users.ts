@@ -124,8 +124,14 @@ export async function updateProfile(
     values.push(nickname.slice(0, 20))
   }
   if (patch.avatar !== undefined) {
+    const avatar = patch.avatar ? String(patch.avatar) : null
+    // 头像只能是本人上传目录下的文件：否则可以把头像设成别人的文件 /
+    // 小程序码，下一次上传头像时旧图删除逻辑会把那个对象一起删掉。
+    if (avatar && !avatar.startsWith(`/files/avatars/${userId}/`)) {
+      throw new HttpError(400, '头像地址不合法')
+    }
     fields.push('avatar = ?')
-    values.push(patch.avatar ? String(patch.avatar) : null)
+    values.push(avatar)
   }
   if (patch.bio !== undefined) {
     fields.push('bio = ?')
@@ -168,7 +174,16 @@ export async function deactivate(db: D1Database, userId: string): Promise<void> 
     db
       .prepare('UPDATE polls SET deleted_at = ? WHERE creator_id = ? AND deleted_at IS NULL')
       .bind(now, userId),
-    db.prepare('DELETE FROM user_platforms WHERE user_id = ?').bind(userId)
+    db.prepare('DELETE FROM user_platforms WHERE user_id = ?').bind(userId),
+    // 注销页承诺「清除身份信息」：参与记录保留（不影响统计），
+    // 但发起人要求填的个人信息属于身份信息，要一起清掉。
+    db.prepare('UPDATE votes SET profile_info = NULL WHERE user_id = ?').bind(userId),
+    db.prepare('UPDATE answers SET profile_info = NULL WHERE user_id = ?').bind(userId),
+    // 推送相关的临时数据没有保留价值
+    db.prepare('DELETE FROM poll_reminders WHERE user_id = ?').bind(userId),
+    db.prepare('DELETE FROM wx_subscriptions WHERE user_id = ?').bind(userId),
+    db.prepare('DELETE FROM wx_push_prefs WHERE user_id = ?').bind(userId),
+    db.prepare('DELETE FROM wx_push_log WHERE user_id = ?').bind(userId)
   ])
 }
 

@@ -251,7 +251,8 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
             <view
               v-for="(opt, i) in draft.draft.options"
               :key="opt.id ?? `new-${i}`"
-              class="opt"
+              class="opt anim anim--fade-up"
+              :style="{ animationDelay: `${Math.min(i, 8) * 30}ms` }"
               @longpress="onOptionLongPress(i)"
             >
               <view class="opt__index">
@@ -319,7 +320,12 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
       <view class="content__prev" hover-class="content__prev--active" @tap="goBack">
         <text class="content__prev-text">上一步</text>
       </view>
-      <view class="content__next" :class="{ 'content__next--off': !canNext }" @tap="next">
+      <view
+        class="content__next"
+        :class="{ 'content__next--off': !canNext }"
+        :hover-class="canNext ? 'content__next--active' : 'none'"
+        @tap="next"
+      >
         <text class="content__next-text">下一步</text>
       </view>
     </view>
@@ -472,6 +478,7 @@ export default { name: 'CreateContentPage' }
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color $dur-fast $ease-both;
 
     &--active {
       background: $subtle;
@@ -492,9 +499,15 @@ export default { name: 'CreateContentPage' }
     display: flex;
     align-items: center;
     justify-content: center;
+    /* 能不能下一步只差透明度，渐隐比直接变灰更清楚 */
+    transition: opacity $dur-fast $ease-both;
 
     &--off {
       opacity: 0.4;
+    }
+
+    &--active {
+      opacity: 0.85;
     }
   }
 
@@ -541,6 +554,9 @@ export default { name: 'CreateContentPage' }
     border: 1px solid $line;
     display: flex;
     align-items: center;
+    transition:
+      border-color $dur-fast $ease-both,
+      box-shadow $dur-fast $ease-both;
 
     &--focus {
       border-color: $accent;
@@ -561,6 +577,9 @@ export default { name: 'CreateContentPage' }
     border-radius: 14px;
     background: $surface;
     border: 1px solid $line;
+    transition:
+      border-color $dur-fast $ease-both,
+      box-shadow $dur-fast $ease-both;
   }
 
   &__textarea-inner {
@@ -669,9 +688,13 @@ export default { name: 'CreateContentPage' }
   align-items: center;
   justify-content: center;
   gap: 6px;
+  transition:
+    background-color $dur-fast $ease-both,
+    border-color $dur-fast $ease-both;
 
   &--active {
     background: $subtle;
+    border-color: $line;
   }
 
   &__text {
@@ -777,6 +800,9 @@ export default { name: 'CreateContentPage' }
     align-items: center;
     font-size: 13px;
     color: $ink;
+    transition:
+      border-color $dur-fast $ease-both,
+      box-shadow $dur-fast $ease-both;
 
     &--focus {
       border-color: $accent;

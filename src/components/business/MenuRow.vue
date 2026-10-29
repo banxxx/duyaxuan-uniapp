@@ -74,6 +74,7 @@ export default { name: 'MenuRow' }
   display: flex;
   align-items: center;
   gap: 12px;
+  transition: background-color $dur-fast $ease-both;
 
   &--active {
     background: $subtle;

@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { usePollStore } from './poll'
+import { useDraftStore } from './draft'
 
 /**
  * 本地设置
@@ -26,12 +28,66 @@ export interface Settings {
   cacheSize: string
 }
 
-/** 本地存储实际占了多少，uni.getStorageInfoSync().currentSize 单位是 KB */
+/**
+ * 「缓存」到底指什么
+ *
+ * 以前这里直接拿 uni.getStorageInfoSync().currentSize 当缓存大小，
+ * 但那是整个本地存储的占用——包含 token、用户资料、本页设置这些
+ * 清不掉也不该清的东西。结果就是：点了清除，展示值几乎不变，
+ * 看起来像没清干净。
+ *
+ * 现在改成白名单：只统计、只清除下面这些「丢了也能重新拿到」的数据。
+ * 登录态（dyx_token / dyx_user）和设置（dyx_settings）永远不在这份名单里。
+ */
+const CACHE_KEYS = ['dyx_draft', 'dyx_search_history']
+const CACHE_PREFIXES = ['dyx_platform_nick_']
+
+function isCacheKey(key: string): boolean {
+  return CACHE_KEYS.includes(key) || CACHE_PREFIXES.some((p) => key.startsWith(p))
+}
+
+/** 字符串按 UTF-8 估算字节数：中文一个字 3 字节，不能直接用 length */
+function utf8Bytes(value: string): number {
+  let bytes = 0
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i)
+    if (code < 0x80) bytes += 1
+    else if (code < 0x800) bytes += 2
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      // 代理对算一个 4 字节字符
+      bytes += 4
+      i++
+    } else bytes += 3
+  }
+  return bytes
+}
+
+function formatSize(bytes: number): string {
+  if (bytes <= 0) return '0 KB'
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
+}
+
+/** 某个 key 在本地占的字节数（拿不到就按 0 算） */
+function keyBytes(key: string): number {
+  try {
+    const value = uni.getStorageSync(key)
+    if (typeof value === 'string') return utf8Bytes(value)
+    if (value === null || value === undefined || value === '') return 0
+    return utf8Bytes(JSON.stringify(value))
+  } catch {
+    return 0
+  }
+}
+
+/** 只统计可清理的那部分，不含登录态和设置 */
 function readCacheSize(): string {
   try {
-    const kb = uni.getStorageInfoSync().currentSize
-    if (!kb) return '0 KB'
-    return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
+    const keys = uni.getStorageInfoSync().keys ?? []
+    const bytes = keys.filter(isCacheKey).reduce((sum, key) => sum + keyBytes(key), 0)
+    return formatSize(bytes)
   } catch {
     return '0 KB'
   }
@@ -70,21 +126,35 @@ export const useSettingsStore = defineStore('settings', () => {
     persist()
   }
 
-  /** 清缓存：清掉除登录态和设置以外的 key，然后把展示值按真实占用重算 */
-  function clearCache() {
+  /**
+   * 清缓存：只删白名单里的 key，返回清掉的大小（用于 toast）
+   *
+   * 登录态、用户资料、本页设置都不动 —— 清完还应该是登录状态。
+   * 内存里的详情缓存也一起丢掉，否则「清了缓存」再进详情还是旧数据。
+   */
+  function clearCache(): string {
+    let removed = 0
     try {
-      const info = uni.getStorageInfoSync()
-      info.keys.forEach((k) => {
-        // 保留登录态与设置，其余（图片缓存、草稿）都清掉
-        if (!k.startsWith('dyx_token') && !k.startsWith('dyx_user') && k !== KEY) {
-          uni.removeStorageSync(k)
-        }
+      const keys = uni.getStorageInfoSync().keys ?? []
+      keys.filter(isCacheKey).forEach((k) => {
+        removed += keyBytes(k)
+        uni.removeStorageSync(k)
       })
     } catch {
-      // 拿不到存储信息时忽略
+      // 拿不到存储信息时忽略，展示值仍然会重算
     }
+
+    try {
+      // 草稿在内存里还有一份，只删存储的话下次 patch 又会写回去
+      useDraftStore().reset()
+      usePollStore().clearDetailCache()
+    } catch {
+      // store 还没初始化时忽略
+    }
+
     settings.value = { ...settings.value, cacheSize: readCacheSize() }
     persist()
+    return formatSize(removed)
   }
 
   return { settings, restore, set, clearCache }

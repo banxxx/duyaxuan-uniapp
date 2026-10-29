@@ -29,7 +29,9 @@ export async function accessToken(db: D1Database, appid: string, secret: string)
   if (row && row.expires_at > now + TOKEN_MARGIN) return row.value
 
   const res = await fetch(
-    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(appid)}&secret=${encodeURIComponent(secret)}`
+    `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(appid)}&secret=${encodeURIComponent(secret)}`,
+    // 微信接口偶尔会卡住，不能让它把整个请求拖到 Worker 超时
+    { signal: AbortSignal.timeout(5000) }
   )
   const data = (await res.json().catch(() => ({}))) as {
     access_token?: string

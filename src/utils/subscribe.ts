@@ -24,10 +24,15 @@ import { getPlatform } from './platform'
 let cache: Partial<Record<PushKind, string>> | null = null
 let loading: Promise<void> | null = null
 
-/** 页面加载时调用；失败就静默，没模板时前端什么都不弹 */
-export function preloadSubscribeTemplates(): void {
-  if (cache || loading) return
-  if (getPlatform() !== 'weixin') return
+/**
+ * 页面加载时调用；失败就静默，没模板时前端什么都不弹。
+ * 返回的 Promise 只用来决定「要不要显示开启提醒的入口」，等不到也没关系。
+ */
+export function preloadSubscribeTemplates(): Promise<void> {
+  if (cache) return Promise.resolve()
+  if (loading) return loading
+  if (getPlatform() !== 'weixin') return Promise.resolve()
+
   loading = fetchSubscribeTemplates()
     .then((t) => {
       cache = t
@@ -38,6 +43,7 @@ export function preloadSubscribeTemplates(): void {
     .finally(() => {
       loading = null
     })
+  return loading
 }
 
 /** 当前有没有可用模板（设置页用来决定提示文案） */
@@ -58,10 +64,10 @@ export function requestSubscribe(
 ): void {
   if (getPlatform() !== 'weixin') return
 
-  const ids = kinds
-    .map((k) => cache?.[k])
-    .filter((id): id is string => !!id)
-    .slice(0, 3)
+  // 四类通知可能共用一个模板，去重后再传 —— 微信不接受重复的 tmplIds
+  const ids = [
+    ...new Set(kinds.map((k) => cache?.[k]).filter((id): id is string => !!id))
+  ].slice(0, 3)
   if (!ids.length) return
 
   uni.requestSubscribeMessage({

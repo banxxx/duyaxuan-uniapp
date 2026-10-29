@@ -44,7 +44,7 @@ export async function weixinCode2Session(
 
   let data: WxSessionResponse
   try {
-    const res = await fetch(url)
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     data = (await res.json()) as WxSessionResponse
   } catch {
     throw new HttpError(502, '微信登录服务暂时不可用')

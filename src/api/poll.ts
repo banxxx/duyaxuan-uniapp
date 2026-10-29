@@ -268,12 +268,15 @@ export async function restorePoll(id: string): Promise<void> {
   return http.post<void>(`/polls/${id}/restore`)
 }
 
-export async function fetchComments(pollId: string): Promise<Comment[]> {
+export async function fetchComments(
+  pollId: string,
+  opts?: { toast?: boolean }
+): Promise<Comment[]> {
   if (USE_MOCK) {
     await delay()
     return mockComments.filter((c) => c.pollId === pollId)
   }
-  return http.get<Comment[]>(`/polls/${pollId}/comments`)
+  return http.get<Comment[]>(`/polls/${pollId}/comments`, undefined, opts)
 }
 
 /** 发评论；replyToId 是「回复」的目标评论 */
@@ -333,7 +336,11 @@ export async function setCommentLike(
     : http.del<{ liked: boolean; likeCount: number }>(url)
 }
 
-export async function fetchAnswers(pollId: string, cursor?: string | null): Promise<Paged<SurveyAnswer>> {
+export async function fetchAnswers(
+  pollId: string,
+  cursor?: string | null,
+  opts?: { toast?: boolean }
+): Promise<Paged<SurveyAnswer>> {
   if (USE_MOCK) {
     await delay()
     return paginate(
@@ -341,7 +348,7 @@ export async function fetchAnswers(pollId: string, cursor?: string | null): Prom
       cursor
     )
   }
-  return http.get<Paged<SurveyAnswer>>(`/polls/${pollId}/answers`, { cursor })
+  return http.get<Paged<SurveyAnswer>>(`/polls/${pollId}/answers`, { cursor }, opts)
 }
 
 export async function submitAnswer(

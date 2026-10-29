@@ -87,11 +87,13 @@ export default { name: 'StepBar' }
     font-size: 10px;
     font-weight: 700;
     color: $faint;
+    transition: color $dur-base $ease-both;
   }
 
   &__text {
     font-size: 10px;
     color: $faint;
+    transition: color $dur-base $ease-both;
   }
 
   &__item--on &__num,

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onLaunch, onShow, onError } from '@dcloudio/uni-app'
 import { useUserStore } from '@/stores/user'
+import { API_BASE } from '@/utils/api-base'
+import { useMock } from '@/utils/env'
 import { getPlatform } from '@/utils/platform'
 
 onLaunch(() => {
@@ -12,12 +14,17 @@ onLaunch(() => {
   // 本地缓存的是登录时的快照，启动时静默对齐一次（失败就用缓存）
   user.refreshProfile()
 
-  console.log(`[app] launch on ${platform}`)
+  // 真机排查时先看这一行：mock=true 说明当前包根本没连后端，
+  // 此时所有操作都只写内存，云端/本地数据库都不会有数据
+  console.log(`[app] launch on ${platform} · api=${API_BASE} · mock=${useMock()}`)
 })
 
 onShow(() => {
+  const user = useUserStore()
   // 从后台切回时刷新登录态有效期，避免长时间挂起后接口 401
-  useUserStore().touch()
+  user.touch()
+  // 头像/昵称可能在另一台设备上改过，回前台时静默对齐一次
+  user.refreshProfile()
 })
 
 onError((err) => {

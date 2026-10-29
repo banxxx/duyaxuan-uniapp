@@ -39,9 +39,9 @@ import {
   listComments,
   setCommentLike
 } from '../db/comments'
-import { remindMe } from '../db/notifications'
+import { notifyPollEnded, remindMe } from '../db/notifications'
 import { getPollQrcode } from '../db/qrcode'
-import { acceptInvite, ensureInviteCode } from '../db/invites'
+import { acceptInvite, ensureInviteCode, isInviteOnly } from '../db/invites'
 import { castVote, myVote, revokeVote } from '../db/votes'
 import { listAnswers, myAnswers, submitAnswer, updateAnswer } from '../db/answers'
 
@@ -124,7 +124,7 @@ polls.get('/:id', async (c) => {
 
 polls.put('/:id', requireAuth, async (c) => {
   const body = await c.req.json().catch(() => ({}))
-  return ok(c, await updatePoll(c.env.DB, c.req.param('id'), c.get('userId')!, body))
+  return ok(c, await updatePoll(c.env.DB, c.req.param('id'), c.get('userId')!, body, c.env))
 })
 
 polls.delete('/:id', requireAuth, async (c) => {
@@ -138,20 +138,33 @@ polls.post('/:id/restore', requireAuth, async (c) => {
 })
 
 polls.post('/:id/end', requireAuth, async (c) => {
-  await endPoll(c.env.DB, c.req.param('id'), c.get('userId')!)
+  const id = c.req.param('id')
+  const changed = await endPoll(c.env.DB, id, c.get('userId')!)
+  // 提前结束：立刻发结果通知，不用等用户下一次拉消息。
+  // 已经结束过的投票不再重复通知。
+  if (changed) {
+    // 结束状态已经写入，通知失败不能把「结束投票」这个动作变成 500
+    await notifyPollEnded(c.env.DB, await getPollRowOrThrow(c.env.DB, id), c.env).catch((err) =>
+      console.error('[notify] poll ended failed', err)
+    )
+  }
   return ok(c, null)
 })
 
 /** 小程序码：给海报和分享页用，同一 poll 只生成一次 */
 polls.get('/:id/qrcode', requireAuth, async (c) => {
   const row = await getPollRowOrThrow(c.env.DB, c.req.param('id'))
+  const isOwner = row.creator_id === c.get('userId')
   // 关闭分享后，只有发起人自己还能取码
-  if (!row.allow_share && row.creator_id !== c.get('userId')) {
+  if (!row.allow_share && !isOwner) {
     throw new HttpError(403, '发起人已关闭分享')
   }
-  // 邀请码模式下，码里要带上邀请码，扫进来才能直接参与
-  const inviteCode =
-    row.join_method === 'invite' ? await ensureInviteCode(c.env.DB, row) : undefined
+  // 邀请制的码里带邀请码，等于把准入凭证放进了图片。
+  // 只有发起人（分享的人）能取，否则任何登录用户拿 poll id 就能换出邀请码。
+  if (isInviteOnly(row) && !isOwner) {
+    throw new HttpError(403, '只有发起人可以生成邀请码')
+  }
+  const inviteCode = isInviteOnly(row) ? await ensureInviteCode(c.env.DB, row) : undefined
   return ok(c, { url: await getPollQrcode(c.env.DB, c.env.BUCKET, c.env, row.id, inviteCode) })
 })
 
@@ -178,7 +191,7 @@ polls.get('/:id/invite-code', requireAuth, async (c) => {
 /** 提醒我：记一条提醒，截止后第一次拉通知列表时补发 */
 polls.post('/:id/remind', requireAuth, async (c) => {
   const row = await getPollRowOrThrow(c.env.DB, c.req.param('id'))
-  await remindMe(c.env.DB, row.id, c.get('userId')!)
+  await remindMe(c.env.DB, row, c.get('userId')!)
   return ok(c, null)
 })
 
@@ -207,7 +220,9 @@ polls.delete('/:id/vote', requireAuth, async (c) => {
 })
 
 polls.get('/:id/my-vote', requireAuth, async (c) => {
-  return ok(c, await myVote(c.env.DB, c.req.param('id'), c.get('userId')!))
+  const id = c.req.param('id')
+  await getPollRowOrThrow(c.env.DB, id)
+  return ok(c, await myVote(c.env.DB, id, c.get('userId')!))
 })
 
 /* ---------------- 评论 ---------------- */
@@ -258,12 +273,22 @@ polls.post('/:id/answers', requireAuth, async (c) => {
   const row = await getPollRowOrThrow(c.env.DB, id)
   return ok(
     c,
-    await submitAnswer(c.env.DB, row, c.get('userId')!, body.content ?? '', body.profileInfo, c.env)
+    await submitAnswer(
+      c.env.DB,
+      row,
+      c.get('userId')!,
+      body.content ?? '',
+      body.profileInfo,
+      clientIp(c),
+      c.env
+    )
   )
 })
 
 polls.get('/:id/my-answers', requireAuth, async (c) => {
-  return ok(c, await myAnswers(c.env.DB, c.req.param('id'), c.get('userId')!))
+  const id = c.req.param('id')
+  await getPollRowOrThrow(c.env.DB, id)
+  return ok(c, await myAnswers(c.env.DB, id, c.get('userId')!))
 })
 
 polls.put('/:id/answers/:answerId', requireAuth, async (c) => {
@@ -285,7 +310,11 @@ polls.get('/:id/voters', async (c) => {
   )
 })
 
-polls.get('/:id/stats', async (c) => {
+polls.get('/:id/stats', requireAuth, async (c) => {
+  const row = await getPollRowOrThrow(c.env.DB, c.req.param('id'))
+  if (row.creator_id !== c.get('userId')) {
+    throw new HttpError(403, '只有发起人可以查看数据')
+  }
   return ok(c, await pollStats(c.env.DB, c.req.param('id')))
 })
 

@@ -44,6 +44,8 @@ function hmacKey(secret: string) {
 }
 
 export async function signToken(sub: string, secret: string, ttlSeconds: number): Promise<string> {
+  // 没配密钥时不能拿空字符串去签，否则 token 可被伪造
+  if (!secret) throw new Error('JWT_SECRET 未配置')
   const now = Math.floor(Date.now() / 1000)
   const header = b64urlFromBytes(enc.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })))
   const body = b64urlFromBytes(enc.encode(JSON.stringify({ sub, iat: now, exp: now + ttlSeconds })))
@@ -54,6 +56,7 @@ export async function signToken(sub: string, secret: string, ttlSeconds: number)
 
 /** 验签 + 过期检查。任何一步不过都返回 null，调用方统一回 401 */
 export async function verifyToken(token: string, secret: string): Promise<TokenPayload | null> {
+  if (!secret) return null
   const parts = token.split('.')
   if (parts.length !== 3) return null
   const [h, b, s] = parts

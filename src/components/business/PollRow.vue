@@ -150,6 +150,7 @@ export default { name: 'PollRow' }
   background: $surface;
   border: 1px solid $line;
   border-radius: 14px;
+  transition: background-color $dur-fast $ease-both;
 
   &--active {
     background: $subtle;

@@ -196,8 +196,8 @@ export interface SummaryOptionDetail extends SummaryCandidate {
 
 export interface Notification {
   id: string
-  /** 图标按类型变：截止 / 评论 / 结果 / 参与 / 发布 */
-  kind: 'deadline' | 'comment' | 'result' | 'joined' | 'published'
+  /** 图标按类型变：截止 / 评论 / 结果 / 参与 / 发布 / 更新 */
+  kind: 'deadline' | 'comment' | 'result' | 'joined' | 'published' | 'updated'
   title: string
   content: string
   createdAt: number

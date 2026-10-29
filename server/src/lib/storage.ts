@@ -13,6 +13,27 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/gif': 'gif'
 }
 
+const MIME_BY_EXT: Record<string, string> = {
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif'
+}
+
+/**
+ * 对外提供的 MIME 只由扩展名决定，不信上传时客户端给的 Content-Type。
+ * 否则把 .jpg 文件的 type 写成 text/html，读文件时就会按 HTML 执行。
+ */
+export function mimeByExt(ext: string): string {
+  return MIME_BY_EXT[ext.toLowerCase()] ?? 'application/octet-stream'
+}
+
+/** /files/* 只放头像和小程序码，统一按图片类型返回 */
+export function publicFileMime(key: string): string {
+  const ext = key.slice(key.lastIndexOf('.') + 1)
+  return mimeByExt(ext)
+}
+
 export const AVATAR_PREFIX = 'avatars/'
 /** 小程序码按 pollId + 环境存，生成一次就复用 */
 export const QRCODE_PREFIX = 'qrcodes/'

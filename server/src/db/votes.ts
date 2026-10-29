@@ -43,11 +43,20 @@ export async function castVote(
   }
 
   const existing = await db
-    .prepare('SELECT id, option_ids FROM votes WHERE poll_id = ? AND user_id = ?')
+    .prepare('SELECT id, option_ids, profile_info FROM votes WHERE poll_id = ? AND user_id = ?')
     .bind(poll.id, userId)
-    .first<{ id: string; option_ids: string }>()
+    .first<{ id: string; option_ids: string; profile_info: string | null }>()
 
   if (existing && !poll.allow_edit) throw new HttpError(409, '你已经投过票了')
+
+  // 发起人要求填的信息必须在服务端校验：前端藏输入框不等于 API 调不到。
+  // 改票时允许沿用上一次填过的内容，避免老用户改票被卡住。
+  const info = String(profileInfo ?? '').trim()
+  if (poll.profile_field && !info && !existing?.profile_info) {
+    throw new HttpError(400, `请填写${poll.profile_field}`)
+  }
+  if (info.length > 200) throw new HttpError(400, '个人信息最多 200 字')
+  const storedInfo = info || existing?.profile_info || null
 
   // 限 IP 只在首次投票时判断；改票不该被自己上一次的 IP 挡住
   if (!existing && poll.limit_ip && ip) {
@@ -83,7 +92,7 @@ export async function castVote(
     stmts.push(
       db
         .prepare('UPDATE votes SET option_ids = ?, profile_info = ?, ip = ?, created_at = ? WHERE id = ?')
-        .bind(JSON.stringify(optionIds), profileInfo ?? null, ip, now, existing.id)
+        .bind(JSON.stringify(optionIds), storedInfo, ip, now, existing.id)
     )
   } else {
     stmts.push(
@@ -97,15 +106,20 @@ export async function castVote(
           `INSERT INTO votes (id, poll_id, user_id, option_ids, profile_info, ip, created_at)
            VALUES (?,?,?,?,?,?,?)`
         )
-        .bind(newId('v'), poll.id, userId, JSON.stringify(optionIds), profileInfo ?? null, ip, now)
+        .bind(newId('v'), poll.id, userId, JSON.stringify(optionIds), storedInfo, ip, now)
     )
     stmts.push(db.prepare('UPDATE polls SET voter_count = voter_count + 1 WHERE id = ?').bind(poll.id))
   }
 
   await db.batch(stmts)
 
-  // 改票不重复通知，只有第一次投票才提醒发起人
-  if (!existing) await notifyJoined(db, poll, userId, 'vote', undefined, env)
+  // 改票不重复通知，只有第一次投票才提醒发起人。
+  // 通知失败只记日志：票已经投成功了，不能因为一条消息让用户以为投票失败。
+  if (!existing) {
+    await notifyJoined(db, poll, userId, 'vote', undefined, env).catch((err) =>
+      console.error('[notify] vote joined failed', err)
+    )
+  }
 }
 
 export async function revokeVote(

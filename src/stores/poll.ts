@@ -18,6 +18,11 @@ export const usePollStore = defineStore('poll', () => {
     return detailCache.value[id]
   }
 
+  /** 设置页「清除缓存」时调用：内存里的详情快照也一起丢掉 */
+  function clearDetailCache() {
+    detailCache.value = {}
+  }
+
   async function fetchDetail(id: string): Promise<Poll> {
     const poll = await http.get<Poll>(`/polls/${id}`)
     cacheDetail(poll)
@@ -45,5 +50,14 @@ export const usePollStore = defineStore('poll', () => {
     await http.post(`/polls/${id}/restore`)
   }
 
-  return { detailCache, cacheDetail, getCachedDetail, fetchDetail, fetchList, remove, undoRemove }
+  return {
+    detailCache,
+    cacheDetail,
+    getCachedDetail,
+    clearDetailCache,
+    fetchDetail,
+    fetchList,
+    remove,
+    undoRemove
+  }
 })

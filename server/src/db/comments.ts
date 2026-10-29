@@ -3,12 +3,14 @@ import { HttpError } from '../lib/response'
 import type { Env } from '../types'
 import { notifyComment } from './notifications'
 import { getPollRowOrThrow } from './polls'
+import { assertCanJoin, isInviteOnly } from './invites'
 
 /**
  * 评论区
  *
- * 评论是公开内容，列表允许匿名浏览（详情页未登录也能看讨论），
- * 发评论 / 点赞 / 删除才要求登录。
+ * 链接模式的投票评论公开可读（详情页未登录也能看讨论）；
+ * 邀请码模式的评论只对发起人和参与者开放。
+ * 发评论 / 点赞 / 删除始终要求登录。
  *
  * 楼层只做一级：回复某条评论时把 reply_to_id 存下来，展示成「回复 xx：」，
  * 不做无限嵌套 —— 投票讨论区不需要那么重的结构。
@@ -28,7 +30,12 @@ export async function listComments(
   pollId: string,
   viewerId: string | null
 ) {
-  await getPollRowOrThrow(db, pollId)
+  const row = await getPollRowOrThrow(db, pollId)
+  // 详情页本身可以公开预览，但邀请制投票的评论正文不能靠知道 poll id 读到
+  if (isInviteOnly(row)) {
+    if (!viewerId) throw new HttpError(403, '需要邀请码才能参与')
+    await assertCanJoin(db, row, viewerId)
+  }
   const { results } = await db
     .prepare(
       `SELECT c.*,
@@ -90,6 +97,8 @@ export async function createComment(
 ) {
   const row = await getPollRowOrThrow(db, pollId)
   if (!row.allow_comment) throw new HttpError(400, '发起人已关闭评论')
+  // 邀请制投票的讨论区也只对参与者开放，不能绕过投票直接进来留言
+  await assertCanJoin(db, row, userId)
 
   const content = typeof body.content === 'string' ? body.content.trim() : ''
   if (!content) throw new HttpError(400, '评论不能为空')
@@ -117,7 +126,10 @@ export async function createComment(
     db.prepare('UPDATE polls SET comment_count = comment_count + 1 WHERE id = ?').bind(pollId)
   ])
 
-  await notifyComment(db, row, userId, content, replyToUserId, env)
+  // 评论已经落库，通知失败不能让用户看到「评论失败」再重发一条
+  await notifyComment(db, row, userId, content, replyToUserId, env).catch((err) =>
+    console.error('[notify] comment failed', err)
+  )
 
   const { results } = await db
     .prepare(
@@ -210,6 +222,9 @@ export async function setCommentLike(
   commentId: string,
   liked: boolean
 ) {
+  const pollRow = await getPollRowOrThrow(db, pollId)
+  // 和发评论一致：邀请制投票的互动也只对参与者开放
+  await assertCanJoin(db, pollRow, userId)
   const comment = await db
     .prepare('SELECT id FROM comments WHERE id = ? AND poll_id = ? AND deleted_at IS NULL')
     .bind(commentId, pollId)

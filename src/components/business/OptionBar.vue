@@ -78,7 +78,14 @@ const readonly = computed(() => props.mode === 'result' || props.mode === 'locke
           class="option__mark"
           :class="{ 'option__mark--multi': multiple, 'option__mark--on': selected }"
         >
-          <AppIcon v-if="selected" name="check" :size="12" color="#FFFFFF" :stroke-width="3" />
+          <AppIcon
+            v-if="selected"
+            class="option__check anim anim--pop"
+            name="check"
+            :size="12"
+            color="#FFFFFF"
+            :stroke-width="3"
+          />
         </view>
 
         <view class="option__text">
@@ -109,6 +116,11 @@ export default { name: 'OptionBar' }
   background: $surface;
   border: 1px solid $line;
   border-radius: 14px;
+  /* 选中 / 按下时底色和描边渐变过去，避免勾选瞬间硬切 */
+  transition:
+    background-color $dur-fast $ease-both,
+    border-color $dur-fast $ease-both,
+    box-shadow $dur-fast $ease-both;
 
   &--active {
     background: $subtle;
@@ -174,6 +186,10 @@ export default { name: 'OptionBar' }
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    transition:
+      background-color $dur-fast $ease-both,
+      border-color $dur-fast $ease-both,
+      transform $dur-fast $ease-both;
 
     &--multi {
       border-radius: 6px;
@@ -182,7 +198,13 @@ export default { name: 'OptionBar' }
     &--on {
       border-color: $accent;
       background: $accent;
+      /* 圆点轻轻涨一下，勾选有「按下去」的反馈 */
+      transform: scale(1.06);
     }
+  }
+
+  &__check {
+    animation-duration: $dur-fast;
   }
 
   &__text {
@@ -224,6 +246,7 @@ export default { name: 'OptionBar' }
     font-weight: 400;
     color: $muted;
     font-family: $font-num;
+    transition: color $dur-fast $ease-both;
   }
 
   &--result &__value {

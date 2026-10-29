@@ -57,7 +57,12 @@ const footUrgent = computed(
 </script>
 
 <template>
-  <view class="pending" :class="{ 'pending--urgent': urgent }" @tap.stop="emit('tap')">
+  <view
+    class="pending"
+    :class="{ 'pending--urgent': urgent }"
+    hover-class="pending--active"
+    @tap.stop="emit('tap')"
+  >
     <view class="pending__top">
       <view class="pending__badge" :class="{ 'pending__badge--urgent': urgent }">
         <text class="pending__badge-text" :class="{ 'pending__badge-text--urgent': urgent }">
@@ -96,9 +101,16 @@ export default { name: 'PendingCard' }
   background: $surface;
   border: 1px solid $line;
   border-radius: 16px;
+  transition:
+    background-color $dur-fast $ease-both,
+    border-color $dur-fast $ease-both;
 
   &--urgent {
     border-color: #fde68a;
+  }
+
+  &--active {
+    background: $subtle;
   }
 
   &__top {
@@ -174,9 +186,13 @@ export default { name: 'PendingCard' }
     background: $accent;
     display: flex;
     align-items: center;
+    transition:
+      opacity $dur-fast $ease-both,
+      transform $dur-fast $ease-both;
 
     &--active {
       opacity: 0.85;
+      transform: scale(0.95);
     }
   }
 

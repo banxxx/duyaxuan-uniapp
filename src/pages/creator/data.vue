@@ -34,7 +34,15 @@ const endSheet = ref(false)
 const isEnded = computed(() => !!poll.value && poll.value.rules.endAt <= Date.now())
 const isSurvey = computed(() => poll.value?.type === 'survey')
 
-const totalVotes = computed(() => poll.value?.options.reduce((s, o) => s + o.votes, 0) ?? 0)
+/**
+ * 投票看选项票数之和，问卷没有选项，直接看回答数。
+ * 之前问卷这里固定是 0，数据页的「累计回答」「总票数」都跟着显示 0。
+ */
+const totalVotes = computed(() => {
+  if (!poll.value) return 0
+  if (isSurvey.value) return poll.value.answerCount ?? 0
+  return poll.value.options.reduce((s, o) => s + o.votes, 0)
+})
 
 const ranked = computed(() =>
   [...(poll.value?.options ?? [])]
@@ -94,10 +102,17 @@ async function onEnd() {
 
 /** 导航栏右侧的「···」：设计稿是操作入口，不是一个直达结果页的图标 */
 function onMore() {
+  // 问卷没有「结果页」（没有选项和票数），入口落到回答记录，
+  // 从那里再进汇总；投票才是结果页。
   uni.showActionSheet({
-    itemList: ['查看结果页'],
+    itemList: [isSurvey.value ? '查看回答记录' : '查看结果页'],
     success: (r) => {
-      if (r.tapIndex === 0) goResult()
+      if (r.tapIndex !== 0) return
+      if (isSurvey.value) {
+        go(ROUTES.surveyAnswers, { id: pollId.value })
+      } else {
+        goResult()
+      }
     }
   })
 }
@@ -163,8 +178,8 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
               <text class="hero__stat-note">
                 {{
                   isEnded
-                    ? `平均每天 ${Math.round(totalVotes / durationDays)} 票`
-                    : `最近投票 ${formatRelative(stats.latestAt)}`
+                    ? `平均每天 ${Math.round(totalVotes / durationDays)} ${isSurvey ? '份' : '票'}`
+                    : `最近${isSurvey ? '提交' : '投票'} ${formatRelative(stats.latestAt)}`
                 }}
               </text>
             </view>
@@ -190,11 +205,11 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
         <!-- KPI 三宫格 -->
         <view class="kpis">
           <view class="kpi">
-            <text class="kpi__label">{{ isEnded ? '总票数' : '今日新增' }}</text>
+            <text class="kpi__label">{{ isEnded ? (isSurvey ? '总回答' : '总票数') : '今日新增' }}</text>
             <text class="kpi__value">{{ isEnded ? totalVotes : `+${stats.todayNew}` }}</text>
           </view>
           <view class="kpi">
-            <text class="kpi__label">{{ isEnded ? '投票用时' : '最高得票' }}</text>
+            <text class="kpi__label">{{ isEnded ? (isSurvey ? '收集用时' : '投票用时') : '最高得票' }}</text>
             <text class="kpi__value">{{ isEnded ? `${durationDays} 天` : `${maxVotes} 票` }}</text>
           </view>
           <view class="kpi">
@@ -209,7 +224,7 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
         <view v-if="!isEnded" class="trend">
           <view class="trend__head">
             <text class="trend__title">{{ isSurvey ? '提交趋势' : '投票趋势' }}</text>
-            <text class="trend__sub">按天 · 峰值 {{ trendMax }} 票</text>
+            <text class="trend__sub">按天 · 峰值 {{ trendMax }} {{ isSurvey ? '份' : '票' }}</text>
           </view>
 
           <view class="trend__bars">
@@ -286,14 +301,14 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
         <!-- 25 独有的时段分布 -->
         <view v-if="isEnded" class="hours">
           <view class="hours__head">
-            <text class="hours__title">投票时段</text>
-            <text class="hours__sub">{{ totalVotes }} 票</text>
+            <text class="hours__title">{{ isSurvey ? '提交' : '投票' }}时段</text>
+            <text class="hours__sub">{{ totalVotes }} {{ isSurvey ? '份' : '票' }}</text>
           </view>
 
           <view v-for="h in stats.hours" :key="h.label" class="slot">
             <view class="slot__top">
               <text class="slot__name">{{ h.label }}</text>
-              <text class="slot__count">{{ h.value }} 票 · {{ h.pct }}%</text>
+              <text class="slot__count">{{ h.value }} {{ isSurvey ? '份' : '票' }} · {{ h.pct }}%</text>
             </view>
             <view class="slot__track">
               <view

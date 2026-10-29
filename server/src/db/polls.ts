@@ -7,6 +7,7 @@
 
 import type {
   AnswerRow,
+  Env,
   OptionRow,
   Paged,
   PollOptionOut,
@@ -17,7 +18,8 @@ import type {
   PollType
 } from '../types'
 import { newId } from '../lib/id'
-import { newInviteCode } from './invites'
+import { assertCanJoin, isInviteOnly, newInviteCode } from './invites'
+import { notifyPollUpdated } from './notifications'
 import { HttpError } from '../lib/response'
 
 const PAGE_SIZE = 20
@@ -95,7 +97,11 @@ function toPoll(
       allowShare: !!row.allow_share,
       allowComment: !!row.allow_comment,
       limitIp: !!row.limit_ip,
-      joinMethod: row.join_method,
+      // 老数据的 group / private 在接口层统一成 invite，前端只需要认两种
+      joinMethod:
+        row.join_method === 'group' || row.join_method === 'private'
+          ? 'invite'
+          : row.join_method,
       profileField: row.profile_field,
       endAt: row.end_at
     },
@@ -130,8 +136,8 @@ function toPoll(
     poll.options = shuffleOptions(poll.options, `${row.id}:${viewerId ?? 'anon'}`)
   }
 
-  // 邀请码只给发起人，分享链接/海报要带上它
-  if (isCreator && row.join_method === 'invite' && row.invite_code) {
+  // 邀请码只给发起人，分享链接/海报要带上它（老的 private / group 也算邀请制）
+  if (isCreator && isInviteOnly(row) && row.invite_code) {
     poll.inviteCode = row.invite_code
   }
 
@@ -308,8 +314,9 @@ export async function listDiscover(
 ): Promise<Paged<PollOut>> {
   const s = statusClause(status, Date.now())
   return listPolls(db, {
-    // 需要邀请码的投票不出现在发现页
-    where: `p.deleted_at IS NULL AND p.join_method NOT IN ('invite', 'private')${s.sql}`,
+    // 需要邀请码的投票、以及发起人关掉分享的投票都不出现在发现页
+    where: `p.deleted_at IS NULL AND p.allow_share = 1
+      AND p.join_method NOT IN ('invite', 'private', 'group')${s.sql}`,
     params: s.params,
     viewerId,
     cursor
@@ -367,15 +374,27 @@ export async function listPending(db: D1Database, userId: string, limit = 5) {
   }))
 }
 
+function escapeLike(text: string): string {
+  // ESCAPE 是反斜杠，关键词里的 \ 也要转义，否则 "a\b" 会拼出非法 pattern
+  return text.replace(/[%_\\]/g, (m) => `\\${m}`)
+}
+
 export async function searchPolls(
   db: D1Database,
   viewerId: string | null,
   keyword: string,
   sort: 'latest' | 'hot' = 'latest'
 ): Promise<PollOut[]> {
-  const kw = keyword.trim()
+  // D1 的 LIKE / GLOB pattern 最多 50 字节。中文一个字 3 字节，
+  // 关键词太长会直接报错；这里从尾部逐步缩短，保证转义后也不超限。
+  let kw = keyword.trim()
+  let pattern = escapeLike(kw)
+  while (kw && new TextEncoder().encode(`%${pattern}%`).length > 50) {
+    kw = [...kw].slice(0, -1).join('')
+    pattern = escapeLike(kw)
+  }
   if (!kw) return []
-  const like = `%${kw.replace(/[%_]/g, (m) => `\\${m}`)}%`
+  const like = `%${pattern}%`
   // 最热按参与人数排；投票和问卷的参与数分在两列，加起来才能放到一起比
   const order =
     sort === 'hot'
@@ -386,15 +405,17 @@ export async function searchPolls(
       `${SELECT_JOINED}
        WHERE p.deleted_at IS NULL
          AND (p.title LIKE ? ESCAPE '\\' OR p.desc LIKE ? ESCAPE '\\')
+         -- 关掉分享的投票不对外暴露，发起人自己仍能搜到
+         AND (p.allow_share = 1 OR p.creator_id = ?)
          -- 邀请码模式的投票不进搜索结果，除非我是发起人或者已经被邀请过
          AND (
-           p.join_method NOT IN ('invite', 'private')
+           p.join_method NOT IN ('invite', 'private', 'group')
            OR p.creator_id = ?
            OR EXISTS (SELECT 1 FROM invites i WHERE i.poll_id = p.id AND i.invitee_id = ?)
          )
        ORDER BY ${order} LIMIT 30`
     )
-    .bind(like, like, viewerId ?? '', viewerId ?? '')
+    .bind(like, like, viewerId ?? '', viewerId ?? '', viewerId ?? '')
     .all<PollRowJoined>()
   return hydrate(db, results, viewerId)
 }
@@ -479,7 +500,8 @@ function normalizeType(raw: string | undefined): PollType {
 }
 
 function normalizeTitle(raw: string | undefined): string {
-  const title = (raw ?? '').trim()
+  // API 直接传数字 / null 时不能 .trim() 抛 500，统一转成字符串再校验
+  const title = (raw == null ? '' : String(raw)).trim()
   if (!title) throw new HttpError(400, '请填写标题')
   if (title.length > 60) throw new HttpError(400, '标题最多 60 字')
   return title
@@ -512,13 +534,57 @@ function normalizeRules(input: RulesInput | undefined, type: PollType, fallbackE
   }
 }
 
+/** 把数据库里现有的规则转成 RulesInput，供部分更新时合并 */
+function rulesInputFromRow(row: PollRowJoined): RulesInput {
+  return {
+    anonymous: !!row.anonymous,
+    allowEdit: !!row.allow_edit,
+    allowShare: !!row.allow_share,
+    allowComment: !!row.allow_comment,
+    allowRepeat: !!row.allow_repeat,
+    limitIp: !!row.limit_ip,
+    maxChoice: row.max_choice,
+    resultVisibility: row.result_visibility,
+    shuffleOptions: !!row.shuffle_options,
+    hideVoterCount: !!row.hide_voter_count,
+    joinMethod: normalizeJoinMethod(row.join_method),
+    profileField: row.profile_field,
+    endAt: row.end_at
+  }
+}
+
+/** 把数据库里现有的规则原样取出来，供「只改标题 / 选项」的调用方使用 */
+function rulesFromRow(row: PollRowJoined) {
+  return {
+    anonymous: row.anonymous,
+    allowEdit: row.allow_edit,
+    allowShare: row.allow_share,
+    allowComment: row.allow_comment,
+    allowRepeat: row.allow_repeat,
+    limitIp: row.limit_ip,
+    maxChoice: row.max_choice,
+    resultVisibility: row.result_visibility,
+    shuffleOptions: row.shuffle_options,
+    hideVoterCount: row.hide_voter_count,
+    joinMethod: normalizeJoinMethod(row.join_method),
+    profileField: row.profile_field,
+    endAt: row.end_at
+  }
+}
+
 function cleanOptions(raw: PollBody['options']): Array<{ title: string; desc: string | null }> {
-  const list = (raw ?? [])
-    .map((o) => ({ title: (o.title ?? '').trim(), desc: (o.desc ?? '').trim() }))
+  const list = (Array.isArray(raw) ? raw : [])
+    .map((o) => ({ title: String(o?.title ?? '').trim(), desc: String(o?.desc ?? '').trim() }))
     .filter((o) => o.title)
     .map((o) => ({ title: o.title.slice(0, 40), desc: o.desc.slice(0, 80) || null }))
 
   if (list.length > MAX_OPTIONS) throw new HttpError(400, `选项最多 ${MAX_OPTIONS} 个`)
+  // 同名选项会让结果页出现两行一模一样的标题，投票人也分不清投的是哪个
+  const seen = new Set<string>()
+  for (const o of list) {
+    if (seen.has(o.title)) throw new HttpError(400, `选项「${o.title}」重复了`)
+    seen.add(o.title)
+  }
   return list
 }
 
@@ -533,8 +599,26 @@ export async function createPoll(
 
   if (type !== 'survey' && options.length < 2) throw new HttpError(400, '至少需要 2 个选项')
 
+  // 汇总投票会带 sourceSurveyId。只认自己发起的、未删除的问卷，
+  // 否则任何人都能把新投票挂到别人的问卷上。
+  const sourceSurveyId =
+    typeof body.sourceSurveyId === 'string' && body.sourceSurveyId.trim()
+      ? body.sourceSurveyId.trim()
+      : null
+  if (sourceSurveyId) {
+    const src = await db
+      .prepare('SELECT id, creator_id, type FROM polls WHERE id = ? AND deleted_at IS NULL')
+      .bind(sourceSurveyId)
+      .first<{ id: string; creator_id: string; type: string }>()
+    if (!src || src.type !== 'survey' || src.creator_id !== creatorId) {
+      throw new HttpError(400, '来源问卷不存在')
+    }
+  }
+
   const now = Date.now()
   const rules = normalizeRules(body.rules, type, now + 3 * DAY_MS)
+  // 前端会拦，但 API 直接传过去也不该创建出一发布就结束的投票
+  if (rules.endAt <= now) throw new HttpError(400, '截止时间必须晚于现在')
   const pollId = newId('p')
 
   const stmts: D1PreparedStatement[] = [
@@ -552,7 +636,7 @@ export async function createPoll(
         creatorId,
         type,
         title,
-        (body.desc ?? '').trim().slice(0, 500) || null,
+        String(body.desc ?? '').trim().slice(0, 500) || null,
         now,
         rules.endAt,
         rules.anonymous,
@@ -568,7 +652,7 @@ export async function createPoll(
         rules.joinMethod,
         rules.joinMethod === 'invite' ? newInviteCode() : null,
         rules.profileField,
-        body.sourceSurveyId ?? null
+        sourceSurveyId
       )
   ]
 
@@ -591,7 +675,8 @@ export async function updatePoll(
   db: D1Database,
   pollId: string,
   userId: string,
-  body: PollBody
+  body: PollBody,
+  env?: Env
 ): Promise<PollOut> {
   const row = await findPollRow(db, pollId)
   if (!row) throw new HttpError(404, '投票不存在')
@@ -599,9 +684,35 @@ export async function updatePoll(
   if (row.deleted_at) throw new HttpError(400, '投票已删除，请先恢复')
 
   const type = row.type as PollType
-  const title = normalizeTitle(body.title)
-  const rules = normalizeRules(body.rules, type, row.end_at)
+  // PUT 允许只传要改的字段：没传 title / desc / rules 时保留原值，
+  // 不能拿默认规则覆盖已有配置（比如把匿名、邀请制悄悄改回默认）。
+  const title = body.title === undefined ? row.title : normalizeTitle(body.title)
+  // 传了 rules 就只覆盖传进来的字段，没传的沿用原值；
+  // 完全没传 rules 时直接保留整份规则。
+  const rules = body.rules
+    ? normalizeRules({ ...rulesInputFromRow(row), ...body.rules }, type, row.end_at)
+    : rulesFromRow(row)
+  const nextDesc =
+    body.desc === undefined
+      ? row.desc
+      : String(body.desc ?? '').trim().slice(0, 500) || null
   const now = Date.now()
+  // 进行中的投票不能被改成一个已经过去的时间点，否则保存完就直接结束
+  if (row.end_at > now && rules.endAt <= now) {
+    throw new HttpError(400, '截止时间必须晚于现在')
+  }
+  // 「提前结束」是不可逆的：状态已经是结束，改截止时间也不能把它重新打开，
+  // 否则前端按 endAt 显示「进行中」，后端却继续按 status=1 拒绝参与。
+  if (row.status === 1 && rules.endAt > now) {
+    throw new HttpError(400, '已结束，不能再延长截止时间')
+  }
+  // 匿名是参与者投票时的预期，已经有参与记录后不能再改成公开，
+  // 否则发起人一改规则，所有人的身份就被翻出来了。
+  if (row.anonymous && !rules.anonymous && (row.voter_count > 0 || row.answer_count > 0)) {
+    throw new HttpError(400, '已有参与记录，不能再关闭匿名')
+  }
+  /** 选项有没有增删改；问卷没有选项，保持 false */
+  let optionsChanged = false
 
   const stmts: D1PreparedStatement[] = [
     db
@@ -616,7 +727,7 @@ export async function updatePoll(
       )
       .bind(
         title,
-        (body.desc ?? '').trim().slice(0, 500) || null,
+        nextDesc,
         rules.endAt,
         rules.anonymous,
         rules.allowEdit,
@@ -646,7 +757,18 @@ export async function updatePoll(
       .all<OptionRow>()
     const byId = new Map(existing.results.map((o) => [o.id, o]))
 
-    const incoming = (body.options ?? []).filter((o) => (o.title ?? '').trim())
+    // 只比标题和描述：排序变化、id 变化不算「内容有更新」
+    const beforeOptions = existing.results
+      .map((o) => `${o.title}\u0000${o.desc ?? ''}`)
+      .sort()
+      .join('\u0001')
+    const afterOptions = next
+      .map((o) => `${o.title}\u0000${o.desc ?? ''}`)
+      .sort()
+      .join('\u0001')
+    optionsChanged = beforeOptions !== afterOptions
+
+    const incoming = (body.options ?? []).filter((o) => String(o?.title ?? '').trim())
     const keptIds = new Set(incoming.map((o) => o.id).filter((id): id is string => !!id && byId.has(id)))
 
     // 已经有票的选项不能删 —— 删了那些票就凭空消失，别人看到的百分比会变
@@ -684,6 +806,33 @@ export async function updatePoll(
   }
 
   await db.batch(stmts)
+
+  // 只把「真的改了内容」的通知给参与过的人；只是点保存没改动就不打扰
+  const changed =
+    title !== row.title ||
+    nextDesc !== row.desc ||
+    rules.endAt !== row.end_at ||
+    rules.anonymous !== row.anonymous ||
+    rules.allowEdit !== row.allow_edit ||
+    rules.allowShare !== row.allow_share ||
+    rules.allowComment !== row.allow_comment ||
+    rules.allowRepeat !== row.allow_repeat ||
+    rules.limitIp !== row.limit_ip ||
+    rules.maxChoice !== row.max_choice ||
+    rules.resultVisibility !== row.result_visibility ||
+    rules.shuffleOptions !== row.shuffle_options ||
+    rules.hideVoterCount !== row.hide_voter_count ||
+    rules.joinMethod !== normalizeJoinMethod(row.join_method) ||
+    rules.profileField !== row.profile_field ||
+    optionsChanged
+
+  if (changed && env) {
+    // 修改已经保存，通知失败只记日志，不能让用户以为保存失败
+    await notifyPollUpdated(db, pollId, type, title, row.creator_id, env).catch((err) =>
+      console.error('[notify] poll updated failed', err)
+    )
+  }
+
   return getPoll(db, pollId, userId)
 }
 
@@ -717,16 +866,22 @@ export async function restorePoll(
   await db.prepare('UPDATE polls SET deleted_at = NULL WHERE id = ?').bind(pollId).run()
 }
 
-/** 提前结束：status 置 1 的同时把 end_at 收到现在，列表排序和「已过 X%」都对得上 */
-export async function endPoll(db: D1Database, pollId: string, userId: string): Promise<void> {
+/**
+ * 提前结束：status 置 1 的同时把 end_at 收到现在，列表排序和「已过 X%」都对得上。
+ *
+ * 返回「这次是否真的从进行中变成已结束」。重复点结束 / 已经自然到期的投票
+ * 不会再次触发结果通知，避免同一批人收到两条一样的消息。
+ */
+export async function endPoll(db: D1Database, pollId: string, userId: string): Promise<boolean> {
   const row = await findPollRow(db, pollId)
-  if (!row) throw new HttpError(404, '投票不存在')
+  if (!row || row.deleted_at) throw new HttpError(404, '投票不存在')
   if (row.creator_id !== userId) throw new HttpError(403, '只有发起人可以结束')
   const now = Date.now()
-  await db
-    .prepare('UPDATE polls SET status = 1, end_at = ? WHERE id = ?')
+  const res = await db
+    .prepare('UPDATE polls SET status = 1, end_at = ? WHERE id = ? AND status = 0')
     .bind(Math.min(now, row.end_at), pollId)
     .run()
+  return res.meta.changes > 0
 }
 
 export function assertPollOpen(row: PollRow): void {
@@ -736,7 +891,10 @@ export function assertPollOpen(row: PollRow): void {
 
 export async function getPollRowOrThrow(db: D1Database, pollId: string): Promise<PollRowJoined> {
   const row = await findPollRow(db, pollId)
-  if (!row) throw new HttpError(404, '投票不存在')
+  // 软删除后，除发起人自己的「恢复 / 详情」外一律按不存在处理。
+  // 需要读到已删除行的场景（updatePoll / softDelete / restore / getPoll）
+  // 直接走 findPollRow，不经过这里。
+  if (!row || row.deleted_at) throw new HttpError(404, '投票不存在')
   return row
 }
 
@@ -751,7 +909,8 @@ export async function myStats(db: D1Database, userId: string) {
       `SELECT
          SUM(CASE WHEN status = 0 AND end_at > ? THEN 1 ELSE 0 END) AS ongoing,
          SUM(CASE WHEN status = 1 OR end_at <= ? THEN 1 ELSE 0 END) AS ended,
-         COALESCE(SUM(voter_count), 0) AS voters
+         -- 投票看 voter_count，问卷看 answer_count；两者不会同时有值，直接相加
+         COALESCE(SUM(voter_count), 0) + COALESCE(SUM(answer_count), 0) AS voters
        FROM polls WHERE creator_id = ? AND deleted_at IS NULL`
     )
     .bind(now, now, userId)
@@ -871,6 +1030,32 @@ export async function pollVoters(
 ) {
   const row = await getPollRowOrThrow(db, pollId)
   const isOwner = row.creator_id === viewerId
+
+  // 邀请制投票的参与记录只对发起人和已受邀的人开放；
+  // 详情页可以公开预览标题，但投票人名单不能靠知道 poll id 就读到。
+  if (isInviteOnly(row) && !isOwner) {
+    if (!viewerId) throw new HttpError(403, '需要邀请码才能参与')
+    await assertCanJoin(db, row, viewerId)
+  }
+
+  // 投票记录里带着「投了哪个选项」，等于把结果公开了。
+  // 这里必须按和详情页同一套规则判断，不能只靠前端藏入口。
+  let viewerVoted = isOwner
+  if (!viewerVoted && viewerId) {
+    const mine = await db
+      .prepare('SELECT 1 AS x FROM votes WHERE poll_id = ? AND user_id = ?')
+      .bind(pollId, viewerId)
+      .first()
+    viewerVoted = !!mine
+  }
+  const resultVisible =
+    isOwner ||
+    row.result_visibility === 'always' ||
+    (row.result_visibility === 'after_end' &&
+      (row.status === 1 || row.end_at <= Date.now())) ||
+    (row.result_visibility === 'after_vote' && viewerVoted)
+  if (!resultVisible) throw new HttpError(403, '发起人未公开投票记录')
+
   // cursor 是上一页最后一条的 created_at，多取一条用来判断还有没有下一页
   const before = cursor ? Number(cursor) : null
   const where = before ? 'AND v.created_at < ?' : ''
@@ -921,7 +1106,8 @@ export async function pollVoters(
     list,
     cursor: hasMore ? String(page[page.length - 1].created_at) : null,
     hasMore,
-    total: row.voter_count
+    // 隐藏人数时非发起人拿不到真实总数，和详情页保持一致
+    total: isOwner || !row.hide_voter_count ? row.voter_count : 0
   }
 }
 

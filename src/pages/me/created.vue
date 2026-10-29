@@ -170,13 +170,7 @@ function onSwipeDelete(poll: Poll) {
 
 <template>
   <view class="page">
-    <AppNavBar title="我发起的" :back="true">
-      <template #right>
-        <view class="page__add" @tap="goCreate">
-          <AppIcon name="plus" :size="17" color="#09090B" />
-        </view>
-      </template>
-    </AppNavBar>
+    <AppNavBar title="我发起的" :back="true" />
 
     <view class="page__content">
       <StatsCard v-if="stats.length" :items="stats" />
@@ -199,7 +193,7 @@ function onSwipeDelete(poll: Poll) {
           v-if="!loading && !list.length"
           icon="inbox"
           title="还没有发起过投票"
-          desc="点右上角「+」发起第一场，三步就能完成"
+          desc="点底部的「+」发起第一场，三步就能完成"
           action="去创建"
           @action="goCreate"
         />
@@ -295,17 +289,6 @@ export default { name: 'CreatedPollsPage' }
   background: $bg;
   display: flex;
   flex-direction: column;
-
-  &__add {
-    width: 34px;
-    height: 34px;
-    border-radius: 17px;
-    background: $surface;
-    border: 1px solid $line;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
 
   &__content {
     flex: 1;

@@ -110,7 +110,8 @@ async function doUnbind() {
         </view>
 
         <text class="bind__note">
-          解除绑定后将无法使用{{ platformName }}一键登录，需重新授权后才能继续使用。
+          解除绑定后，这个账号将无法再用{{ platformName }}登录；重新授权会创建一个新账号，
+          已发起的投票和参与记录无法找回。请确认不再需要这些数据后再操作。
         </text>
 
         <view class="unbind" hover-class="unbind--active" @tap="openConfirm">
@@ -123,7 +124,7 @@ async function doUnbind() {
       :visible="confirmVisible"
       variant="confirm"
       title="解除绑定？"
-      :desc="`解除后将无法使用${platformName}一键登录，需要重新授权才能继续使用。`"
+      :desc="`解除后将无法再用${platformName}登录；重新授权会创建新账号，历史数据无法找回。`"
       @close="confirmVisible = false"
     >
       <view class="actions">

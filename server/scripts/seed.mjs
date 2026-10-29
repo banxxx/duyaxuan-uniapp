@@ -3,10 +3,12 @@
  *
  * 目标：打开小程序就能看到非空列表，能走完「发起 → 参与 → 查看数据 → 汇总」。
  *
- *   npm run seed
+ *   npm run seed          → 写本地 D1（--local）
+ *   npm run seed:remote   → 写云端 D1（--remote，真实扣量，慎用）
  *
- * 只写本地 D1（--local）。所有 id 以 seed 开头，重复执行会先把上一批删掉再灌，
+ * 所有 id 以 seed 开头，重复执行会先把上一批删掉再灌，
  * 不会碰真实账号（你自己登录的那个账号也保留）。
+ * 云端灌完后想清掉，删掉所有 id LIKE 'seed%' 的行即可。
  *
  * 种子账号可以配合 DEV_LOGIN=true 在「设置 · 关于我们」长按切换：
  *   林小满 = 发起人视角（有投票、问卷、评论、通知）
@@ -14,6 +16,9 @@
  */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+
+/** 加 --remote 就写云端库；默认仍然只碰本地，避免手滑污染线上 */
+const remote = process.argv.includes('--remote')
 
 const now = Date.now()
 const HOUR = 3_600_000
@@ -349,6 +354,11 @@ const cleanup = [
   "DELETE FROM invites WHERE id LIKE 'seed%' OR poll_id LIKE 'seed%'",
   "DELETE FROM polls WHERE id LIKE 'seed%'",
   "DELETE FROM feedback WHERE id LIKE 'seed%'",
+  // 订阅消息的额度和偏好按账号存；种子账号每次重建，旧额度一起清掉，
+  // 免得测试时遗留的授权让下一次「重灌后投票」莫名推一条服务通知
+  "DELETE FROM wx_subscriptions WHERE user_id LIKE 'seed%'",
+  "DELETE FROM wx_push_prefs WHERE user_id LIKE 'seed%'",
+  "DELETE FROM user_platforms WHERE user_id LIKE 'seed%'",
   "DELETE FROM users WHERE id LIKE 'seed%'"
 ]
 
@@ -359,12 +369,12 @@ fs.writeFileSync(file, sql)
 try {
   execFileSync(
     'npx',
-    ['wrangler', 'd1', 'execute', 'duyaxuan-db', '--local', `--file=${file}`],
+    ['wrangler', 'd1', 'execute', 'duyaxuan-db', remote ? '--remote' : '--local', `--file=${file}`],
     { stdio: 'inherit', shell: process.platform === 'win32' }
   )
 } finally {
   fs.rmSync(file, { force: true })
 }
 
-console.log(`\n✅ 种子数据已写入：${users.length} 个账号、7 个投票/问卷`)
+console.log(`\n✅ 种子数据已写入${remote ? '云端 D1' : '本地 D1'}：${users.length} 个账号、7 个投票/问卷`)
 console.log('   林小满 seed_u_alice / 周子墨 seed_u_zhou / 陈一 seed_u_chen / 林夏 seed_u_lin')

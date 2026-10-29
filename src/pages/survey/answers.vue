@@ -139,7 +139,8 @@ function goShare() {
 /** 导航栏「···」：设计稿 77/78 右侧只有一个操作入口，现在只剩「提前截止」 */
 function onMore() {
   if (canSummarize.value) {
-    uni.showToast({ title: '问卷已截止', icon: 'none' })
+    // 已截止后右上角没有可执行的管理操作了，指向页面下方真正的入口
+    uni.showToast({ title: '问卷已截止，可在下方汇总成投票', icon: 'none' })
     return
   }
   endSheet.value = true

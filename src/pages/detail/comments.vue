@@ -34,6 +34,7 @@ const userStore = useUserStore()
 const poll = ref<Poll | null>(null)
 const comments = ref<Comment[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 const tab = ref<'latest' | 'hot' | 'mine'>('latest')
 const draft = ref('')
 const sending = ref(false)
@@ -62,9 +63,13 @@ const pinned = computed(() => {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     poll.value = await fetchPoll(pollId.value)
     comments.value = await fetchComments(pollId.value)
+  } catch {
+    // 加载失败时 poll 是空的，不能让它掉进「发起人已关闭评论」的分支
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -139,6 +144,16 @@ function onLongPress(c: Comment) {
     <view v-if="loading" class="comments__body">
       <AppSkeleton type="list" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="加载失败"
+      desc="网络不太稳定，重试一下就好"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <template v-else>
       <scroll-view class="comments__scroll" scroll-y>

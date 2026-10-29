@@ -18,6 +18,13 @@ export const requireAuth = createMiddleware<AppEnv>(async (c, next) => {
   const payload = await verifyToken(token, c.env.JWT_SECRET)
   if (!payload) return fail(c, 401, '登录已失效，请重新登录')
 
+  // 注销 / 删除的账号不能靠旧 token 继续操作。
+  // 这一步会多一次 D1 读，但写接口本来就要查库，换来的是一注销就立刻失效。
+  const user = await c.env.DB.prepare('SELECT status FROM users WHERE id = ?')
+    .bind(payload.sub)
+    .first<{ status: number }>()
+  if (!user || user.status !== 0) return fail(c, 401, '登录已失效，请重新登录')
+
   c.set('userId', payload.sub)
   await next()
 })

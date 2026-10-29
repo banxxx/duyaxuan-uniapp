@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { onLoad, onShow, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
-import type { Poll, Comment, SurveyAnswer } from '@/types/api'
+import type { Poll, Comment, Paged, SurveyAnswer } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppAvatar from '@/components/base/AppAvatar.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppEmpty from '@/components/base/AppEmpty.vue'
 import OptionBar from '@/components/business/OptionBar.vue'
 import {
   fetchPoll,
@@ -21,6 +22,7 @@ import {
   joinPoll
 } from '@/api/poll'
 import { useUserStore } from '@/stores/user'
+import { ApiError } from '@/utils/request'
 import { formatCreatedAt, formatRemaining, formatRelative, charCount, percent } from '@/utils/format'
 import { buildShareMessage, buildTimelineMessage, syncShareMenu } from '@/utils/share'
 import { askInviteCode } from '@/utils/invite'
@@ -43,6 +45,17 @@ import { backTo, go, replace, ROUTES } from '@/utils/router'
 
 const user = useUserStore()
 
+/**
+ * 详情页可以公开预览，但邀请制投票的评论、以及「我还没提交过」的问卷回答
+ * 服务端会返回 403。这种情况按「暂时看不到」处理，不要让整页掉进错误态。
+ */
+function ignoreForbidden<T>(task: Promise<T>, fallback: T): Promise<T> {
+  return task.catch((err) => {
+    if (err instanceof ApiError && err.code === 403) return fallback
+    throw err
+  })
+}
+
 const poll = ref<Poll | null>(null)
 const myVote = ref<string[]>([])
 const myAnswers = ref<SurveyAnswer[]>([])
@@ -50,6 +63,7 @@ const myAnswers = ref<SurveyAnswer[]>([])
 const latestAnswers = ref<SurveyAnswer[]>([])
 const comments = ref<Comment[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 const submitting = ref(false)
 const selection = ref<string[]>([])
 
@@ -167,6 +181,7 @@ const submitDisabled = computed(() => {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     const p = await fetchPoll(pollId.value)
     poll.value = p
@@ -182,7 +197,10 @@ async function load() {
       }
 
       // 75：发起人自己还没填时，详情页要能看到「最新回答」，不是空的我的回答
-      const page = await fetchAnswers(p.id)
+      const page = await ignoreForbidden<Paged<SurveyAnswer>>(
+        fetchAnswers(p.id, null, { toast: false }),
+        { list: [], cursor: null, hasMore: false, total: 0 }
+      )
       latestAnswers.value = page.list.slice(0, 3)
 
       // 同一个人重复提交时头像只留一张，否则「林 林 林 周」看着像来了四个人
@@ -203,7 +221,10 @@ async function load() {
     }
 
     if (p.rules.allowComment) {
-      comments.value = await fetchComments(p.id)
+      comments.value = await ignoreForbidden<Comment[]>(
+        fetchComments(p.id, { toast: false }),
+        []
+      )
     }
 
     // 参与入口的头像叠层：投票取投票人；问卷在上面已经按回答人取过了
@@ -212,7 +233,8 @@ async function load() {
       voterAvatars.value = voters.list.slice(0, 4).map((v, i) => v.user ?? { id: `anon${i}`, name: '匿' })
     }
   } catch {
-    uni.showToast({ title: '加载失败', icon: 'none' })
+    // 详情页加载失败时 poll 为空，模板会整块空白；用错误态兜住
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -422,6 +444,16 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
     <view v-if="loading" class="detail__body">
       <AppSkeleton type="detail" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="加载失败"
+      desc="网络不太稳定，重试一下就好"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <template v-else-if="poll">
       <scroll-view class="detail__scroll" scroll-y>

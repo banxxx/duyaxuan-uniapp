@@ -184,9 +184,13 @@ export default { name: 'AppNavBar' }
     border-radius: 17px;
     background: $surface;
     border: 1px solid $line;
+    transition:
+      opacity $dur-fast $ease-both,
+      transform $dur-fast $ease-both;
 
     &--active {
       opacity: 0.7;
+      transform: scale(0.94);
     }
   }
 

@@ -54,6 +54,7 @@ export async function getPollQrcode(
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000),
         body: JSON.stringify({
           // scene 上限 32 字符：pollId（~18）+ '-' + 6 位邀请码，放得下
           scene,

@@ -8,6 +8,7 @@ import {
   imageExt,
   keyFromPublicUrl,
   MAX_AVATAR_BYTES,
+  mimeByExt,
   publicUrl
 } from '../lib/storage'
 
@@ -52,13 +53,16 @@ user.post('/avatar', async (c) => {
 
   const ext = imageExt(file.type, file.name)
   if (!ext) throw new HttpError(400, '只支持 jpg / png / webp / gif')
+  if (!file.size) throw new HttpError(400, '图片是空的')
   if (file.size > MAX_AVATAR_BYTES) throw new HttpError(400, '图片不能超过 2MB')
 
   const before = await getProfile(c.env.DB, userId)
   const key = avatarKey(userId, ext)
 
+  // 按扩展名写 Content-Type，不用客户端传来的值：
+  // 上传时把 .jpg 的 type 伪造成 text/html，读文件时就会变成存储型 XSS。
   await bucket.put(key, await file.arrayBuffer(), {
-    httpMetadata: { contentType: file.type.split(';')[0] || 'image/jpeg' }
+    httpMetadata: { contentType: mimeByExt(ext) }
   })
 
   const profile = await updateProfile(c.env.DB, userId, { avatar: publicUrl(key) })

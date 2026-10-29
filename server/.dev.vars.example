@@ -20,9 +20,19 @@ DEV_LOGIN=false
 
 # 订阅消息模板 ID（微信后台 → 功能 → 订阅消息 → 我的模板）。
 # 不填就只发站内消息，功能照常跑；填了才会真的推服务通知。
-# WX_TMPL_JOINED=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# WX_TMPL_COMMENT=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# WX_TMPL_DEADLINE=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #
-# 模板字段名对不上时（微信返回 47003），用这个变量覆盖，不用改代码：
-# WX_TMPL_FIELDS={"title":"thing1","time":"time2","remark":"thing3"}
+# 只有一个通用模板（活动名称/活动内容/活动日期）时，填这一行就够，
+# 参与、评论、截止提醒共用它：
+# WX_TMPL_NOTIFY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#
+# 想按类型分开推（用户看到的模板标题不同），再单独配这几类；
+# 单独配置优先于 WX_TMPL_NOTIFY：
+# WX_TMPL_JOINED=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   # 有人参与 / 收到回答
+# WX_TMPL_COMMENT=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  # 新的评论、回复
+# WX_TMPL_DEADLINE=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx # 结束前 2 小时提醒
+# WX_TMPL_RESULT=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   # 结果公布（参与者 + 发起人）
+# WX_TMPL_UPDATED=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  # 我参与的内容有更新
+#
+# 模板字段名对不上时（微信返回 47003），用这个变量覆盖，不用改代码。
+# 默认对应「活动名称{{thing4.DATA}} / 活动内容{{thing2.DATA}} / 活动日期{{time20.DATA}}」：
+# WX_TMPL_FIELDS={"title":"thing4","content":"thing2","time":"time20"}

@@ -1,0 +1,15 @@
+
+{
+  "error": {
+    "text": "A request to the Cloudflare API (/accounts/cbcd591b050f79286a40fe688c2f0028/d1/database/b013e396-3d15-4a78-b58b-2b387aa1c948/query) failed.",
+    "notes": [
+      {
+        "text": "not authorized: SQLITE_AUTH [code: 7500]"
+      }
+    ],
+    "kind": "error",
+    "name": "APIError",
+    "code": 7500,
+    "accountTag": "cbcd591b050f79286a40fe688c2f0028"
+  }
+}

@@ -8,6 +8,8 @@ import polls from './routes/polls'
 import files from './routes/files'
 import notifications from './routes/notifications'
 import feedback from './routes/feedback'
+import { flushScheduled } from './db/notifications'
+import type { Env } from './types'
 
 /**
  * 投票吧 API
@@ -42,4 +44,17 @@ app.onError((err, c) => {
   return fail(c, 500, '服务器开小差了，请稍后再试')
 })
 
-export default app
+/**
+ * 导出成 Worker 的模块格式：HTTP 请求走 Hono，定时任务走 scheduled。
+ *
+ * Cron Trigger 在 wrangler.toml 的 [triggers] 里配置（默认 5 分钟一次）。
+ * 本地调试用 curl http://127.0.0.1:8787/cdn-cgi/local/scheduled 手动触发。
+ */
+export default {
+  fetch: app.fetch,
+  scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      flushScheduled(env).catch((err) => console.error('[cron] 补发通知失败', err))
+    )
+  }
+}

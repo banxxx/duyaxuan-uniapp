@@ -4,6 +4,7 @@ import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
 import type { Poll } from '@/types/api'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppNavBar from '@/components/base/AppNavBar.vue'
+import AppEmpty from '@/components/base/AppEmpty.vue'
 import { fetchPoll, fetchMyAnswers } from '@/api/poll'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
@@ -20,23 +21,32 @@ import { backTo, go, ROUTES } from '@/utils/router'
 const poll = ref<Poll | null>(null)
 const answerText = ref('')
 const pollId = ref('')
+const error = ref(false)
 let timer: ReturnType<typeof setTimeout> | null = null
 
 onLoad((q) => {
   pollId.value = (q?.id as string) ?? ''
 })
 
-onMounted(async () => {
+async function load() {
   if (!pollId.value) return
-  const [p, answers] = await Promise.all([fetchPoll(pollId.value), fetchMyAnswers(pollId.value)])
-  poll.value = p
-  syncShareMenu(p.rules.allowShare)
-  answerText.value = answers[0]?.content ?? ''
+  error.value = false
+  try {
+    const [p, answers] = await Promise.all([fetchPoll(pollId.value), fetchMyAnswers(pollId.value)])
+    poll.value = p
+    syncShareMenu(p.rules.allowShare)
+    answerText.value = answers[0]?.content ?? ''
 
-  timer = setTimeout(() => {
-    backTo(ROUTES.detail, { id: pollId.value })
-  }, 3000)
-})
+    timer = setTimeout(() => {
+      backTo(ROUTES.detail, { id: pollId.value })
+    }, 3000)
+  } catch {
+    // 和投票成功页一样：失败时给重试和返回，不能停在空白页
+    error.value = true
+  }
+}
+
+onMounted(load)
 
 onUnmounted(() => {
   if (timer) clearTimeout(timer)
@@ -60,9 +70,19 @@ onShareAppMessage(() =>
 
 <template>
   <view class="done">
-    <AppNavBar :back="false" />
+    <AppNavBar :back="error" />
 
-    <view class="done__content" :style="{ paddingBottom: bottomInset(28) }">
+    <AppEmpty
+      v-if="error"
+      icon="wifi-off"
+      title="加载失败"
+      desc="网络不太稳定，重试一下就好"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
+
+    <view v-else class="done__content" :style="{ paddingBottom: bottomInset(28) }">
       <!-- 和 71 投票成功页同一套入场：勾先弹出来，文字依次跟上 -->
       <view class="done__icon anim anim--success">
         <AppIcon name="check" :size="42" color="#FFFFFF" :stroke-width="2.4" />

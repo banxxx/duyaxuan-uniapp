@@ -113,8 +113,10 @@ export default { name: 'AppButton' }
   border-radius: $r-button;
   font-size: 15px;
   font-weight: 600;
-  /* 按下时只改透明度，给个短过渡，避免 hover-class 硬切 */
-  transition: opacity $dur-fast $ease-both;
+  /* 按下时压暗 + 轻缩，给个短过渡，避免 hover-class 硬切 */
+  transition:
+    opacity $dur-fast $ease-both,
+    transform $dur-fast $ease-both;
 
   &--block {
     display: flex;
@@ -229,6 +231,7 @@ export default { name: 'AppButton' }
 
   &--active {
     opacity: 0.85;
+    transform: scale(0.98);
   }
 
   &__text {

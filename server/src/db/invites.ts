@@ -26,7 +26,12 @@ export function newInviteCode(): string {
 
 /** 老数据里的 group / private 也算「需要邀请码」 */
 export function isInviteOnly(poll: Pick<PollRowJoined, 'join_method'>): boolean {
-  return poll.join_method === 'invite' || poll.join_method === 'private'
+  // group 是早期版本的三档之一，语义和 private 一样：只有被邀请的人能参与。
+  return (
+    poll.join_method === 'invite' ||
+    poll.join_method === 'private' ||
+    poll.join_method === 'group'
+  )
 }
 
 /** 发起人第一次打开分享页时才生成，避免给链接模式的投票白存一个码 */
@@ -89,9 +94,22 @@ export async function assertCanJoin(
 ): Promise<void> {
   if (!isInviteOnly(poll) || poll.creator_id === userId) return
 
+  // 已参与过的人也算「被邀请过」：
+  // 发起人可能中途把链接模式改成邀请码模式，不能反过来把已经投过票 /
+  // 答过卷 / 评论过的人锁在外面（改票、重复提交、评论都会走这里）。
   const row = await db
-    .prepare('SELECT 1 AS x FROM invites WHERE poll_id = ? AND invitee_id = ?')
-    .bind(poll.id, userId)
+    .prepare(
+      `SELECT 1 AS x FROM invites WHERE poll_id = ? AND invitee_id = ?
+       UNION ALL
+       SELECT 1 AS x FROM votes WHERE poll_id = ? AND user_id = ?
+       UNION ALL
+       SELECT 1 AS x FROM answers WHERE poll_id = ? AND user_id = ?
+       UNION ALL
+       SELECT 1 AS x FROM comments
+       WHERE poll_id = ? AND user_id = ? AND deleted_at IS NULL
+       LIMIT 1`
+    )
+    .bind(poll.id, userId, poll.id, userId, poll.id, userId, poll.id, userId)
     .first()
   if (!row) throw new HttpError(403, '需要邀请码才能参与')
 }

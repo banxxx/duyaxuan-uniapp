@@ -11,14 +11,14 @@ import { formatDate, formatDateTime, formatRelative, percent } from '@/utils/for
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
-import { backTo, go, ROUTES } from '@/utils/router'
+import { backTo, go, replace, ROUTES } from '@/utils/router'
 
 /**
  * 21 结果 · 实时统计 / 22 结果 · 待公布 / 23 结果 · 已关闭
  *
  * 三种形态由 resultVisibility + 是否已结束决定，共用同一页：
  *   可见   → 冠军卡 + 排名列表 + 三个指标
- *   待公布 → 倒计时 + 你投给了什么 + 「截止时提醒我」
+ *   待公布 → 倒计时 + 你投给了什么 + 「结束前 2 小时提醒我」
  *   已关闭 → 说明文案 + 你投给了什么，不给任何票数
  *
  * 「投票记录」和 14/15 是两件事：这里是票数聚合，那里是逐票流水，
@@ -31,6 +31,13 @@ const reminded = ref(false)
 const pollId = ref('')
 
 const isEnded = computed(() => !!poll.value && poll.value.rules.endAt <= Date.now())
+/** 总时长不足 2 小时时没有「结束前 2 小时」这个时间点，不显示提醒按钮 */
+const canRemind = computed(
+  () =>
+    !!poll.value &&
+    !isEnded.value &&
+    poll.value.rules.endAt - poll.value.createdAt > 2 * 3600_000
+)
 
 type Mode = 'visible' | 'pending' | 'closed'
 const mode = computed<Mode>(() => {
@@ -84,9 +91,14 @@ async function load() {
   loading.value = true
   try {
     const p = await fetchPoll(pollId.value)
+    // 问卷没有选项票数，结果页对它没有意义；旧链接 / 误入口统一回详情页
+    if (p.type === 'survey') {
+      replace(ROUTES.detail, { id: p.id })
+      return
+    }
     poll.value = p
     syncShareMenu(p.rules.allowShare)
-    if (p.type !== 'survey') myVote.value = await fetchMyVote(p.id)
+    myVote.value = await fetchMyVote(p.id)
   } finally {
     loading.value = false
   }
@@ -104,9 +116,14 @@ async function onRemind() {
   if (!poll.value) return
   // 订阅授权必须在点击事件里同步发起，await 之后再调就拿不到手势上下文了
   requestSubscribe(['deadline'])
-  await remindMe(poll.value.id)
-  reminded.value = true
-  uni.showToast({ title: '已设置，截止时提醒你', icon: 'none' })
+  try {
+    await remindMe(poll.value.id)
+    reminded.value = true
+    uni.showToast({ title: '已设置，结束前 2 小时提醒你', icon: 'none' })
+  } catch (err) {
+    const msg = (err as { message?: string })?.message || '设置失败，请稍后重试'
+    uni.showToast({ title: msg, icon: 'none' })
+  }
 }
 
 function goVoters() {
@@ -255,8 +272,16 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
 
           <!-- 22 的两个动作：白底提醒 + 黑底返回（黑底比主色更「退出」，不与主操作抢视线） -->
           <view class="state__actions">
-            <AppButton type="subtle" size="cta" :radius="14" icon="bell" class="state__action" @tap="onRemind">
-              {{ reminded ? '已设置截止提醒' : '截止时提醒我' }}
+            <AppButton
+              v-if="canRemind"
+              type="subtle"
+              size="cta"
+              :radius="14"
+              icon="bell"
+              class="state__action"
+              @tap="onRemind"
+            >
+              {{ reminded ? '已设置结束前提醒' : '结束前 2 小时提醒我' }}
             </AppButton>
             <AppButton type="ink" size="cta" :radius="14" class="state__action" @tap="backToDetail">
               返回投票详情

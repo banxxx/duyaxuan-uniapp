@@ -232,10 +232,12 @@ onShow(() => {
   // H5 端会渲染原生 tabBar，进来就藏掉（微信端 custom=true，没有原生栏，静默失败）
   hideNativeTabBar()
   refreshUnread()
+  // 首页右上角也有头像，回首页时同步一次最新资料
+  user.refreshProfile()
 })
 
 onPullDownRefresh(async () => {
-  await load()
+  await Promise.all([load(), user.refreshProfile()])
   uni.stopPullDownRefresh()
 })
 
