@@ -15,6 +15,7 @@ import { fetchMyPolls, fetchStats, deletePoll, restorePoll } from '@/api/poll'
 import { formatRemaining } from '@/utils/format'
 import { getSafeArea, bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
+import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 
 /**
  * 41 我发起的 + 88 左滑操作 + 89 更多操作 + 96 删除撤销
@@ -54,6 +55,32 @@ const toastText = ref('')
 let undoPoll: Poll | null = null
 let undoTimer: ReturnType<typeof setTimeout> | null = null
 
+/** 列表快照：第一页 + 顶部统计。翻页不缓存，重进页面重新翻也不慢 */
+interface ListSnapshot {
+  list: Poll[]
+  cursor: string | null
+  hasMore: boolean
+  stats: Array<{ value: string | number; label: string }>
+}
+
+function saveSnapshot() {
+  cacheSet(cacheKey.pollList('mine', status.value), {
+    list: list.value,
+    cursor: cursor.value,
+    hasMore: hasMore.value,
+    stats: stats.value
+  })
+}
+
+/** 切筛选时先铺对应缓存，没有就清空列表、交给骨架屏 */
+function seed(v: string) {
+  const cached = cacheGet<ListSnapshot>(cacheKey.pollList('mine', v))
+  list.value = cached?.list ?? []
+  cursor.value = cached?.cursor ?? null
+  hasMore.value = cached?.hasMore ?? true
+  if (cached) stats.value = cached.stats
+}
+
 async function load(reset = false) {
   if (loading.value) return
   loading.value = true
@@ -76,11 +103,14 @@ async function loadStats() {
 }
 
 onMounted(async () => {
+  seed(status.value)
   await Promise.all([load(true), loadStats()])
+  saveSnapshot()
 })
 
 onPullDownRefresh(async () => {
   await Promise.all([load(true), loadStats()])
+  saveSnapshot()
   uni.stopPullDownRefresh()
 })
 
@@ -90,7 +120,8 @@ onReachBottom(() => {
 
 function onFilter(v: string) {
   status.value = v as typeof status.value
-  load(true)
+  seed(v)
+  load(true).then(saveSnapshot)
 }
 
 function openDetail(poll: Poll) {
@@ -130,6 +161,8 @@ async function confirmDelete() {
 
   try {
     await deletePoll(poll.id)
+    // 三个筛选条件下的列表缓存都失效了，下次进来重新拉
+    cacheDrop('list:mine')
     undoPoll = poll
     toastText.value = `已删除「${poll.title}」`
     toastVisible.value = true
@@ -154,6 +187,7 @@ async function undoDelete() {
   try {
     await restorePoll(poll.id)
     await load(true)
+    saveSnapshot()
   } catch {
     uni.showToast({ title: '撤销失败，已超出可撤销时间', icon: 'none' })
   }
@@ -198,7 +232,8 @@ function onSwipeDelete(poll: Poll) {
           @action="goCreate"
         />
 
-        <view v-if="loading" class="page__loading">
+        <!-- 只有真的没内容时才铺骨架：刷新时列表已经在，不需要再占一次屏 -->
+        <view v-if="loading && !list.length" class="page__loading">
           <AppSkeleton type="list" />
         </view>
       </view>

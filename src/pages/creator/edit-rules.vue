@@ -13,6 +13,7 @@ import { fetchPoll, updatePoll } from '@/api/poll'
 import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
+import { cacheDrop, cacheKey } from '@/utils/cache'
 
 /**
  * 91 编辑投票 · 规则 / 94 编辑问卷 · 规则
@@ -107,6 +108,8 @@ async function save() {
       options: poll.value.options,
       rules: poll.value.rules
     })
+    // 规则变了（截止时间、匿名、结果可见性），详情/结果快照都要重拉
+    cacheDrop(cacheKey.pollAll(poll.value.id))
     uni.showToast({ title: '已保存', icon: 'none' })
     setTimeout(back, 600)
   } catch {

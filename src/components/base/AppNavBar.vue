@@ -127,6 +127,8 @@ export default { name: 'AppNavBar' }
   width: 100%;
   background: $bg;
   flex-shrink: 0;
+  /* 发丝线是 .nav::after 绝对定位，非吸顶（fixed=false）时也要有定位父级 */
+  position: relative;
 
   &--surface {
     background: $surface;

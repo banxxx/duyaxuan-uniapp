@@ -130,6 +130,13 @@ export interface Comment {
   /** 是不是我自己发的（「我参与的」筛选用） */
   isMine?: boolean
   user: { id: string; name: string; avatar?: string }
+  /**
+   * 被回复的那条评论的 id。
+   *
+   * 有它才能把回复挂到对应的楼层下面 —— replyTo 里存的是「被回复的人」，
+   * 只知道是谁，不知道挂在哪条评论下。
+   */
+  replyToId?: string
   replyTo?: { id: string; name: string }
 }
 

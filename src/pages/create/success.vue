@@ -11,6 +11,7 @@ import { fetchPollQrcode } from '@/api/poll'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { go, reset, ROUTES, switchTab } from '@/utils/router'
+import { cacheDrop } from '@/utils/cache'
 
 /**
  * 39 发布成功 / 81 问卷发布成功
@@ -44,6 +45,8 @@ async function submit() {
     const created = await draft.submit()
     poll.value = created
     syncShareMenu(created.rules.allowShare)
+    // 刚发布，我发起的列表缓存里还没有它，进列表时要重新拉
+    cacheDrop('list:mine')
     loadQr(created.id)
   } catch {
     failed.value = true

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { usePollStore } from './poll'
 import { useDraftStore } from './draft'
+import { cacheClear } from '@/utils/cache'
 
 /**
  * 本地设置
@@ -147,10 +147,12 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       // 草稿在内存里还有一份，只删存储的话下次 patch 又会写回去
       useDraftStore().reset()
-      usePollStore().clearDetailCache()
     } catch {
       // store 还没初始化时忽略
     }
+
+    // 页面数据缓存也在内存里，不清的话「清了缓存」再进详情还是旧内容
+    cacheClear()
 
     settings.value = { ...settings.value, cacheSize: readCacheSize() }
     persist()

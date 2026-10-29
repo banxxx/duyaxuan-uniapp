@@ -5,12 +5,12 @@ import type { Poll } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
-import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppTabBar from '@/components/base/AppTabBar.vue'
 import PollRow from '@/components/business/PollRow.vue'
 import { fetchJoinedPolls } from '@/api/poll'
 import { getSafeArea } from '@/utils/platform'
 import { ROUTES, go, switchTab } from '@/utils/router'
+import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
 
 /**
  * 42 我参与的
@@ -36,6 +36,21 @@ const hasMore = ref(true)
 
 const { safeBottom } = getSafeArea()
 
+/** 列表快照：只存第一页，再进页面先看到内容，翻页仍然重新请求 */
+interface ListSnapshot {
+  list: Poll[]
+  cursor: string | null
+  hasMore: boolean
+}
+
+/** 换了筛选条件时先把对应缓存铺上，没有就清空列表走加载态 */
+function seed(v: string) {
+  const cached = cacheGet<ListSnapshot>(cacheKey.pollList('joined', v))
+  list.value = cached?.list ?? []
+  cursor.value = cached?.cursor ?? null
+  hasMore.value = cached?.hasMore ?? true
+}
+
 async function load(reset = false) {
   if (loading.value) return
   loading.value = true
@@ -48,12 +63,22 @@ async function load(reset = false) {
     list.value = reset ? res.list : [...list.value, ...res.list]
     cursor.value = res.cursor
     hasMore.value = res.hasMore
+    if (reset) {
+      cacheSet(cacheKey.pollList('joined', status.value), {
+        list: res.list,
+        cursor: res.cursor,
+        hasMore: res.hasMore
+      })
+    }
   } finally {
     loading.value = false
   }
 }
 
-onMounted(() => load(true))
+onMounted(() => {
+  seed(status.value)
+  load(true)
+})
 onPullDownRefresh(async () => {
   await load(true)
   uni.stopPullDownRefresh()
@@ -64,6 +89,7 @@ onReachBottom(() => {
 
 function onFilter(v: string) {
   status.value = v as typeof status.value
+  seed(v)
   load(true)
 }
 

@@ -162,6 +162,17 @@ function pickDay(cell: DayCell) {
   const next = new Date(viewYear.value, viewMonth.value, cell.day)
   const cur = new Date(picked.value)
   next.setHours(cur.getHours(), cur.getMinutes(), 0, 0)
+
+  // 选「今天」时，当前的时分可能已经过去了（比如现在 14:00、时分还停在 09:00）。
+  // 直接落到一个过去的时间会让「确定」永远点不动，这里顺延到最近的可选时刻。
+  const min = props.min ?? Date.now()
+  if (next.getTime() <= min) {
+    const soon = new Date(min + 5 * 60 * 1000)
+    soon.setSeconds(0, 0)
+    picked.value = soon.getTime()
+    return
+  }
+
   picked.value = next.getTime()
 }
 
@@ -234,7 +245,8 @@ function onConfirm() {
 
 <template>
   <view v-if="rendered" class="dtp" :class="{ 'dtp--closing': closing }">
-    <view class="dtp__mask anim anim--fade" @tap="emit('close')" />
+    <!-- 遮罩同时吃掉 touchmove：手指在遮罩上划不该滚动下面的页面 -->
+    <view class="dtp__mask anim anim--fade" @tap="emit('close')" @touchmove.stop.prevent />
 
     <view class="dtp__panel" :style="{ paddingBottom: panelPad }">
       <view class="dtp__handle"><view class="dtp__bar" /></view>

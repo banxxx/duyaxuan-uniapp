@@ -12,6 +12,7 @@ import { fetchPoll, updatePoll } from '@/api/poll'
 import { charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, back, go } from '@/utils/router'
+import { cacheDrop, cacheKey } from '@/utils/cache'
 
 /**
  * 90 编辑投票 · 内容 / 93 编辑问卷 · 内容
@@ -155,6 +156,8 @@ async function save() {
       rules: poll.value.rules
     })
     poll.value = next
+    // 改过内容，这条投票的所有快照作废：标题、选项都变了，不能先显示旧的
+    cacheDrop(cacheKey.pollAll(poll.value.id))
     uni.showToast({ title: '已保存', icon: 'none' })
     setTimeout(back, 600)
   } catch {

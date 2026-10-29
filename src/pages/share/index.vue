@@ -11,6 +11,7 @@ import { fetchPoll, fetchPollQrcode } from '@/api/poll'
 import { formatDateTime } from '@/utils/format'
 import { getPlatform } from '@/utils/platform'
 import { buildShareMessage, buildTimelineMessage, syncShareMenu } from '@/utils/share'
+import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
 
 /**
  * 27 分享投票 / 80 分享问卷
@@ -72,16 +73,32 @@ for (let r = 0; r < QR_COLS; r++) {
   }
 }
 
+/** 分享页快照：投票信息 + 已生成的小程序码地址 */
+interface ShareSnapshot {
+  poll: Poll
+  qrUrl: string
+}
+
 async function load() {
-  loading.value = true
+  const cached = cacheGet<ShareSnapshot>(cacheKey.pollShare(pollId.value))
+  if (cached) {
+    poll.value = cached.poll
+    qrUrl.value = cached.qrUrl
+    qrLoading.value = false
+  }
+  // 有快照就先渲染海报，骨架屏只在冷启动时出现
+  loading.value = !cached
   failed.value = false
   try {
     poll.value = await fetchPoll(pollId.value)
     // 发起人关掉「允许分享」后，右上角菜单里的转发也一起收掉
     syncShareMenu(poll.value.rules.allowShare)
-    loadQrcode()
+    // 码地址在 R2 里是稳定的，上次拿到过就不用再问一次
+    if (cached?.qrUrl) cacheSet(cacheKey.pollShare(pollId.value), { poll: poll.value, qrUrl: qrUrl.value })
+    else loadQrcode()
   } catch {
-    failed.value = true
+    // 有快照时静默失败，页面保持可看
+    if (!poll.value) failed.value = true
   } finally {
     loading.value = false
   }
@@ -93,6 +110,9 @@ async function loadQrcode() {
   qrFailed.value = false
   try {
     qrUrl.value = await fetchPollQrcode(pollId.value)
+    if (poll.value) {
+      cacheSet(cacheKey.pollShare(pollId.value), { poll: poll.value, qrUrl: qrUrl.value })
+    }
   } catch {
     // 没配 AppID / 没开 R2 / 网络问题都落到占位图案，不影响分享卡片
     qrFailed.value = true

@@ -18,6 +18,7 @@ import type { SummaryCandidate, UnclassifiedAnswer } from '@/types/api'
 import { formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
+import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 
 /**
  * 86 汇总 · 未归类回答
@@ -39,12 +40,30 @@ const activeAnswer = ref<UnclassifiedAnswer | null>(null)
 /** 归入已有弹层 */
 const pickSheet = ref(false)
 
+/** 未归类页快照：回答列表 + 可归入的候选选项 */
+interface UnclassifiedSnapshot {
+  list: UnclassifiedAnswer[]
+  candidates: SummaryCandidate[]
+}
+
+/** 新建/归入/忽略都会改动两条列表，写完就作废，下次进来重新拉 */
+function invalidate() {
+  cacheDrop(cacheKey.summaryUnclassified(surveyId.value))
+  cacheDrop(cacheKey.pollSummary(surveyId.value))
+}
+
 async function load() {
-  loading.value = true
+  const cached = cacheGet<UnclassifiedSnapshot>(cacheKey.summaryUnclassified(surveyId.value))
+  if (cached) {
+    list.value = cached.list
+    candidates.value = cached.candidates
+  }
+  loading.value = !cached
   try {
     const [u, c] = await Promise.all([fetchUnclassified(surveyId.value), fetchSummaryCandidates(surveyId.value)])
     list.value = u
     candidates.value = c
+    cacheSet(cacheKey.summaryUnclassified(surveyId.value), { list: u, candidates: c })
   } finally {
     loading.value = false
   }
@@ -80,6 +99,7 @@ async function confirmNew() {
     })
     list.value = list.value.filter((x) => x.id !== target.id)
     newSheet.value = false
+    invalidate()
     uni.showToast({ title: '已新建选项', icon: 'none' })
   } catch {
     uni.showToast({ title: '新建失败，请重试', icon: 'none' })
@@ -100,6 +120,7 @@ async function pickInto(c: SummaryCandidate) {
     c.answerCount += 1
     list.value = list.value.filter((x) => x.id !== target.id)
     pickSheet.value = false
+    invalidate()
     uni.showToast({ title: `已归入「${c.title}」`, icon: 'none' })
   } catch {
     uni.showToast({ title: '归类失败，请重试', icon: 'none' })
@@ -110,6 +131,7 @@ async function ignore(a: UnclassifiedAnswer) {
   try {
     await ignoreSummaryAnswers(surveyId.value, [a.id])
     list.value = list.value.filter((x) => x.id !== a.id)
+    invalidate()
   } catch {
     uni.showToast({ title: '操作失败，请重试', icon: 'none' })
   }
@@ -129,6 +151,7 @@ function ignoreAll() {
           list.value.map((x) => x.id)
         )
         list.value = []
+        invalidate()
       } catch {
         uni.showToast({ title: '操作失败，请重试', icon: 'none' })
       }

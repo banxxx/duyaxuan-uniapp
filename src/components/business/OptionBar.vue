@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, getCurrentInstance, nextTick, onMounted, ref, watch } from 'vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import { percent } from '@/utils/format'
 
@@ -44,12 +44,94 @@ const pct = computed(() => percent(props.votes ?? 0, props.total ?? 0))
 const showVotes = computed(() => props.mode === 'vote-result' || props.mode === 'result')
 
 const readonly = computed(() => props.mode === 'result' || props.mode === 'locked' || props.disabled)
+
+/** 说明只在投票态出现，结果态和锁定态只有标题 */
+const showDesc = computed(() => !!props.desc && (props.mode === 'vote' || props.mode === 'vote-result'))
+
+/**
+ * 折叠 / 展开
+ *
+ * 卡片高度固定，标题和说明各占一行，超长就省略；量到「装不下」时给一个
+ * 展开开关，点开就地长高显示全文。这样一屏里所有卡片始终等高，
+ * 不会因为某个选项写了三行字把整组撑高。
+ */
+const expanded = ref(false)
+const expandable = ref(false)
+
+/** 折叠时文字区的高度：标题 21 + 间距 2 + 说明 15.4 */
+const COLLAPSED_WITH_DESC = 40
+/** 结果态只有标题一行：14px × 1.4 = 19.6 */
+const COLLAPSED_TITLE_ONLY = 21
+
+const instance = getCurrentInstance()
+
+function toggle() {
+  expanded.value = !expanded.value
+}
+
+/**
+ * 拿不到实际尺寸时的兜底：按字数估。
+ * 宁可多显示一个「展开」（点开发现没变化），也不能该显示时没有。
+ */
+function estimateOverflow(): boolean {
+  const width = (s?: string) =>
+    Array.from(s ?? '').reduce((n, c) => n + (c.charCodeAt(0) > 255 ? 1 : 0.6), 0)
+  // 行尾还有票数一列时文字区更窄，一行能放的字更少
+  const narrow = props.mode === 'vote-result' || props.mode === 'result'
+  return (
+    width(props.title) > (narrow ? 12 : 18) ||
+    (showDesc.value && width(props.desc) > (narrow ? 16 : 24))
+  )
+}
+
+/**
+ * 量真实高度
+ *
+ * 页面上那两行是单行省略（盒子高度被裁剪），量它们没有意义；
+ * 所以模板里放了一份「同样宽度、不裁剪、不可见」的副本，只读它的高度。
+ *
+ * 先把估算值当作初值：测量要等一次渲染，这一帧里长文字也得有个展开入口；
+ * 量到真值后再用真值覆盖。测量失败（老基础库 / H5 结构差异）就停在估算上。
+ */
+function measure() {
+  if (props.mode === 'locked') return
+  expandable.value = estimateOverflow()
+  nextTick(() => {
+    try {
+      uni
+        .createSelectorQuery()
+        .in(instance?.proxy as never)
+        .select('.option__measure')
+        .boundingClientRect((rect) => {
+          const height = (rect as UniApp.NodeInfo | null)?.height ?? 0
+          if (!height) return
+          expandable.value = height > (showDesc.value ? COLLAPSED_WITH_DESC : COLLAPSED_TITLE_ONLY)
+        })
+        .exec()
+    } catch {
+      // 拿不到尺寸就保留估算值
+    }
+  })
+}
+
+onMounted(measure)
+
+// 投完票从 vote 切到 result、或者状态变了，展开状态不该跟着沿用
+watch(
+  () => props.mode,
+  () => {
+    expanded.value = false
+  }
+)
+
+// 分开监听：写成返回数组的 getter 会在每次重渲染时都触发（数组是新引用）
+watch([() => props.title, () => props.desc, () => props.mode], measure)
 </script>
 
 <template>
   <view
     class="option"
-    :class="[`option--${mode}`, { 'option--selected': selected }]"
+    :class="[`option--${mode}`, { 'option--selected': selected, 'option--expanded': expanded }]"
     :hover-class="readonly ? 'none' : 'option--active'"
     @tap="!readonly && emit('select')"
   >
@@ -89,14 +171,30 @@ const readonly = computed(() => props.mode === 'result' || props.mode === 'locke
         </view>
 
         <view class="option__text">
-          <text class="option__title">{{ title }}</text>
-          <text v-if="desc && (mode === 'vote' || mode === 'vote-result')" class="option__desc">
+          <text class="option__title" :class="{ 'option__title--clamp': !expanded }">{{ title }}</text>
+          <text v-if="showDesc" class="option__desc" :class="{ 'option__desc--clamp': !expanded }">
             {{ desc }}
           </text>
+
+          <!-- 测量副本：同样宽度、不裁剪、不可见，只用来量真实行高 -->
+          <view class="option__measure" aria-hidden="true">
+            <text class="option__title">{{ title }}</text>
+            <text v-if="showDesc" class="option__desc">{{ desc }}</text>
+          </view>
         </view>
       </view>
 
       <text v-if="showVotes" class="option__value">{{ votes ?? 0 }} 票 · {{ pct }}%</text>
+
+      <!-- 文字装不下时才出现；点它只切换展开，不算选中 -->
+      <view
+        v-if="expandable"
+        class="option__toggle"
+        hover-class="option__toggle--active"
+        @tap.stop="toggle"
+      >
+        <AppIcon :name="expanded ? 'chevron-up' : 'chevron-down'" :size="14" color="#A1A1AA" />
+      </view>
     </view>
 
     <view v-if="mode === 'result'" class="option__track">
@@ -126,10 +224,22 @@ export default { name: 'OptionBar' }
     background: $subtle;
   }
 
-  /* 09/11：竖向，标题行 + 进度条，行距 8 */
+  /* 05-08：固定高度 —— 标题 + 说明各一行，内容垂直居中。
+     高度写死是「等高」的来源，长文字靠单行省略 + 展开解决，不靠撑高卡片。 */
+  &--vote,
+  &--vote-result {
+    height: 70px;
+    display: flex;
+    align-items: center;
+  }
+
+  /* 09/11：竖向，标题行 + 进度条，行距 8。
+     66 = 上下内边距 28 + 描边 2 + 行 19.6 + 行距 8 + 进度条 6，留 2px 余量防 rpx 取整后溢出 */
   &--result {
+    height: 66px;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     gap: 8px;
   }
 
@@ -139,6 +249,12 @@ export default { name: 'OptionBar' }
     padding: 0 14px;
     display: flex;
     align-items: center;
+  }
+
+  /* 展开：这一张由内容撑高，其他卡片仍旧等高 */
+  &--expanded {
+    height: auto;
+    min-height: 52px;
   }
 
   /* 选中态：设计稿是 2px $accent 描边。
@@ -208,6 +324,8 @@ export default { name: 'OptionBar' }
   }
 
   &__text {
+    /* 测量副本的定位基准 */
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -215,11 +333,54 @@ export default { name: 'OptionBar' }
     min-width: 0;
   }
 
+  /* 固定成块级：展开 / 折叠只切换省略样式，
+     不切换 inline / block —— 换布局模式会让文字在展开瞬间重排一次 */
   &__title {
+    display: block;
     font-size: 15px;
     font-weight: 500;
     color: $ink;
     line-height: 1.4;
+  }
+
+  /* 折叠态：标题和说明各占一行，超出省略；展开后这两条不生效，自然换行 */
+  &__title--clamp,
+  &__desc--clamp {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* 测量副本：不占位、不可见，但保留布局，量出来的就是完整文字的高度 */
+  &__measure {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  /* 展开开关：只占 20 宽，点它不算选中选项。
+     常驻一层浅底 —— 光秃秃的箭头在这一行里容易被当成「跳到详情」 */
+  &__toggle {
+    width: 20px;
+    height: 20px;
+    margin-left: 2px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: $subtle;
+    transition: background-color $dur-fast $ease-both;
+
+    &--active {
+      background: $line;
+    }
   }
 
   &--result &__title,
@@ -233,6 +394,7 @@ export default { name: 'OptionBar' }
   }
 
   &__desc {
+    display: block;
     font-size: 11px;
     color: $faint;
     line-height: 1.4;

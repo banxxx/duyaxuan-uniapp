@@ -17,6 +17,7 @@ import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import type { Poll, SummaryCandidate, UnclassifiedAnswer } from '@/types/api'
 import { ROUTES, back, go } from '@/utils/router'
+import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 
 /**
  * 84 汇总 · 整理回答
@@ -35,8 +36,22 @@ const surveyId = ref('')
 
 const classifiedCount = computed(() => candidates.value.reduce((s, c) => s + c.answerCount, 0))
 
+/** 汇总页快照：问卷 + 候选分组 + 未归类 */
+interface SummarySnapshot {
+  poll: Poll
+  candidates: SummaryCandidate[]
+  unclassified: UnclassifiedAnswer[]
+}
+
 async function load() {
-  loading.value = true
+  const cached = cacheGet<SummarySnapshot>(cacheKey.pollSummary(surveyId.value))
+  if (cached) {
+    poll.value = cached.poll
+    candidates.value = cached.candidates
+    unclassified.value = cached.unclassified
+  }
+  // 从 85/86 退回来时页面是复用的，有内容就不该再铺一次骨架
+  loading.value = !cached
   try {
     const p = await fetchPoll(surveyId.value)
     poll.value = p
@@ -46,6 +61,7 @@ async function load() {
     ])
     candidates.value = c
     unclassified.value = u
+    cacheSet(cacheKey.pollSummary(surveyId.value), { poll: p, candidates: c, unclassified: u })
   } finally {
     loading.value = false
   }
@@ -86,6 +102,8 @@ function remerge() {
       uni.showLoading({ title: '正在归并' })
       try {
         await remergeSummary(surveyId.value)
+        // 重新归并后旧分组全部作废
+        cacheDrop(cacheKey.pollSummary(surveyId.value))
         await load()
         uni.showToast({ title: '已重新归并', icon: 'none' })
       } catch {

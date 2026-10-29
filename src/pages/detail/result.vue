@@ -12,6 +12,7 @@ import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
 import { backTo, go, replace, ROUTES } from '@/utils/router'
+import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
 
 /**
  * 21 结果 · 实时统计 / 22 结果 · 待公布 / 23 结果 · 已关闭
@@ -87,8 +88,19 @@ const timePct = computed(() => {
   return Math.min(100, Math.max(0, Math.round((left / window) * 100)))
 })
 
+/** 结果页快照：票数和「我投了什么」一起恢复，避免先显示未投票 */
+interface ResultSnapshot {
+  poll: Poll
+  myVote: string[]
+}
+
 async function load() {
-  loading.value = true
+  const cached = cacheGet<ResultSnapshot>(cacheKey.pollResult(pollId.value))
+  if (cached) {
+    poll.value = cached.poll
+    myVote.value = cached.myVote
+  }
+  loading.value = !cached
   try {
     const p = await fetchPoll(pollId.value)
     // 问卷没有选项票数，结果页对它没有意义；旧链接 / 误入口统一回详情页
@@ -99,6 +111,7 @@ async function load() {
     poll.value = p
     syncShareMenu(p.rules.allowShare)
     myVote.value = await fetchMyVote(p.id)
+    cacheSet(cacheKey.pollResult(p.id), { poll: p, myVote: myVote.value })
   } finally {
     loading.value = false
   }

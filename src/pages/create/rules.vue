@@ -100,7 +100,9 @@ const resultText = computed(
 onLoad(() => {
   draft.restore()
   typeMode.value = draft.draft.type === 'multiple' ? 'multiple' : 'single'
-  maxChoice.value = draft.draft.rules.maxChoice ?? 3
+  // 旧草稿里可能是 null / NaN（JSON 存不下 NaN，会变成 null），兜到 3 再收口
+  const savedMax = draft.draft.rules.maxChoice
+  maxChoice.value = typeof savedMax === 'number' && Number.isFinite(savedMax) ? savedMax : 3
   clampMaxChoice()
   profileTitle.value = draft.draft.rules.profileField ?? ''
   // 回填截止时间：草稿里已有 endAt 就按它和「现在 + 1/3/7 天」比对，
@@ -123,18 +125,37 @@ function setRule(key: string, v: boolean) {
 
 function pickJoin(v: JoinMethod) {
   draft.patchRules({ joinMethod: v })
-  sheet.value = null
+  closeSheet()
 }
 
 function pickResult(v: ResultVisibility) {
   draft.patchRules({ resultVisibility: v })
+  closeSheet()
+}
+
+/**
+ * 关弹层。
+ *
+ * 「需个人信息」里有两个输入框：输入框还聚焦着就把面板从树上摘掉，
+ * 微信会把键盘留在屏幕上、页面停在「被顶起」的位置，
+ * 看起来就是整页卡住点不动。关之前先主动收键盘。
+ */
+function closeSheet() {
+  if (sheet.value === 'profile') {
+    // 个别宿主没有这个能力，收不起来也不能让关闭动作本身失败
+    try {
+      uni.hideKeyboard()
+    } catch {
+      /* ignore */
+    }
+  }
   sheet.value = null
 }
 
 function confirmProfile() {
   const t = profileTitle.value.trim()
   draft.patchRules({ profileField: t || null })
-  sheet.value = null
+  closeSheet()
 }
 
 function pickDeadline(p: '1d' | '3d' | '7d' | 'custom') {
@@ -154,9 +175,13 @@ function openDeadlinePicker() {
 }
 
 function applyCustomDeadline(ts: number) {
-  if (ts <= Date.now()) {
-    uni.showToast({ title: '请选择一个将来的时间', icon: 'none' })
-    return
+  const now = Date.now()
+  // 选到已经过去的时间就顺延到 5 分钟后。
+  // 以前是弹个提示原地不动 —— 面板不关、值也不变，用户只能反复点「确定」，
+  // 看起来就是「点确定没反应」。
+  if (ts <= now) {
+    ts = now + 5 * 60 * 1000
+    uni.showToast({ title: '已顺延到最近的可选时间', icon: 'none' })
   }
   deadlinePreset.value = 'custom'
   draft.patchRules({ endAt: ts })
@@ -469,7 +494,7 @@ function publish() {
       :visible="sheet === 'join'"
       title="参与方式"
       desc="决定谁可以看到并参与"
-      @close="sheet = null"
+      @close="closeSheet"
     >
       <view class="picker">
         <view
@@ -498,7 +523,7 @@ function publish() {
       :visible="sheet === 'result'"
       title="投票结果显示"
       desc="决定参与者什么时候能看到票数"
-      @close="sheet = null"
+      @close="closeSheet"
     >
       <view class="picker">
         <view
@@ -527,7 +552,7 @@ function publish() {
       :visible="sheet === 'profile'"
       title="需个人信息"
       desc="配置后，参与者投票前需先填写该信息"
-      @close="sheet = null"
+      @close="closeSheet"
     >
       <view class="form">
         <view class="form__group">

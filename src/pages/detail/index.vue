@@ -28,6 +28,7 @@ import { buildShareMessage, buildTimelineMessage, syncShareMenu } from '@/utils/
 import { askInviteCode } from '@/utils/invite'
 import { bottomInset } from '@/utils/platform'
 import { backTo, go, replace, ROUTES } from '@/utils/router'
+import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 
 /**
  * 详情页 —— 05~12、16~20、22~23、67~70、75~76 全部合成这一页
@@ -114,8 +115,27 @@ const liveText = computed(() =>
 /** 09/11 底部的「剩 3 天 6 小时」 */
 const remainingText = computed(() => (poll.value ? formatRemaining(poll.value.rules.endAt) : ''))
 
-/** 09/11 讨论区只露两条 */
-const previewComments = computed(() => comments.value.slice(0, 2))
+/**
+ * 09/11 讨论区只露两条；只取顶层评论，回复不算一条独立讨论。
+ *
+ * 万一一屏里全是回复（父评论被删了），退回用回复本身，至少卡片不会是空的。
+ */
+const previewComments = computed(() => {
+  const roots = comments.value.filter((c) => !c.replyToId)
+  return (roots.length ? roots : comments.value).slice(0, 2)
+})
+
+/**
+ * 一条评论都没有时，讨论入口那一行的摘要。
+ *
+ * 这里不能空着 —— 入口本身要一直在（发起人开了评论就该能进去），
+ * 空卡片的观感又差，所以换成一句邀请。
+ */
+const discussPreview = computed(() => {
+  const c = previewComments.value[0]
+  if (!c) return '还没有人发言，来说第一句'
+  return c.user?.name ? `${c.user.name}：${c.content}` : c.content
+})
 
 /**
  * 09/11 的参与入口左侧叠了四个头像。
@@ -179,8 +199,55 @@ const submitDisabled = computed(() => {
   return false
 })
 
+/**
+ * 详情页整屏快照
+ *
+ * 只缓存 poll 是不够的：myVote 是空的，页面会先按「还没投票」渲染，
+ * 一秒后再跳成「已投票」，选项从可点变只读 —— 比骨架屏还晃眼。
+ * 所以把这一屏依赖的数据打包存，进来时一次性恢复。
+ */
+interface DetailSnapshot {
+  poll: Poll
+  myVote: string[]
+  myAnswers: SurveyAnswer[]
+  latestAnswers: SurveyAnswer[]
+  comments: Comment[]
+  voterAvatars: Array<{ id: string; name: string; avatar?: string }>
+}
+
+function snapshotOf(p: Poll): DetailSnapshot {
+  return {
+    poll: p,
+    myVote: [...myVote.value],
+    myAnswers: [...myAnswers.value],
+    latestAnswers: [...latestAnswers.value],
+    comments: [...comments.value],
+    voterAvatars: [...voterAvatars.value]
+  }
+}
+
+function saveSnapshot(p: Poll) {
+  cacheSet(cacheKey.pollDetail(p.id), snapshotOf(p))
+}
+
+function applySnapshot(s: DetailSnapshot) {
+  poll.value = s.poll
+  myVote.value = [...s.myVote]
+  myAnswers.value = [...s.myAnswers]
+  latestAnswers.value = [...s.latestAnswers]
+  comments.value = [...s.comments]
+  voterAvatars.value = [...s.voterAvatars]
+  // 没提交过的勾选要保留：从讨论区退回来不能把用户选了一半的选项清掉
+  if (!selection.value.length) selection.value = [...s.myVote]
+}
+
 async function load() {
-  loading.value = true
+  // 有快照就先渲染，再静默拉最新：骨架屏只在真的没数据时出现
+  if (!poll.value) {
+    const cached = cacheGet<DetailSnapshot>(cacheKey.pollDetail(pollId.value))
+    if (cached) applySnapshot(cached)
+  }
+  loading.value = !poll.value
   loadError.value = false
   try {
     const p = await fetchPoll(pollId.value)
@@ -232,9 +299,17 @@ async function load() {
       const voters = await fetchVoters(p.id)
       voterAvatars.value = voters.list.slice(0, 4).map((v, i) => v.user ?? { id: `anon${i}`, name: '匿' })
     }
-  } catch {
-    // 详情页加载失败时 poll 为空，模板会整块空白；用错误态兜住
-    loadError.value = true
+
+    // 字段都齐了再存：下次进来才能一次恢复完整状态
+    saveSnapshot(p)
+  } catch (err) {
+    // 投票被删了（404）：缓存里的那份也不能再显示，否则页面看起来「还活着」
+    if (err instanceof ApiError && err.code === 404) {
+      cacheDrop(cacheKey.pollAll(pollId.value))
+      poll.value = null
+    }
+    // 其余失败（比如断网）静默处理：有快照就保持上一次的内容，比换成错误页好
+    if (!poll.value) loadError.value = true
   } finally {
     loading.value = false
   }
@@ -312,6 +387,8 @@ async function doVote() {
         )
         poll.value = next
         myVote.value = [...selection.value]
+        // 票数变了，快照要跟着更新，否则再进详情会先闪一下投票前的数字
+        saveSnapshot(next)
         infoVisible.value = false
         go(ROUTES.detailSuccess, { id: p.id })
         return
@@ -351,6 +428,7 @@ async function onRevoke() {
     poll.value = next
     myVote.value = []
     selection.value = []
+    saveSnapshot(next)
   } catch {
     uni.showToast({ title: '撤回失败', icon: 'none' })
   }
@@ -413,6 +491,9 @@ function openManage() {
             if (!res.confirm) return
             const { deletePoll } = await import('@/api/poll')
             await deletePoll(pollId.value)
+            // 删掉的投票不该再出现在任何缓存里
+            cacheDrop(cacheKey.pollAll(pollId.value))
+            cacheDrop('list:mine')
             // 详情页可能是从首页、我发起的、我参与的、搜索结果任意一处进来的，
             // 删除后统一退回「我发起的」——那里才有撤销入口
             backTo(ROUTES.meCreated)
@@ -546,22 +627,29 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
                 </view>
               </view>
 
+              <!-- 空轨道是底色，票数段叠在上面；0 票时没有段，只剩一条灰条 -->
               <view class="standings__bar">
-                <view
-                  v-for="(s, i) in standings"
-                  :key="s.id"
-                  class="standings__seg"
-                  :style="{ width: `${s.pct}%`, background: SEG_COLORS[Math.min(i, SEG_COLORS.length - 1)] }"
-                />
+                <template v-for="(s, i) in standings" :key="s.id">
+                  <!-- 0 票的选项不画：min-width 会让它变成一颗 4px 的色块 -->
+                  <view
+                    v-if="s.pct > 0"
+                    class="standings__seg"
+                    :style="{ width: `${s.pct}%`, background: SEG_COLORS[Math.min(i, SEG_COLORS.length - 1)] }"
+                  />
+                </template>
               </view>
 
               <view class="standings__legend">
-                <view class="standings__leader">
-                  <view class="standings__dot" />
-                  <text class="standings__leader-name">{{ standings[0]?.title }}</text>
-                  <text class="standings__leader-pct">{{ standings[0]?.pct }}%</text>
-                </view>
-                <text v-if="leadGap > 0" class="standings__gap">领先第二名 {{ leadGap }} 个百分点</text>
+                <template v-if="totalVotes > 0">
+                  <view class="standings__leader">
+                    <view class="standings__dot" />
+                    <text class="standings__leader-name">{{ standings[0]?.title }}</text>
+                    <text class="standings__leader-pct">{{ standings[0]?.pct }}%</text>
+                  </view>
+                  <text v-if="leadGap > 0" class="standings__gap">领先第二名 {{ leadGap }} 个百分点</text>
+                </template>
+                <!-- 一票都没有时，「领先 0%」没有意义，换成一句引导 -->
+                <text v-else class="standings__hint">还没有人投票，来投出第一票</text>
               </view>
             </view>
 
@@ -598,7 +686,12 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
               <text class="footer-stat__text">{{ remainingText }}</text>
             </view>
 
-            <view v-if="hasVoted && poll.rules.allowComment" class="discuss">
+            <!--
+              讨论区入口：投票前后都要在。
+              以前只在 hasVoted 之后才出现，还没投票的人根本进不去讨论区，
+              发起人开了「允许评论」也等于没有。有评论就摆预览卡，一条都没有摆紧凑入口。
+            -->
+            <view v-if="poll.rules.allowComment && poll.commentCount > 0" class="discuss">
               <view class="discuss__head">
                 <text class="discuss__title">讨论 {{ poll.commentCount }}</text>
                 <text class="discuss__all" @tap="goComments">查看全部</text>
@@ -611,6 +704,17 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
                   <text class="discuss__text">{{ c.content }}</text>
                 </view>
               </view>
+            </view>
+
+            <view v-else-if="poll.rules.allowComment" class="discuss-entry" @tap="goComments">
+              <view class="discuss-entry__icon">
+                <AppIcon name="message-square" :size="15" color="#4F46E5" />
+              </view>
+              <view class="discuss-entry__text">
+                <text class="discuss-entry__title">讨论区</text>
+                <text class="discuss-entry__desc">{{ discussPreview }}</text>
+              </view>
+              <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
             </view>
 
             <!-- 09/11 参与入口：头像叠层 + 人数 / 查看记录；17/18 评论关闭时它是唯一入口 -->
@@ -708,6 +812,18 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
                   <text class="discuss__text">{{ c.content }}</text>
                 </view>
               </view>
+            </view>
+
+            <!-- 问卷同样：没评论时也要留一个能进去的入口 -->
+            <view v-else-if="poll.rules.allowComment" class="discuss-entry" @tap="goComments">
+              <view class="discuss-entry__icon">
+                <AppIcon name="message-square" :size="15" color="#4F46E5" />
+              </view>
+              <view class="discuss-entry__text">
+                <text class="discuss-entry__title">讨论区</text>
+                <text class="discuss-entry__desc">{{ discussPreview }}</text>
+              </view>
+              <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
             </view>
 
             <view class="participants" @tap="goAnswers">
@@ -1121,19 +1237,26 @@ export default { name: 'PollDetailPage' }
     color: $muted;
   }
 
-  /* 8 高分段条，段与段之间 2 的缝 */
+  /* 8 高分段条，段与段之间 2 的缝；底色是空轨道，0 票时它就是一条灰条 */
   &__bar {
     display: flex;
     gap: 2px;
     height: 8px;
     border-radius: 4px;
     overflow: hidden;
+    background: $subtle;
   }
 
   &__seg {
     height: 100%;
     border-radius: 4px;
+    /* 1% 的段也要看得见，但不能为 0 票的段占位（模板里已经过滤掉了） */
     min-width: 4px;
+  }
+
+  &__hint {
+    font-size: 11px;
+    color: $faint;
   }
 
   &__legend {
@@ -1179,6 +1302,8 @@ export default { name: 'PollDetailPage' }
 
 /* 选项列表：待投票 10 的行距；结果可见（09/11）12；结果隐藏（10/12）8 */
 .options {
+  /* 卡片等高由 OptionBar 自己的固定高度保证；
+     这里不能用 grid-auto-rows: 1fr —— 那张卡展开时会把它顶高，整组跟着变高。 */
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1293,6 +1418,49 @@ export default { name: 'PollDetailPage' }
     font-size: 12px;
     color: $muted;
     line-height: 1.5;
+  }
+}
+
+/* 讨论入口（还没有评论时）：$subtle 底、无描边，比下面的参与卡轻一档 */
+.discuss-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: $subtle;
+  border-radius: 14px;
+
+  &__icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    background: $surface;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  &__text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  &__title {
+    font-size: 13px;
+    font-weight: 500;
+    color: $ink;
+  }
+
+  &__desc {
+    font-size: 11px;
+    color: $faint;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 }
 

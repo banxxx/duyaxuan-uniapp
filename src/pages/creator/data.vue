@@ -12,6 +12,7 @@ import { formatDate, formatDateTime, formatRelative, formatRemaining, percent } 
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
+import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 
 /**
  * 24 发布者 · 数据 · 进行中 / 25 发布者 · 数据 · 已结束
@@ -69,13 +70,27 @@ const trendMax = computed(() => Math.max(1, ...(stats.value?.trend ?? []).map((t
 /** 时段条的峰值：设计稿只给最高的那根上主色 */
 const peakHour = computed(() => Math.max(1, ...(stats.value?.hours ?? []).map((h) => h.value)))
 
+type PollStats = NonNullable<typeof stats.value>
+
+/** 数据页快照：投票 + 统计，趋势图不用再空一屏 */
+interface DataSnapshot {
+  poll: Poll
+  stats: PollStats | undefined
+}
+
 async function load() {
-  loading.value = true
+  const cached = cacheGet<DataSnapshot>(cacheKey.pollData(pollId.value))
+  if (cached) {
+    poll.value = cached.poll
+    stats.value = cached.stats
+  }
+  loading.value = !cached
   try {
     const [p, s] = await Promise.all([fetchPoll(pollId.value), fetchPollStats(pollId.value)])
     poll.value = p
     stats.value = s
     syncShareMenu(p.rules.allowShare)
+    cacheSet(cacheKey.pollData(pollId.value), { poll: p, stats: s })
   } finally {
     loading.value = false
   }
@@ -96,6 +111,8 @@ async function onEnd() {
   if (!poll.value) return
   endSheet.value = false
   await endPoll(poll.value.id)
+  // 提前结束会改 rules.endAt，详情/结果页的快照跟着失效
+  cacheDrop(cacheKey.pollAll(poll.value.id))
   await load()
   uni.showToast({ title: '已结束', icon: 'none' })
 }

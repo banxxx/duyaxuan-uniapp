@@ -6,6 +6,7 @@ import { loginButtonText } from '@/utils/platform'
 import { loginByCode, devLogin, fetchProfile, isMockAuth } from '@/api/auth'
 import { registerAuthHooks } from '@/utils/auth-token'
 import { ApiError } from '@/utils/request'
+import { cacheClear } from '@/utils/cache'
 
 const TOKEN_KEY = 'dyx_token'
 const USER_KEY = 'dyx_user'
@@ -125,6 +126,8 @@ export const useUserStore = defineStore('user', () => {
     uni.removeStorageSync(TOKEN_KEY)
     uni.removeStorageSync(USER_KEY)
     uni.removeStorageSync(`${TOKEN_KEY}_at`)
+    // 页面数据缓存是按账号内容存的，换人登录不能让他先看到上一个人的投票
+    cacheClear()
   }
 
   /** onShow 时调用：token 快到期的顺延，避免长时间挂起后失效 */

@@ -10,6 +10,7 @@ import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { fetchPoll, fetchVoters, fetchAnswers } from '@/api/poll'
 import { formatRelative, formatMoment } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
+import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
 
 /**
  * 14/15 投票记录 + 73/74 回答记录
@@ -96,11 +97,37 @@ async function loadPage(reset: boolean) {
   }
 }
 
+/** 记录页快照：第一页就够，翻过的页重新进页面时再翻一次也不慢 */
+interface VotersSnapshot {
+  poll: Poll
+  voters: VoterRow[]
+  cursor: string | null
+  hasMore: boolean
+}
+
+function saveSnapshot() {
+  if (!poll.value) return
+  cacheSet(cacheKey.pollVoters(pollId.value), {
+    poll: poll.value,
+    voters: voters.value,
+    cursor: cursor.value,
+    hasMore: hasMore.value
+  })
+}
+
 async function load() {
-  loading.value = true
+  const cached = cacheGet<VotersSnapshot>(cacheKey.pollVoters(pollId.value))
+  if (cached) {
+    poll.value = cached.poll
+    voters.value = cached.voters
+    cursor.value = cached.cursor
+    hasMore.value = cached.hasMore
+  }
+  loading.value = !cached
   try {
     poll.value = await fetchPoll(pollId.value)
     await loadPage(true)
+    saveSnapshot()
   } finally {
     loading.value = false
   }

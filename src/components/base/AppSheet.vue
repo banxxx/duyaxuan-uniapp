@@ -49,8 +49,12 @@ function onMask() {
 
 <template>
   <view v-if="rendered" class="sheet" :class="{ 'sheet--closing': closing }" @tap="maskClosable && onMask()">
-    <!-- 遮罩单独一层：面板上滑时遮罩同时淡入，比整块一起位移更像原生 -->
-    <view class="sheet__mask" />
+    <!--
+      遮罩单独一层：面板上滑时遮罩同时淡入，比整块一起位移更像原生。
+      顺带吃掉 touchmove —— 否则手指在遮罩上划，滚的是下面那一页，
+      关掉弹层时页面已经不知道滚到哪了。
+    -->
+    <view class="sheet__mask" @touchmove.stop.prevent />
     <view
       class="sheet__panel"
       :class="{ 'sheet__panel--confirm': variant === 'confirm' }"

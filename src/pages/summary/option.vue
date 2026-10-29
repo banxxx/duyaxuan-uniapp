@@ -16,6 +16,7 @@ import type { SummaryAnswer, SummaryOptionDetail } from '@/types/api'
 import { charCount, formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
+import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 
 /**
  * 85 汇总 · 编辑选项
@@ -44,16 +45,28 @@ const optionId = ref('')
 const visibleAnswers = computed(() => answers.value.slice(0, 3))
 const restCount = computed(() => Math.max(0, answers.value.length - 3))
 
+/** 选项编辑页快照：先把上次的内容铺上，再刷新 */
+interface OptionSnapshot {
+  detail: SummaryOptionDetail
+}
+
+function applyDetail(detail: SummaryOptionDetail) {
+  candidate.value = detail
+  title.value = detail.title
+  desc.value = detail.desc
+  answers.value = detail.answers
+}
+
 async function load() {
-  loading.value = true
+  const cached = cacheGet<OptionSnapshot>(cacheKey.summaryOption(surveyId.value, optionId.value))
+  if (cached) applyDetail(cached.detail)
+  loading.value = !cached
   try {
     const detail = await fetchSummaryOption(surveyId.value, optionId.value)
-    candidate.value = detail
-    title.value = detail.title
-    desc.value = detail.desc
-    answers.value = detail.answers
+    applyDetail(detail)
+    cacheSet(cacheKey.summaryOption(surveyId.value, optionId.value), { detail })
   } catch {
-    uni.showToast({ title: '选项加载失败', icon: 'none' })
+    if (!candidate.value) uni.showToast({ title: '选项加载失败', icon: 'none' })
   } finally {
     loading.value = false
   }
@@ -69,6 +82,7 @@ async function removeAnswer(id: string) {
   try {
     await unassignSummaryAnswer(surveyId.value, optionId.value, id)
     answers.value = answers.value.filter((a) => a.id !== id)
+    cacheDrop(cacheKey.summaryOption(surveyId.value, optionId.value))
     uni.showToast({ title: '已移出，可在未归类里再处理', icon: 'none' })
   } catch {
     uni.showToast({ title: '移出失败，请重试', icon: 'none' })
@@ -85,6 +99,7 @@ function onDelete() {
       if (!r.confirm) return
       try {
         await deleteSummaryOption(surveyId.value, optionId.value)
+        cacheDrop(cacheKey.summaryOption(surveyId.value, optionId.value))
         uni.showToast({ title: '已删除', icon: 'none' })
         setTimeout(back, 400)
       } catch {
@@ -106,6 +121,7 @@ async function save() {
       title: title.value.trim(),
       desc: desc.value.trim()
     })
+    cacheDrop(cacheKey.summaryOption(surveyId.value, optionId.value))
     uni.showToast({ title: '已保存', icon: 'none' })
     setTimeout(back, 400)
   } catch {

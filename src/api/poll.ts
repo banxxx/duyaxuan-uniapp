@@ -287,6 +287,7 @@ export async function createComment(
 ): Promise<Comment> {
   if (USE_MOCK) {
     await delay(200)
+    const parent = replyToId ? mockComments.find((c) => c.id === replyToId) : undefined
     const comment: Comment = {
       id: `c${Date.now()}`,
       pollId,
@@ -295,7 +296,9 @@ export async function createComment(
       likeCount: 0,
       liked: false,
       isMine: true,
-      user: { id: '1024', name: '我' }
+      user: { id: '1024', name: '我' },
+      replyToId,
+      replyTo: parent ? { id: parent.user.id, name: parent.user.name } : undefined
     }
     mockComments.unshift(comment)
     const poll = mockPolls.find((p) => p.id === pollId)

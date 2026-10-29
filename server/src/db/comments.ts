@@ -80,6 +80,8 @@ export async function listComments(
       name: row.user_name ?? '',
       avatar: row.user_avatar ?? undefined
     },
+    // 前端要靠它把回复挂到对应楼层下（replyTo 只有「回复的是谁」，没有「挂在哪条」）
+    replyToId: row.reply_to_id ?? undefined,
     replyTo:
       row.reply_user_id && row.reply_name
         ? { id: row.reply_user_id, name: row.reply_name }
@@ -176,6 +178,7 @@ export async function createComment(
       name: created.user_name ?? '',
       avatar: created.user_avatar ?? undefined
     },
+    replyToId: created.reply_to_id ?? undefined,
     replyTo
   }
 }

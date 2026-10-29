@@ -148,10 +148,33 @@ export const useDraftStore = defineStore('draft', () => {
     }
   }
 
+  /**
+   * 读草稿。
+   *
+   * 必须按默认值补齐再合并，不能整份覆盖：本地存的是上一个版本写下的 JSON，
+   * 新版本加了字段之后，缺字段的旧草稿会让页面在渲染时直接抛错
+   * （比如 rules 为 undefined 时读 draft.rules.allowComment），
+   * 表现就是「这一页白掉、点什么都没反应」，而且每次进来都一样。
+   */
   function restore() {
     try {
       const raw = uni.getStorageSync(DRAFT_KEY)
-      if (raw) draft.value = typeof raw === 'string' ? JSON.parse(raw) : raw
+      if (!raw) return
+
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+      if (!parsed || typeof parsed !== 'object') return reset()
+
+      const type: PollType =
+        parsed.type === 'survey' || parsed.type === 'multiple' ? parsed.type : 'single'
+      const base = createEmptyDraft(type)
+
+      draft.value = {
+        ...base,
+        ...parsed,
+        type,
+        options: Array.isArray(parsed.options) ? parsed.options : [],
+        rules: { ...base.rules, ...(parsed.rules ?? {}) }
+      }
     } catch {
       reset()
     }
