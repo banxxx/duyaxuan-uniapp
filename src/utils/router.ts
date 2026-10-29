@@ -23,6 +23,7 @@ export const ROUTES = {
   detailVoters: '/pages/detail/voters',
   detailComments: '/pages/detail/comments',
   share: '/pages/share/index',
+  shareJoin: '/pages/share/join',
 
   createType: '/pages/create/type',
   createContent: '/pages/create/content',

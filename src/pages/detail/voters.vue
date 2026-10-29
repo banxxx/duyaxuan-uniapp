@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
 import type { Poll } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
@@ -32,6 +32,8 @@ interface VoterRow {
   optionTitle?: string
   /** 问卷：回答正文 */
   content?: string
+  /** 发起人要求填的个人信息，只有发起人能拿到 */
+  profileInfo?: string
 }
 
 const poll = ref<Poll | null>(null)
@@ -40,6 +42,10 @@ const loading = ref(true)
 const keyword = ref('')
 const sort = ref<'latest' | 'name'>('latest')
 const pollId = ref('')
+/** 分页：cursor 是上一页最后一条的时间戳，hasMore 由服务端给 */
+const cursor = ref<string | null>(null)
+const hasMore = ref(false)
+const loadingMore = ref(false)
 
 const isAnonymous = computed(() => poll.value?.rules.anonymous ?? true)
 const isSurvey = computed(() => poll.value?.type === 'survey')
@@ -62,26 +68,53 @@ const shown = computed(() => {
 /** 匿名列表的流水号：设计稿是从 #82 往上数，按时间倒序 */
 const numbered = computed(() => shown.value.map((v, i) => ({ ...v, no: shown.value.length - i })))
 
+/**
+ * 取一页记录。reset 为 true 时从第一页重来，否则接着 cursor 往后翻。
+ * 问卷走回答列表，投票走投票流水，两种数据在页面上落成同一个行结构。
+ */
+async function loadPage(reset: boolean) {
+  const p = poll.value
+  if (!p) return
+
+  if (p.type === 'survey') {
+    const res = await fetchAnswers(p.id, reset ? null : cursor.value)
+    const rows: VoterRow[] = res.list.map((a) => ({
+      id: a.id,
+      createdAt: a.createdAt,
+      user: a.user,
+      content: a.content,
+      profileInfo: a.profileInfo
+    }))
+    voters.value = reset ? rows : [...voters.value, ...rows]
+    cursor.value = res.cursor
+    hasMore.value = res.hasMore
+  } else {
+    const res = await fetchVoters(p.id, reset ? null : cursor.value)
+    voters.value = reset ? res.list : [...voters.value, ...res.list]
+    cursor.value = res.cursor
+    hasMore.value = res.hasMore
+  }
+}
+
 async function load() {
   loading.value = true
   try {
-    const p = await fetchPoll(pollId.value)
-    poll.value = p
-
-    // 问卷走回答列表，投票走投票流水；两种数据在页面上落成同一个行结构
-    if (p.type === 'survey') {
-      const res = await fetchAnswers(p.id)
-      voters.value = res.list.map((a) => ({
-        id: a.id,
-        createdAt: a.createdAt,
-        user: a.user,
-        content: a.content
-      }))
-    } else {
-      voters.value = await fetchVoters(p.id)
-    }
+    poll.value = await fetchPoll(pollId.value)
+    await loadPage(true)
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMore() {
+  if (!hasMore.value || loadingMore.value) return
+  loadingMore.value = true
+  try {
+    await loadPage(false)
+  } catch {
+    uni.showToast({ title: '加载失败，请重试', icon: 'none' })
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -89,6 +122,11 @@ onLoad((q) => {
   pollId.value = (q?.id as string) ?? ''
 })
 onMounted(load)
+
+onPullDownRefresh(async () => {
+  await load()
+  uni.stopPullDownRefresh()
+})
 </script>
 
 <template>
@@ -188,6 +226,7 @@ onMounted(load)
                 <view class="rec__info">
                   <text class="rec__name">匿名用户投了一票</text>
                   <text class="rec__time">{{ formatMoment(v.createdAt) }}</text>
+                  <text v-if="v.profileInfo" class="rec__profile">{{ v.profileInfo }}</text>
                 </view>
                 <text class="rec__rel">{{ formatRelative(v.createdAt) }}</text>
               </view>
@@ -202,6 +241,7 @@ onMounted(load)
                 <view class="rec__info">
                   <text class="rec__answer">{{ v.content }}</text>
                   <text class="rec__time">{{ formatRelative(v.createdAt) }}</text>
+                  <text v-if="v.profileInfo" class="rec__profile">{{ v.profileInfo }}</text>
                 </view>
               </view>
             </template>
@@ -214,6 +254,7 @@ onMounted(load)
                   <text class="rec__name">{{ v.user?.name }}</text>
                   <text class="rec__time">{{ formatRelative(v.createdAt) }}</text>
                   <text v-if="isSurvey" class="rec__answer">{{ v.content }}</text>
+                  <text v-if="v.profileInfo" class="rec__profile">{{ v.profileInfo }}</text>
                 </view>
                 <view v-if="!isSurvey" class="rec__choice">
                   <text class="rec__choice-text">{{ v.optionTitle }}</text>
@@ -229,8 +270,13 @@ onMounted(load)
             :desc="isSurvey ? '有人提交后会出现在这里' : '有人投票后会出现在这里'"
           />
 
-          <view v-if="shown.length" class="voters__more">
-            <text class="voters__more-text">加载更多记录</text>
+          <view
+            v-if="shown.length && hasMore"
+            class="voters__more"
+            hover-class="voters__more--active"
+            @tap="loadMore"
+          >
+            <text class="voters__more-text">{{ loadingMore ? '加载中…' : '加载更多记录' }}</text>
           </view>
         </view>
       </scroll-view>
@@ -244,7 +290,8 @@ export default { name: 'PollVotersPage' }
 
 <style lang="scss" scoped>
 .voters {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -267,9 +314,13 @@ export default { name: 'PollVotersPage' }
   }
 
   &__more {
-    padding: 6px 0;
+    padding: 10px 0;
     display: flex;
     justify-content: center;
+
+    &--active {
+      opacity: 0.6;
+    }
   }
 
   &__more-text {
@@ -536,6 +587,16 @@ export default { name: 'PollVotersPage' }
   &__time {
     font-size: 10px;
     color: $faint;
+  }
+
+  /* 「需个人信息」：发起人要求填的那一项，只有发起人看得到 */
+  &__profile {
+    font-size: 10px;
+    color: $muted;
+    padding: 3px 6px;
+    align-self: flex-start;
+    border-radius: 5px;
+    background: $subtle;
   }
 
   &__rel {

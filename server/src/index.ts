@@ -6,6 +6,8 @@ import auth from './routes/auth'
 import user from './routes/user'
 import polls from './routes/polls'
 import files from './routes/files'
+import notifications from './routes/notifications'
+import feedback from './routes/feedback'
 
 /**
  * 投票吧 API
@@ -25,6 +27,8 @@ app.route('/auth', auth)
 app.route('/user', user)
 app.route('/polls', polls)
 app.route('/files', files)
+app.route('/notifications', notifications)
+app.route('/feedback', feedback)
 
 app.notFound((c) => fail(c, 404, '接口不存在'))
 

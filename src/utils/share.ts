@@ -5,12 +5,47 @@
  * 当前阶段只做同平台分享卡片；跨平台海报后续补（需要 H5 落地页）。
  */
 
-import { getPlatform } from './platform'
+import { getPlatform, isWeixinLike } from './platform'
 import type { Poll } from '@/types/api'
 
-/** 拼分享路径，带上来源平台，便于后端统计跨端转化 */
+/**
+ * 拼分享路径。
+ *
+ * 统一走 pages/share/join 落地页：对方点开时再判断「问卷还没填就去填写页、
+ * 投过票或已结束就去详情页」，分享卡片本身不用关心这些规则。
+ * 小程序码的 scene 也落到同一页，两条入口行为一致。
+ */
 export function sharePath(poll: Poll): string {
-  return `/pages/detail/index?id=${poll.id}&from=${getPlatform()}`
+  // 邀请码模式的投票，码直接拼在链接里，对方点开就不用再手输
+  const code = poll.inviteCode ? `&code=${encodeURIComponent(poll.inviteCode)}` : ''
+  return `/pages/share/join?id=${poll.id}${code}&from=${getPlatform()}`
+}
+
+/** 朋友圈 query 用同一份参数，只是不带 from（打开的是当前页） */
+export function shareQuery(poll: Poll): string {
+  const code = poll.inviteCode ? `&code=${encodeURIComponent(poll.inviteCode)}` : ''
+  return `id=${poll.id}${code}`
+}
+
+/**
+ * 右上角「···」里的转发和页面内的分享按钮是一回事。
+ *
+ * 发起人关掉「允许分享」后，菜单里也不该还能转发出去，
+ * 否则页面里的分享按钮藏了，用户还能从胶囊绕过这个限制。
+ * 每个能拿到 Poll 的页面在加载完成后调用一次即可。
+ */
+export function syncShareMenu(allowShare: boolean): void {
+  // 抖音/H5 没有胶囊菜单，调了只会多一条控制台警告
+  if (!isWeixinLike()) return
+  // 允许分享时什么都不用做：页面注册了 onShareAppMessage，菜单默认就是开的。
+  // 反过来调 showShareMenu，在开发者工具/还没发布的版本上会报
+  // 「showShareMenu:fail no permission」，而且会冒到全局日志里。
+  if (allowShare) return
+  uni.hideShareMenu({
+    hideShareItems: ['shareAppMessage', 'shareTimeline'],
+    // 老基础库上这个接口本身就可能失败，失败也不该影响页面
+    fail: () => {}
+  })
 }
 
 /** 生成 onShareAppMessage 需要的对象 */
@@ -27,6 +62,6 @@ export function buildShareMessage(poll: Poll) {
 export function buildTimelineMessage(poll: Poll) {
   return {
     title: `${poll.title} · 来投一票`,
-    query: `id=${poll.id}`
+    query: shareQuery(poll)
   }
 }

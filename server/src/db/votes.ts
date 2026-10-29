@@ -1,6 +1,8 @@
-import type { PollRowJoined } from '../types'
+import type { Env, PollRowJoined } from '../types'
 import { newId } from '../lib/id'
 import { HttpError } from '../lib/response'
+import { assertCanJoin } from './invites'
+import { notifyJoined } from './notifications'
 import { assertPollOpen, parseIds } from './polls'
 
 /**
@@ -16,10 +18,13 @@ export async function castVote(
   userId: string,
   rawOptionIds: string[],
   profileInfo: string | undefined,
-  ip: string | null
+  ip: string | null,
+  env?: Env
 ): Promise<void> {
   assertPollOpen(poll)
   if (poll.type === 'survey') throw new HttpError(400, '问卷不能投票')
+  // 邀请码模式的投票，没被邀请过的人不能投
+  await assertCanJoin(db, poll, userId)
 
   const optRes = await db
     .prepare('SELECT id FROM options WHERE poll_id = ?')
@@ -98,6 +103,9 @@ export async function castVote(
   }
 
   await db.batch(stmts)
+
+  // 改票不重复通知，只有第一次投票才提醒发起人
+  if (!existing) await notifyJoined(db, poll, userId, 'vote', undefined, env)
 }
 
 export async function revokeVote(

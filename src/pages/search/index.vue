@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { Poll } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
@@ -23,12 +23,16 @@ const results = ref<Poll[]>([])
 const searched = ref(false)
 const loading = ref(false)
 const history = ref<string[]>([])
+/** 排序：最新 / 最热。默认最新，点按钮切换 */
+const sort = ref<'latest' | 'hot'>('latest')
+const sortLabel = computed(() => (sort.value === 'latest' ? '最新' : '最热'))
 
+// 历史记录只存用户真的搜过的词，没有就空着（不塞假数据）
 try {
   const raw = uni.getStorageSync(HISTORY_KEY)
-  history.value = raw ? JSON.parse(raw) : ['团建', '午餐', '年会节目', '工位']
+  history.value = raw ? JSON.parse(raw) : []
 } catch {
-  history.value = ['团建', '午餐', '年会节目', '工位']
+  history.value = []
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null
@@ -46,11 +50,17 @@ watch(keyword, (v) => {
 async function run(v: string) {
   loading.value = true
   try {
-    results.value = await searchPolls(v)
+    results.value = await searchPolls(v, sort.value)
     searched.value = true
   } finally {
     loading.value = false
   }
+}
+
+/** 切换排序后按当前关键词重搜 */
+function toggleSort() {
+  sort.value = sort.value === 'latest' ? 'hot' : 'latest'
+  if (keyword.value.trim()) run(keyword.value)
 }
 
 function pickTag(tag: string) {
@@ -116,9 +126,9 @@ function cancel() {
         <text class="sort__count">
           找到 {{ results.length }} 个相关投票与问卷
         </text>
-        <view class="sort__btn">
+        <view class="sort__btn" hover-class="sort__btn--active" @tap="toggleSort">
           <AppIcon name="arrow-down-wide-narrow" :size="13" color="#09090B" />
-          <text class="sort__btn-text">最新</text>
+          <text class="sort__btn-text">{{ sortLabel }}</text>
         </view>
       </view>
 
@@ -267,6 +277,10 @@ export default { name: 'SearchPage' }
     display: flex;
     align-items: center;
     gap: 5px;
+
+    &--active {
+      background: $subtle;
+    }
   }
 
   &__btn-text {

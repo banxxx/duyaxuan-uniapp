@@ -9,7 +9,7 @@ import AppSheet from '@/components/base/AppSheet.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { fetchPoll, fetchPollStats, endPoll } from '@/api/poll'
 import { formatDate, formatDateTime, formatRelative, formatRemaining, percent } from '@/utils/format'
-import { buildShareMessage } from '@/utils/share'
+import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
 
@@ -67,6 +67,7 @@ async function load() {
     const [p, s] = await Promise.all([fetchPoll(pollId.value), fetchPollStats(pollId.value)])
     poll.value = p
     stats.value = s
+    syncShareMenu(p.rules.allowShare)
   } finally {
     loading.value = false
   }
@@ -107,10 +108,6 @@ function goVoters() {
 
 function goResult() {
   go(ROUTES.detailResult, { id: pollId.value })
-}
-
-function exportData() {
-  uni.showToast({ title: '导出文件已发送到微信', icon: 'none' })
 }
 
 /** 27/80 分享页：海报 + 分享渠道 */
@@ -313,8 +310,8 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
     </scroll-view>
 
     <view v-if="poll" class="data__actions" :style="{ paddingBottom: bottomInset(20) }">
-      <AppButton type="subtle" size="cta" class="data__action" @tap="isEnded ? exportData() : (endSheet = true)">
-        {{ isEnded ? '导出数据' : '提前结束' }}
+      <AppButton v-if="!isEnded" type="subtle" size="cta" class="data__action" @tap="endSheet = true">
+        提前结束
       </AppButton>
       <AppButton size="cta" icon="share-2" class="data__action" @tap="goShare">
         {{ isEnded ? '生成海报' : `分享${isSurvey ? '问卷' : '投票'}` }}
@@ -347,7 +344,8 @@ export default { name: 'CreatorDataPage' }
 
 <style lang="scss" scoped>
 .data {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

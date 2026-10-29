@@ -171,7 +171,8 @@ export default { name: 'SurveyEditAnswerPage' }
 
 <style lang="scss" scoped>
 .edit-answer {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

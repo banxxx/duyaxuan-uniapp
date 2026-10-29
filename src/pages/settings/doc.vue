@@ -3,8 +3,6 @@ import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
-import AppSheet from '@/components/base/AppSheet.vue'
-import AppButton from '@/components/base/AppButton.vue'
 import { bottomInset } from '@/utils/platform'
 import { go } from '@/utils/router'
 
@@ -14,7 +12,7 @@ import { go } from '@/utils/router'
  * 三屏都是「读」的页面，用 ?type= 区分：
  *   terms   用户协议
  *   privacy 隐私政策（47 里「详见《隐私政策》」直接跳过来）
- *   about   关于我们（多了 logo 和检查更新）
+ *   about   关于我们（logo + 版本号）
  *
  * 正文写成结构化数据而不是整段 HTML：小程序里 rich-text 排版难控，
  * 分节渲染能保证标题/正文的字号层级和全站一致。
@@ -77,7 +75,6 @@ const DOCS: Record<'terms' | 'privacy', Section[]> = {
 }
 
 const type = ref<DocType>('terms')
-const updateSheet = ref(false)
 
 const isAbout = computed(() => type.value === 'about')
 const title = computed(() => {
@@ -127,12 +124,6 @@ function open(url: string) {
             <text class="row__title">隐私政策</text>
             <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
           </view>
-          <view class="group__sep" />
-          <view class="row" hover-class="row--active" @tap="updateSheet = true">
-            <text class="row__title">检查更新</text>
-            <text class="row__value">已是最新</text>
-            <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
-          </view>
         </view>
 
         <text class="doc__copy">© 2026 投票吧 · 保留所有权利</text>
@@ -149,15 +140,6 @@ function open(url: string) {
       </view>
     </scroll-view>
 
-    <AppSheet
-      :visible="updateSheet"
-      variant="confirm"
-      title="已是最新版本"
-      :desc="`当前版本 ${VERSION}，无需更新。我们会持续优化投票体验。`"
-      @close="updateSheet = false"
-    >
-      <AppButton size="dialog" @tap="updateSheet = false">知道了</AppButton>
-    </AppSheet>
   </view>
 </template>
 
@@ -167,7 +149,8 @@ export default { name: 'DocPage' }
 
 <style lang="scss" scoped>
 .doc {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

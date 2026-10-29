@@ -4,6 +4,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import { mockFaq } from '@/mock/data'
+import { submitFeedback } from '@/api/notification'
 import { bottomInset } from '@/utils/platform'
 
 /**
@@ -38,15 +39,18 @@ function toggle(i: number) {
 
 const canSubmit = computed(() => feedback.value.trim().length >= 5 && !submitting.value)
 
-function submit() {
+async function submit() {
   if (!canSubmit.value) return
   submitting.value = true
-  // 真实环境：await http.post('/feedback', { content })
-  setTimeout(() => {
-    submitting.value = false
+  try {
+    await submitFeedback(feedback.value.trim())
     feedback.value = ''
     uni.showToast({ title: '已收到，我们会尽快回复', icon: 'none' })
-  }, 400)
+  } catch {
+    // 失败原因由请求层 toast，这里保留输入内容方便重试
+  } finally {
+    submitting.value = false
+  }
 }
 
 function copyMail() {
@@ -135,7 +139,8 @@ export default { name: 'SupportPage' }
 
 <style lang="scss" scoped>
 .support {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

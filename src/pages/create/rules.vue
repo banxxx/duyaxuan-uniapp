@@ -48,9 +48,8 @@ const deadlinePicker = ref(false)
 const customDeadline = ref(0)
 
 const joinOptions: Array<{ value: JoinMethod; label: string; desc: string }> = [
-  { value: 'link', label: '链接分享', desc: '持链接者皆可投，适合群内公开征集' },
-  { value: 'group', label: '指定成员', desc: '仅被邀请的人可投，需先选择成员' },
-  { value: 'private', label: '邀请码', desc: '凭 6 位邀请码进入，可控制扩散范围' }
+  { value: 'link', label: '链接分享', desc: '拿到链接的人都能参与，适合群内公开征集' },
+  { value: 'invite', label: '邀请码', desc: '凭 6 位邀请码进入，可控制扩散范围' }
 ]
 
 const resultOptions: Array<{ value: ResultVisibility; label: string; desc: string }> = [

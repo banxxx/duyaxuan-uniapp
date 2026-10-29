@@ -13,6 +13,8 @@ declare module '*.vue' {
 }
 
 interface ImportMetaEnv {
+  /** vite 内置：开发构建为 true，用来挡开发期工具入口 */
+  readonly DEV: boolean
   readonly VITE_API_BASE_URL: string
   readonly VITE_APP_ENV: 'dev' | 'test' | 'prod'
   /** 'false' 时关掉本地假数据，走真实后端 */

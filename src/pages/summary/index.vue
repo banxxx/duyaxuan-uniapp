@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { ref, computed } from 'vue'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
-import { fetchPoll, fetchSummaryCandidates, fetchUnclassified } from '@/api/poll'
+import {
+  fetchPoll,
+  fetchSummaryCandidates,
+  fetchUnclassified,
+  remergeSummary
+} from '@/api/poll'
 import { useDraftStore } from '@/stores/draft'
 import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
-import type { Poll } from '@/types/api'
-import type { SummaryCandidate, UnclassifiedAnswer } from '@/mock/data'
+import type { Poll, SummaryCandidate, UnclassifiedAnswer } from '@/types/api'
 import { ROUTES, back, go } from '@/utils/router'
 
 /**
@@ -50,10 +54,14 @@ async function load() {
 onLoad((q) => {
   surveyId.value = (q?.surveyId as string) ?? (q?.id as string) ?? ''
 })
-onMounted(load)
+/**
+ * 用 onShow 而不是 onMounted：从 85/86 回来时页面实例还在，
+ * onMounted 不会再跑，改动过的选项数和未归类条数就会是旧的。
+ */
+onShow(load)
 
 function editOption(c: SummaryCandidate) {
-  go(ROUTES.summaryOption, { id: c.id })
+  go(ROUTES.summaryOption, { id: c.id, surveyId: surveyId.value })
 }
 
 function goUnclassified() {
@@ -64,12 +72,29 @@ function goBack() {
   back()
 }
 
-/** 「重新归并」：交给后端重跑一次相似度，前端只刷新 */
-async function remerge() {
-  uni.showLoading({ title: '正在归并' })
-  await load()
-  uni.hideLoading()
-  uni.showToast({ title: '已重新归并', icon: 'none' })
+/**
+ * 「重新归并」：后端清掉这次的整理结果，按原文重新分组。
+ * 手动改过的标题、归到别的选项的回答都会丢，所以要二次确认。
+ */
+function remerge() {
+  uni.showModal({
+    title: '重新归并？',
+    content: '会按回答原文重新分组，手动调整过的选项标题和归类会丢失。',
+    confirmText: '重新归并',
+    success: async (r) => {
+      if (!r.confirm) return
+      uni.showLoading({ title: '正在归并' })
+      try {
+        await remergeSummary(surveyId.value)
+        await load()
+        uni.showToast({ title: '已重新归并', icon: 'none' })
+      } catch {
+        uni.showToast({ title: '归并失败，请重试', icon: 'none' })
+      } finally {
+        uni.hideLoading()
+      }
+    }
+  })
 }
 
 /** 进入创建流程第二步：选项已带入 */
@@ -203,7 +228,8 @@ export default { name: 'SummaryIndexPage' }
 
 <style lang="scss" scoped>
 .summary {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

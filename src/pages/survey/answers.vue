@@ -62,7 +62,22 @@ const summaryMeta = computed(() => ({
   unclassified: summaryUnclassified.value.length
 }))
 
-const progress = computed(() => (isEnded.value ? 100 : 37))
+/** 进行中的进度按「已过去的时间 / 总时长」算，截止后固定 100 */
+const progress = computed(() => {
+  if (!poll.value) return 0
+  if (isEnded.value) return 100
+  const start = poll.value.createdAt
+  const end = poll.value.rules.endAt
+  if (!start || end <= start) return 0
+  const ratio = ((Date.now() - start) / (end - start)) * 100
+  return Math.min(99, Math.max(1, Math.round(ratio)))
+})
+
+/** 最后一条回答的提交时间：截止后也用它，不能拿截止时间冒充 */
+const lastSubmitText = computed(() => {
+  const at = answers.value[0]?.createdAt
+  return at ? formatRelative(at) : '暂无提交'
+})
 
 /**
  * 这一页要出「平均字数 / 跳过未答」两个统计，只拿第一页算出来的数是错的。
@@ -116,24 +131,18 @@ function goSummary() {
   go(ROUTES.summary, { surveyId: pollId.value })
 }
 
-function exportData() {
-  uni.showToast({ title: '导出文件已发送到微信', icon: 'none' })
-}
-
 /** 80 分享页：海报 + 分享渠道 */
 function goShare() {
   go(ROUTES.share, { id: pollId.value })
 }
 
-/** 导航栏「···」：设计稿 77/78 右侧只有一个操作入口 */
+/** 导航栏「···」：设计稿 77/78 右侧只有一个操作入口，现在只剩「提前截止」 */
 function onMore() {
-  uni.showActionSheet({
-    itemList: ['导出数据', '提前截止'],
-    success: async (r) => {
-      if (r.tapIndex === 0) exportData()
-      else endSheet.value = true
-    }
-  })
+  if (canSummarize.value) {
+    uni.showToast({ title: '问卷已截止', icon: 'none' })
+    return
+  }
+  endSheet.value = true
 }
 
 /** 77 的「提前截止」：不可逆，走底部确认面板 */
@@ -188,7 +197,7 @@ async function doEnd() {
               <view class="hero__stat-right">
                 <text class="hero__stat-total">共 {{ poll.viewCount }} 人查看</text>
                 <text class="hero__stat-note">
-                  {{ isEnded ? `最后提交 ${new Date(poll.rules.endAt).getHours()}:00` : `最近提交 ${formatRelative(answers[0]?.createdAt ?? Date.now())}` }}
+                  {{ isEnded ? '最后提交' : '最近提交' }} {{ lastSubmitText }}
                 </text>
               </view>
             </view>
@@ -271,12 +280,13 @@ async function doEnd() {
 
       <view class="answers__actions" :style="{ paddingBottom: bottomInset(20) }">
         <AppButton
+          v-if="!canSummarize"
           type="subtle"
           size="cta"
           class="answers__action"
-          @tap="canSummarize ? exportData() : (endSheet = true)"
+          @tap="endSheet = true"
         >
-          {{ canSummarize ? '导出数据' : '提前截止' }}
+          提前截止
         </AppButton>
         <AppButton
           size="cta"
@@ -315,7 +325,8 @@ export default { name: 'SurveyAnswersPage' }
 
 <style lang="scss" scoped>
 .answers {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

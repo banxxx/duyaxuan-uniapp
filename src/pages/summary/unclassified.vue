@@ -7,8 +7,15 @@ import AppButton from '@/components/base/AppButton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
-import { fetchUnclassified, fetchSummaryCandidates } from '@/api/poll'
-import type { UnclassifiedAnswer, SummaryCandidate } from '@/mock/data'
+import {
+  assignSummaryAnswers,
+  createSummaryOption,
+  fetchSummaryCandidates,
+  fetchUnclassified,
+  ignoreSummaryAnswers
+} from '@/api/poll'
+import type { SummaryCandidate, UnclassifiedAnswer } from '@/types/api'
+import { formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
 
@@ -54,19 +61,29 @@ function openNew(a: UnclassifiedAnswer) {
   newSheet.value = true
 }
 
-function confirmNew() {
+async function confirmNew() {
   const t = newTitle.value.trim()
-  if (!t || !activeAnswer.value) return
-  candidates.value.push({
-    id: `c_new_${Date.now()}`,
-    title: t,
-    desc: '',
-    answerCount: 1,
-    sample: activeAnswer.value.content
-  })
-  list.value = list.value.filter((x) => x.id !== activeAnswer.value!.id)
-  newSheet.value = false
-  uni.showToast({ title: '已新建选项', icon: 'none' })
+  const target = activeAnswer.value
+  if (!t || !target) return
+
+  try {
+    const { id } = await createSummaryOption(surveyId.value, {
+      title: t,
+      answerIds: [target.id]
+    })
+    candidates.value.push({
+      id,
+      title: t,
+      desc: '',
+      answerCount: 1,
+      sample: target.content
+    })
+    list.value = list.value.filter((x) => x.id !== target.id)
+    newSheet.value = false
+    uni.showToast({ title: '已新建选项', icon: 'none' })
+  } catch {
+    uni.showToast({ title: '新建失败，请重试', icon: 'none' })
+  }
 }
 
 function openPick(a: UnclassifiedAnswer) {
@@ -74,15 +91,28 @@ function openPick(a: UnclassifiedAnswer) {
   pickSheet.value = true
 }
 
-function pickInto(c: SummaryCandidate) {
-  c.answerCount += 1
-  if (activeAnswer.value) list.value = list.value.filter((x) => x.id !== activeAnswer.value!.id)
-  pickSheet.value = false
-  uni.showToast({ title: `已归入「${c.title}」`, icon: 'none' })
+async function pickInto(c: SummaryCandidate) {
+  const target = activeAnswer.value
+  if (!target) return
+
+  try {
+    await assignSummaryAnswers(surveyId.value, c.id, [target.id])
+    c.answerCount += 1
+    list.value = list.value.filter((x) => x.id !== target.id)
+    pickSheet.value = false
+    uni.showToast({ title: `已归入「${c.title}」`, icon: 'none' })
+  } catch {
+    uni.showToast({ title: '归类失败，请重试', icon: 'none' })
+  }
 }
 
-function ignore(a: UnclassifiedAnswer) {
-  list.value = list.value.filter((x) => x.id !== a.id)
+async function ignore(a: UnclassifiedAnswer) {
+  try {
+    await ignoreSummaryAnswers(surveyId.value, [a.id])
+    list.value = list.value.filter((x) => x.id !== a.id)
+  } catch {
+    uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+  }
 }
 
 function ignoreAll() {
@@ -91,8 +121,17 @@ function ignoreAll() {
     title: '忽略全部未归类回答？',
     content: '这些回答不会进入这次汇总，但原文仍保留在问卷数据里。',
     confirmText: '全部忽略',
-    success: (r) => {
-      if (r.confirm) list.value = []
+    success: async (r) => {
+      if (!r.confirm) return
+      try {
+        await ignoreSummaryAnswers(
+          surveyId.value,
+          list.value.map((x) => x.id)
+        )
+        list.value = []
+      } catch {
+        uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+      }
     }
   })
 }
@@ -133,10 +172,7 @@ function goBack() {
               <view v-if="i > 0" class="answers__sep" />
               <view class="item">
                 <view class="item__meta">
-                  <text class="item__time">
-                    {{ new Date(a.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }}
-                  </text>
-                  <text class="item__id">{{ a.id }}</text>
+                  <text class="item__time">{{ formatRelative(a.createdAt) }}</text>
                 </view>
 
                 <text class="item__content">{{ a.content }}</text>
@@ -219,7 +255,8 @@ export default { name: 'SummaryUnclassifiedPage' }
 
 <style lang="scss" scoped>
 .unclassified {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

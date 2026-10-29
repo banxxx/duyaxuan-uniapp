@@ -13,7 +13,8 @@
         <view class="home__actions">
           <view class="home__bell" hover-class="home__icon--active" @tap="openNotifications">
             <AppIcon name="bell" :size="18" color="#09090B" />
-            <view v-if="pending.length" class="home__dot" />
+            <!-- 铃铛红点看「未读消息」，不是待我投票 —— 那个数字在下面的卡片里 -->
+            <view v-if="unread" class="home__dot" />
           </view>
           <view class="home__avatar" @tap="openMe">
             <AppAvatar
@@ -153,6 +154,7 @@ import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppTabBar from '@/components/base/AppTabBar.vue'
 import PendingCard from '@/components/business/PendingCard.vue'
 import { fetchPendingPolls, fetchMyPolls } from '@/api/poll'
+import { fetchUnreadCount } from '@/api/notification'
 import type { PendingPoll } from '@/mock/data'
 import { useUserStore } from '@/stores/user'
 import { getSafeArea } from '@/utils/platform'
@@ -184,6 +186,8 @@ const mine = ref<Poll[]>([])
 const mineTotal = ref(0)
 const loading = ref(true)
 const error = ref(false)
+/** 未读消息数，只用来决定铃铛红点 */
+const unread = ref(0)
 
 const today = computed(() => {
   const d = new Date()
@@ -202,6 +206,7 @@ async function load() {
   error.value = false
   try {
     const [p, m] = await Promise.all([fetchPendingPolls(), fetchMyPolls('all')])
+    refreshUnread()
     pending.value = p
     mine.value = m.list.slice(0, 4)
     mineTotal.value = m.total ?? m.list.length
@@ -214,8 +219,20 @@ async function load() {
 
 onMounted(load)
 
-/** H5 端会渲染原生 tabBar，进来就藏掉（微信端 custom=true，没有原生栏，静默失败） */
-onShow(hideNativeTabBar)
+/** 红点取服务端未读数；失败不打扰用户，红点就不显示 */
+async function refreshUnread() {
+  try {
+    unread.value = await fetchUnreadCount()
+  } catch {
+    unread.value = 0
+  }
+}
+
+onShow(() => {
+  // H5 端会渲染原生 tabBar，进来就藏掉（微信端 custom=true，没有原生栏，静默失败）
+  hideNativeTabBar()
+  refreshUnread()
+})
 
 onPullDownRefresh(async () => {
   await load()

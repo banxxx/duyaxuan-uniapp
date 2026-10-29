@@ -1,4 +1,11 @@
-import type { Poll, Comment, SurveyAnswer } from '@/types/api'
+import type {
+  Poll,
+  Comment,
+  SurveyAnswer,
+  SummaryCandidate,
+  UnclassifiedAnswer,
+  Notification
+} from '@/types/api'
 
 /**
  * 本地假数据 —— 与设计稿完全对齐
@@ -517,16 +524,7 @@ export const mockMyAnswers: Record<string, string[]> = {
  * 44 消息通知
  * ============================================================ */
 
-export interface Notification {
-  id: string
-  kind: 'deadline' | 'comment' | 'result' | 'joined' | 'published'
-  title: string
-  content: string
-  createdAt: number
-  read: boolean
-  /** 点进去落到哪个投票 */
-  pollId?: string
-}
+export type { Notification }
 
 export const mockNotifications: Notification[] = [
   {
@@ -626,14 +624,6 @@ export function mockPollStats(pollId: string) {
  * 84 汇总 · 整理回答
  * ============================================================ */
 
-export interface SummaryCandidate {
-  id: string
-  title: string
-  desc: string
-  answerCount: number
-  sample: string
-}
-
 export const mockCandidates: SummaryCandidate[] = [
   {
     id: 'c_anji',
@@ -664,12 +654,6 @@ export const mockCandidates: SummaryCandidate[] = [
     sample: '其实更想去苏州古镇，节奏慢一点，拍照…'
   }
 ]
-
-export interface UnclassifiedAnswer {
-  id: string
-  createdAt: number
-  content: string
-}
 
 export const mockUnclassified: UnclassifiedAnswer[] = [
   { id: '#13', createdAt: now - 42 * 60 * 1000, content: '都可以，听大家的' },

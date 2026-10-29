@@ -54,6 +54,31 @@ export async function loginByCode(code: string): Promise<LoginResult> {
   )
 }
 
+/* ---------------- 开发期账号切换 ----------------
+ *
+ * 后端只在 .dev.vars 打开 DEV_LOGIN=true 时才提供这两个接口，
+ * 线上请求会直接 404，所以页面里还要用 import.meta.env.DEV 再挡一层。
+ */
+
+export interface DevAccount {
+  id: string
+  nickname: string
+  avatar?: string
+}
+
+export async function fetchDevAccounts(): Promise<DevAccount[]> {
+  if (USE_MOCK) return []
+  return http.get<DevAccount[]>('/auth/dev-accounts', undefined, { toast: false })
+}
+
+export async function devLogin(userId: string): Promise<LoginResult> {
+  if (USE_MOCK) {
+    await new Promise((r) => setTimeout(r, 150))
+    return { token: `mock-token-${userId}`, user: { ...MOCK_USER, id: userId } }
+  }
+  return http.post<LoginResult>('/auth/dev-login', { userId }, { skipAuth: true, loading: true })
+}
+
 /**
  * 拉一次最新资料。
  *

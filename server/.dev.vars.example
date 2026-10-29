@@ -9,3 +9,20 @@ WX_APPID=wx0000000000000000
 WX_SECRET=00000000000000000000000000000000
 JWT_SECRET=local-dev-only-change-me-to-a-long-random-string
 TOKEN_TTL_DAYS=7
+
+# 开发期免授权登录（/auth/dev-accounts、/auth/dev-login）。
+# 本地填 true 就能在「设置 · 关于我们」长按切换测试账号；线上绝对不要配置。
+DEV_LOGIN=false
+
+# 小程序码指向的版本：release / trial / develop。本地开发用 develop。
+# 这个版本得先在开发者工具里「上传」过，否则扫码会提示「开发版/体验版不存在」
+# WX_ENV_VERSION=develop
+
+# 订阅消息模板 ID（微信后台 → 功能 → 订阅消息 → 我的模板）。
+# 不填就只发站内消息，功能照常跑；填了才会真的推服务通知。
+# WX_TMPL_JOINED=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# WX_TMPL_COMMENT=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# WX_TMPL_DEADLINE=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#
+# 模板字段名对不上时（微信返回 47003），用这个变量覆盖，不用改代码：
+# WX_TMPL_FIELDS={"title":"thing1","time":"time2","remark":"thing3"}

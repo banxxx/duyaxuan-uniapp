@@ -44,6 +44,10 @@
       "style": { "navigationStyle": "custom" }
     },
     {
+      "path": "pages/share/join",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
       "path": "pages/create/type",
       "style": { "navigationStyle": "custom" }
     },

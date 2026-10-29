@@ -5,9 +5,16 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSwitch from '@/components/base/AppSwitch.vue'
-import { mockNotifications } from '@/mock/data'
-import type { Notification } from '@/mock/data'
+import type { Notification } from '@/types/api'
+import {
+  fetchNotifications,
+  markNotificationsRead,
+  savePushPrefs,
+  type PushKind,
+  type PushPrefs
+} from '@/api/notification'
 import { useSettingsStore } from '@/stores/settings'
+import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
 import { formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
@@ -27,6 +34,9 @@ const settings = useSettingsStore()
 const tab = ref<'list' | 'push'>('list')
 const filter = ref<'all' | 'unread'>('all')
 const list = ref<Notification[]>([])
+const cursor = ref<string | null>(null)
+const hasMore = ref(false)
+const loading = ref(false)
 
 const unreadCount = computed(() => list.value.filter((n) => !n.read).length)
 const shown = computed(() =>
@@ -39,17 +49,48 @@ onLoad((q) => {
 
 onMounted(() => {
   settings.restore()
-  list.value = mockNotifications.map((n) => ({ ...n }))
+  // 模板 ID 要提前拿到：用户点开关时再请求就赶不上「点击手势」了
+  preloadSubscribeTemplates()
+  load()
 })
 
+/** 第一页 / 翻页共用；下拉和滚动到底都走这里 */
+async function load(more = false) {
+  if (loading.value) return
+  loading.value = true
+  try {
+    const page = await fetchNotifications(more ? cursor.value : null)
+    list.value = more ? [...list.value, ...page.list] : page.list
+    cursor.value = page.cursor
+    hasMore.value = page.hasMore
+  } finally {
+    loading.value = false
+  }
+}
+
+function loadMore() {
+  if (hasMore.value) load(true)
+}
+
 function open(n: Notification) {
-  n.read = true
+  if (!n.read) {
+    n.read = true
+    // 标记失败不影响阅读，下一条列表会再同步
+    markNotificationsRead([n.id]).catch(() => {})
+  }
   if (n.pollId) go(ROUTES.detail, { id: n.pollId })
 }
 
-function markAllRead() {
-  list.value.forEach((n) => (n.read = true))
-  uni.showToast({ title: '已全部标为已读', icon: 'none' })
+async function markAllRead() {
+  const unread = list.value.filter((n) => !n.read)
+  if (!unread.length) return
+  try {
+    await markNotificationsRead()
+    unread.forEach((n) => (n.read = true))
+    uni.showToast({ title: '已全部标为已读', icon: 'none' })
+  } catch {
+    // toast 由请求层给出
+  }
 }
 
 /** 设计稿 44 右上角是「···」，不是文字：收纳全部已读和推送设置 */
@@ -63,11 +104,52 @@ function openMore() {
   })
 }
 
-function set<K extends 'pushEnabled' | 'pushDeadline' | 'pushJoined' | 'pushResult' | 'pushUpdated'>(
-  key: K,
-  v: boolean
-) {
+type SwitchKey =
+  | 'pushEnabled'
+  | 'pushDeadline'
+  | 'pushJoined'
+  | 'pushComment'
+  | 'pushResult'
+  | 'pushUpdated'
+
+/** 开关 → 服务端模板类型；pushUpdated 目前没有对应的通知，纯本地偏好 */
+const KIND_OF: Partial<Record<SwitchKey, PushKind>> = {
+  pushJoined: 'joined',
+  pushComment: 'comment',
+  pushDeadline: 'deadline',
+  pushResult: 'result'
+}
+
+/** 本地开关 → 服务端偏好（订阅消息由服务端发，本地开关拦不住） */
+function prefsOf(): PushPrefs {
+  const s = settings.settings
+  return {
+    enabled: s.pushEnabled,
+    joined: s.pushJoined,
+    comment: s.pushComment,
+    deadline: s.pushDeadline,
+    result: s.pushResult
+  }
+}
+
+function set(key: SwitchKey, v: boolean) {
   settings.set(key, v)
+  const prefs = prefsOf()
+
+  // 打开开关时顺手要一次订阅授权。必须在 tap 回调里同步调用，
+  // 所以 requestSubscribe 内部只用缓存好的模板 ID，不做网络请求。
+  if (v) {
+    if (key === 'pushEnabled') {
+      // 微信一次最多 3 个模板，总开关先要最常用的三个
+      requestSubscribe(['joined', 'comment', 'deadline'], prefs)
+    } else {
+      const kind = KIND_OF[key]
+      if (kind) requestSubscribe([kind], prefs)
+    }
+  }
+
+  // 关掉时也要同步：否则服务端还会按旧偏好发
+  savePushPrefs(prefs).catch(() => {})
 }
 
 /** 图标随通知类型变（设计稿 44：megaphone / message-square / trophy / users / circle-check） */
@@ -100,7 +182,7 @@ function iconOf(kind: Notification['kind']) {
 
     <!-- ============ 44 消息列表 ============ -->
     <template v-if="tab === 'list'">
-      <scroll-view class="notif__scroll" scroll-y>
+      <scroll-view class="notif__scroll" scroll-y @scrolltolower="loadMore">
         <view class="notif__content" :style="{ paddingBottom: bottomInset(20) }">
           <view class="tabs">
             <view
@@ -148,9 +230,15 @@ function iconOf(kind: Notification['kind']) {
           <AppEmpty
             v-if="!shown.length"
             icon="bell"
-            title="没有未读消息"
-            desc="有人参与你的投票、结果公布时会在这里提醒你"
+            :title="filter === 'unread' ? '没有未读消息' : '还没有消息'"
+            desc="有人参与你的投票、评论或回复时会在这里提醒你"
           />
+
+          <view v-if="hasMore" class="notif__more-row">
+            <text class="notif__more-text" @tap="loadMore">
+              {{ loading ? '加载中…' : '加载更多' }}
+            </text>
+          </view>
         </view>
       </scroll-view>
     </template>
@@ -206,6 +294,20 @@ function iconOf(kind: Notification['kind']) {
 
           <view class="row">
             <view class="row__text">
+              <text class="row__title">新的评论和回复</text>
+              <text class="row__desc">有人在我的投票下留言</text>
+            </view>
+            <AppSwitch
+              :model-value="settings.settings.pushComment"
+              :disabled="!settings.settings.pushEnabled"
+              @update:model-value="(v) => set('pushComment', v)"
+            />
+          </view>
+
+          <view class="card__sep" />
+
+          <view class="row">
+            <view class="row__text">
               <text class="row__title">投票结果公布</text>
               <text class="row__desc">结果生成后提醒</text>
             </view>
@@ -232,7 +334,7 @@ function iconOf(kind: Notification['kind']) {
         </view>
 
         <text class="notif__note">
-          推送依赖微信订阅消息授权，若系统层关闭通知，本页开关将不生效。
+          微信订阅消息是「一次授权、一条消息」：打开开关时会弹窗征求同意，每同意一次只能收到一条，之后需要再次开启。若系统层关闭通知，本页开关将不生效。
         </text>
       </view>
     </scroll-view>
@@ -245,7 +347,8 @@ export default { name: 'NotificationsPage' }
 
 <style lang="scss" scoped>
 .notif {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -280,6 +383,18 @@ export default { name: 'NotificationsPage' }
   &__scroll {
     flex: 1;
     height: 0;
+  }
+
+  /* 列表底部的「加载更多」 */
+  &__more-row {
+    padding: 4px 0 8px;
+    display: flex;
+    justify-content: center;
+  }
+
+  &__more-text {
+    font-size: 11px;
+    color: $faint;
   }
 
   /* 设计稿 44：Content 竖向流 gap 12、padding [8,20,20,20]；下边距由 bottomInset(20) 内联控制 */

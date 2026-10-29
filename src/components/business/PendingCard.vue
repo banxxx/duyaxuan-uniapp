@@ -44,6 +44,12 @@ const footText = computed(() =>
     : formatRemaining(props.poll.endAt)
 )
 
+/** 「不看投票人数」时后端把数字置 0，这里连「· 0 人已投」也一起省掉 */
+const inviterText = computed(
+  () =>
+    `${props.poll.inviterName} 邀请你${props.poll.voterCount ? ` · ${props.poll.voterCount} 人已投` : ''}`
+)
+
 /** 设计稿里只有「剩余时间」这一种文案会跟着紧急态变橙色，「最多选 N 项」始终 $faint */
 const footUrgent = computed(
   () => urgent.value && !(props.poll.type === 'multiple' && props.poll.maxChoice)
@@ -65,9 +71,7 @@ const footUrgent = computed(
 
     <view class="pending__inviter">
       <AppIcon name="user-round" :size="12" color="#A1A1AA" :stroke-width="2" />
-      <text class="pending__inviter-text">
-        {{ poll.inviterName }} 邀请你 · {{ poll.voterCount }} 人已投
-      </text>
+      <text class="pending__inviter-text">{{ inviterText }}</text>
     </view>
 
     <view class="pending__foot">

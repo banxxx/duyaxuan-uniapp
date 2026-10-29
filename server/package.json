@@ -9,6 +9,7 @@
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 execute duyaxuan-db --local --file=./schema.sql",
     "db:remote": "wrangler d1 execute duyaxuan-db --remote --file=./schema.sql",
+    "seed": "node scripts/seed.mjs",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

@@ -5,7 +5,7 @@ import type { Poll } from '@/types/api'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import { fetchPoll, fetchMyVote } from '@/api/poll'
-import { buildShareMessage } from '@/utils/share'
+import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { backTo, go, ROUTES } from '@/utils/router'
 
@@ -35,6 +35,7 @@ onMounted(async () => {
   if (!pollId.value) return
   const [p, mine] = await Promise.all([fetchPoll(pollId.value), fetchMyVote(pollId.value)])
   poll.value = p
+  syncShareMenu(p.rules.allowShare)
   myVote.value = mine
   choices.value = p.options.filter((o) => mine.includes(o.id)).map((o) => o.title)
 

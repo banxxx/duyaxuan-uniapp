@@ -70,8 +70,9 @@ const statusTone = computed(() => {
 
 const countText = computed(() => {
   if (isSurvey.value) return `${props.poll.answerCount ?? 0} 条`
-  // 多选时显示参与人数而不是总票数，和设计稿口径一致
-  return `${props.poll.voterCount} 票`
+  // 多选时显示参与人数而不是总票数，和设计稿口径一致。
+  // 「不看投票人数」的投票，后端会把数字置 0，这里就别写「0 票」了
+  return props.poll.voterCount > 0 ? `${props.poll.voterCount} 票` : '投票'
 })
 
 /**

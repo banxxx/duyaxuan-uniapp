@@ -7,9 +7,10 @@ import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
-import { fetchPoll, submitAnswer } from '@/api/poll'
+import { fetchPoll, submitAnswer, joinPoll } from '@/api/poll'
 import { formatCreatedAt, formatRemaining, charCount } from '@/utils/format'
 import { buildShareMessage } from '@/utils/share'
+import { askInviteCode } from '@/utils/invite'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, replace } from '@/utils/router'
 
@@ -62,14 +63,35 @@ function onSubmit() {
 }
 
 async function doSubmit() {
-  if (!poll.value) return
+  const p = poll.value
+  if (!p) return
   submitting.value = true
   try {
-    await submitAnswer(poll.value.id, content.value.trim(), infoValue.value.trim() || undefined)
-    infoVisible.value = false
-    replace(ROUTES.surveyDone, { id: poll.value.id })
-  } catch {
-    uni.showToast({ title: '提交失败，请重试', icon: 'none' })
+    // 邀请码模式的问卷：被 403 拦下时收一次码，加入后重试一次
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await submitAnswer(
+          p.id,
+          content.value.trim(),
+          infoValue.value.trim() || undefined,
+          { toast: false }
+        )
+        infoVisible.value = false
+        replace(ROUTES.surveyDone, { id: p.id })
+        return
+      } catch (err) {
+        const needInvite =
+          p.rules.joinMethod === 'invite' && (err as { code?: number })?.code === 403
+        if (!needInvite || attempt > 0) throw err
+
+        const code = await askInviteCode()
+        if (!code) return
+        await joinPoll(p.id, code)
+      }
+    }
+  } catch (err) {
+    const msg = (err as Error)?.message || '提交失败，请重试'
+    uni.showToast({ title: msg, icon: 'none' })
   } finally {
     submitting.value = false
   }
@@ -199,7 +221,8 @@ export default { name: 'SurveyFillPage' }
 
 <style lang="scss" scoped>
 .fill {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

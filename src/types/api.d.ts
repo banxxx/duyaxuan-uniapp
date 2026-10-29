@@ -10,7 +10,8 @@ export type PollType = 'single' | 'multiple' | 'survey'
 export type PollStatus = 'ongoing' | 'ended'
 
 export type ResultVisibility = 'always' | 'after_vote' | 'after_end' | 'hidden'
-export type JoinMethod = 'link' | 'group' | 'private'
+/** 参与方式：链接可投 / 需要邀请码 */
+export type JoinMethod = 'link' | 'invite'
 
 export interface PollRules {
   /** 匿名投票 / 匿名收集 */
@@ -71,6 +72,8 @@ export interface Poll {
   answerCount?: number
   /** 问卷汇总生成的投票，指向来源问卷 */
   sourceSurveyId?: string
+  /** 最近一次投票/提交的时间戳 */
+  latestAt?: number
   /**
    * 42 我参与的列表里「你投了：安吉」用的摘要。
    * 单选是选项名，多选是「N 项」；后端在列表接口里一并返回，避免每行再查一次。
@@ -84,6 +87,11 @@ export interface Poll {
    */
   myAnswered?: boolean
   deletedAt?: number | null
+  /**
+   * 邀请码：只有发起人拿得到。
+   * 分享链接、小程序码会带上它，收到的人不用手输。
+   */
+  inviteCode?: string
 }
 
 export interface Vote {
@@ -117,6 +125,10 @@ export interface Comment {
   content: string
   createdAt: number
   likeCount: number
+  /** 我点过赞没有 */
+  liked?: boolean
+  /** 是不是我自己发的（「我参与的」筛选用） */
+  isMine?: boolean
   user: { id: string; name: string; avatar?: string }
   replyTo?: { id: string; name: string }
 }
@@ -137,4 +149,59 @@ export interface Paged<T> {
   cursor: string | null
   hasMore: boolean
   total: number
+}
+
+/** 14/15 一条投票记录 */
+export interface VoterRecord {
+  id: string
+  createdAt: number
+  user?: { id: string; name: string }
+  /** 投给了哪个选项（多选时用 / 连接） */
+  optionTitle: string
+  /** 发起人要求填的个人信息，只有发起人能拿到 */
+  profileInfo?: string
+}
+
+/* ---------------- 84/85/86 问卷汇总 ---------------- */
+
+/** 一个候选选项：由若干条回答归并而来 */
+export interface SummaryCandidate {
+  id: string
+  title: string
+  desc: string
+  answerCount: number
+  /** 取一条原文做示例 */
+  sample: string
+}
+
+/** 还没归类的一条回答 */
+export interface UnclassifiedAnswer {
+  id: string
+  createdAt: number
+  content: string
+}
+
+/** 归在某个候选选项下的回答（85 编辑选项页用） */
+export interface SummaryAnswer {
+  id: string
+  createdAt: number
+  content: string
+}
+
+export interface SummaryOptionDetail extends SummaryCandidate {
+  answers: SummaryAnswer[]
+}
+
+/* ---------------- 44 消息通知 ---------------- */
+
+export interface Notification {
+  id: string
+  /** 图标按类型变：截止 / 评论 / 结果 / 参与 / 发布 */
+  kind: 'deadline' | 'comment' | 'result' | 'joined' | 'published'
+  title: string
+  content: string
+  createdAt: number
+  read: boolean
+  /** 点进去落到哪个投票 / 问卷 */
+  pollId?: string
 }

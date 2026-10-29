@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import type { UserProfile } from '@/types/api'
 import type { Platform } from '@/utils/platform'
 import { loginButtonText } from '@/utils/platform'
-import { loginByCode, fetchProfile, isMockAuth } from '@/api/auth'
+import { loginByCode, devLogin, fetchProfile, isMockAuth } from '@/api/auth'
 import { registerAuthHooks } from '@/utils/auth-token'
 
 const TOKEN_KEY = 'dyx_token'
@@ -83,6 +83,16 @@ export const useUserStore = defineStore('user', () => {
     return result
   }
 
+  /**
+   * 开发期切换账号：直接按 userId 登录，不走平台授权。
+   * 入口在「设置 · 关于我们」长按，仅 DEV 构建可见。
+   */
+  async function loginAs(userId: string): Promise<LoginResult> {
+    const result = await devLogin(userId)
+    persist(result)
+    return result
+  }
+
   /** 401 时静默重登一次；失败返回 false */
   async function relogin(): Promise<boolean> {
     try {
@@ -141,6 +151,7 @@ export const useUserStore = defineStore('user', () => {
     setPlatform,
     restore,
     login,
+    loginAs,
     relogin,
     logout,
     touch,

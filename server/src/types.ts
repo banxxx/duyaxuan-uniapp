@@ -13,6 +13,31 @@ export interface Env {
   WX_SECRET: string
   JWT_SECRET: string
   TOKEN_TTL_DAYS: string
+  /**
+   * 开发期的登录后门，只有 .dev.vars 里写成 'true' 才生效。
+   * 线上不配置这个变量，路由直接 404，和没写过一样。
+   */
+  DEV_LOGIN?: string
+  /**
+   * 小程序码指向的版本：release（正式版）/ trial（体验版）/ develop（开发版）。
+   * 默认 release；本地开发在 .dev.vars 里写 trial，否则小程序没发布时扫不出页面。
+   */
+  WX_ENV_VERSION?: string
+  /**
+   * 订阅消息模板 ID，在微信后台「功能 → 订阅消息」里选好模板后拿到。
+   * 不配置就只发站内消息，接口照常工作 —— 开发期不需要去申请模板。
+   */
+  WX_TMPL_JOINED?: string
+  WX_TMPL_COMMENT?: string
+  WX_TMPL_DEADLINE?: string
+  /** 预留：结果公布。目前没有产生这类通知的业务，配了也不会发 */
+  WX_TMPL_RESULT?: string
+  /**
+   * 模板字段名，JSON：{"title":"thing1","time":"time2","remark":"thing3"}。
+   * 不同模板的字段名不一样（thing1 / phrase2 / character_string3），
+   * 对不上时微信返回 47003，改这个变量即可，不用改代码。
+   */
+  WX_TMPL_FIELDS?: string
 }
 
 /** Hono 的上下文泛型：Bindings 是 env，Variables 是中间件往下传的东西 */
@@ -57,6 +82,7 @@ export interface PollRow {
   shuffle_options: number
   hide_voter_count: number
   join_method: string
+  invite_code: string | null
   profile_field: string | null
   voter_count: number
   answer_count: number
@@ -149,6 +175,10 @@ export interface PollOut {
   myChoiceCount?: number
   myAnswered?: boolean
   deletedAt?: number | null
+  /** 最近一次投票/提交的时间戳，详情页用来显示「最近投票」 */
+  latestAt?: number
+  /** 邀请码：只有发起人拿得到，分享链接/海报会带上它 */
+  inviteCode?: string
 }
 
 export interface UserProfileOut {

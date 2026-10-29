@@ -71,9 +71,14 @@ function cancel() {
   exitFlow()
 }
 
-/** 问卷 → 投票：回到汇总页重新挑选项 */
+/** 问卷 → 投票：回到汇总页重新挑选项。必须带上来源问卷 id，否则汇总页拿不到数据 */
 function goSummary() {
-  go(ROUTES.summary)
+  const source = draft.draft.sourceSurveyId
+  if (!source) {
+    uni.showToast({ title: '没有关联的问卷', icon: 'none' })
+    return
+  }
+  go(ROUTES.summary, { surveyId: source })
 }
 
 function openAdd() {

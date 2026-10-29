@@ -6,9 +6,14 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
-import { fetchSummaryCandidates } from '@/api/poll'
-import type { SummaryCandidate } from '@/mock/data'
-import { charCount } from '@/utils/format'
+import {
+  deleteSummaryOption,
+  fetchSummaryOption,
+  unassignSummaryAnswer,
+  updateSummaryOption
+} from '@/api/poll'
+import type { SummaryAnswer, SummaryOptionDetail } from '@/types/api'
+import { charCount, formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
 
@@ -24,16 +29,17 @@ import { back } from '@/utils/router'
 const TITLE_MAX = 12
 const DESC_MAX = 20
 
-const candidate = ref<SummaryCandidate | null>(null)
+const candidate = ref<SummaryOptionDetail | null>(null)
 const loading = ref(true)
+const saving = ref(false)
 const title = ref('')
 const desc = ref('')
-const removed = ref<string[]>([])
 
 /** 归类的回答明细：设计稿只展示前三条，其余折叠 */
-const answers = ref<Array<{ id: string; time: string; content: string }>>([])
+const answers = ref<SummaryAnswer[]>([])
 
-const candidateId = ref('')
+const surveyId = ref('')
+const optionId = ref('')
 
 const visibleAnswers = computed(() => answers.value.slice(0, 3))
 const restCount = computed(() => Math.max(0, answers.value.length - 3))
@@ -41,51 +47,72 @@ const restCount = computed(() => Math.max(0, answers.value.length - 3))
 async function load() {
   loading.value = true
   try {
-    const list = await fetchSummaryCandidates('')
-    const hit = list.find((c) => c.id === candidateId.value) ?? list[0]
-    candidate.value = hit
-    title.value = hit.title
-    desc.value = hit.desc
-    answers.value = [
-      { id: '#8', time: '今天 11:32', content: '想去安吉，竹林露营住一晚，第二天徒步。预算 300 以内可以接受。' },
-      { id: '#7', time: '今天 14:27', content: '安吉吧，露营住一晚，第二天走个轻徒步就行。' },
-      { id: '#5', time: '今天 14:20', content: '随便都行，不过安吉竹林露营听起来最舒服。' }
-    ]
+    const detail = await fetchSummaryOption(surveyId.value, optionId.value)
+    candidate.value = detail
+    title.value = detail.title
+    desc.value = detail.desc
+    answers.value = detail.answers
+  } catch {
+    uni.showToast({ title: '选项加载失败', icon: 'none' })
   } finally {
     loading.value = false
   }
 }
 
 onLoad((q) => {
-  candidateId.value = (q?.id as string) ?? ''
+  optionId.value = (q?.id as string) ?? ''
+  surveyId.value = (q?.surveyId as string) ?? ''
 })
 onMounted(load)
 
-function removeAnswer(id: string) {
-  removed.value.push(id)
-  answers.value = answers.value.filter((a) => a.id !== id)
-  uni.showToast({ title: '已移出，可在未归类里再处理', icon: 'none' })
+async function removeAnswer(id: string) {
+  try {
+    await unassignSummaryAnswer(surveyId.value, optionId.value, id)
+    answers.value = answers.value.filter((a) => a.id !== id)
+    uni.showToast({ title: '已移出，可在未归类里再处理', icon: 'none' })
+  } catch {
+    uni.showToast({ title: '移出失败，请重试', icon: 'none' })
+  }
 }
 
 function onDelete() {
   uni.showModal({
     title: '删除这个候选选项？',
-    content: `${candidate.value?.answerCount ?? 0} 条归类的回答会回到「未归类」。`,
+    content: `${answers.value.length} 条归类的回答会回到「未归类」。`,
     confirmText: '删除',
     confirmColor: '#DC2626',
-    success: (r) => {
-      if (r.confirm) back()
+    success: async (r) => {
+      if (!r.confirm) return
+      try {
+        await deleteSummaryOption(surveyId.value, optionId.value)
+        uni.showToast({ title: '已删除', icon: 'none' })
+        setTimeout(back, 400)
+      } catch {
+        uni.showToast({ title: '删除失败，请重试', icon: 'none' })
+      }
     }
   })
 }
 
-function save() {
+async function save() {
   if (!title.value.trim()) {
     uni.showToast({ title: '选项标题不能为空', icon: 'none' })
     return
   }
-  uni.showToast({ title: '已保存', icon: 'none' })
-  setTimeout(back, 500)
+  if (saving.value) return
+  saving.value = true
+  try {
+    await updateSummaryOption(surveyId.value, optionId.value, {
+      title: title.value.trim(),
+      desc: desc.value.trim()
+    })
+    uni.showToast({ title: '已保存', icon: 'none' })
+    setTimeout(back, 400)
+  } catch {
+    uni.showToast({ title: '保存失败，请重试', icon: 'none' })
+  } finally {
+    saving.value = false
+  }
 }
 
 function goBack() {
@@ -154,11 +181,11 @@ function goBack() {
               <view v-if="i > 0" class="answers__sep" />
               <view class="ans">
                 <view class="ans__idx">
-                  <text class="ans__idx-text">{{ a.id }}</text>
+                  <text class="ans__idx-text">{{ i + 1 }}</text>
                 </view>
                 <view class="ans__body">
                   <view class="ans__meta">
-                    <text class="ans__time">{{ a.time }}</text>
+                    <text class="ans__time">{{ formatRelative(a.createdAt) }}</text>
                     <view class="ans__remove" @tap="removeAnswer(a.id)">
                       <AppIcon name="x" :size="12" color="#A1A1AA" />
                       <text class="ans__remove-text">移出</text>
@@ -204,7 +231,8 @@ export default { name: 'SummaryOptionPage' }
 
 <style lang="scss" scoped>
 .option {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

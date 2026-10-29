@@ -15,22 +15,36 @@ const KEY = 'dyx_settings'
 export interface Settings {
   /** 总开关（55） */
   pushEnabled: boolean
-  /** 55 的四类提醒 */
+  /** 55 的几类提醒 */
   pushDeadline: boolean
   pushJoined: boolean
+  /** 新的评论 / 回复（服务端按 comment 模板推） */
+  pushComment: boolean
   pushResult: boolean
   pushUpdated: boolean
-  /** 缓存大小，显示用 */
+  /** 缓存大小，显示用（每次 restore 都按真实存储占用重算，不存死值） */
   cacheSize: string
+}
+
+/** 本地存储实际占了多少，uni.getStorageInfoSync().currentSize 单位是 KB */
+function readCacheSize(): string {
+  try {
+    const kb = uni.getStorageInfoSync().currentSize
+    if (!kb) return '0 KB'
+    return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
+  } catch {
+    return '0 KB'
+  }
 }
 
 const DEFAULTS: Settings = {
   pushEnabled: true,
   pushDeadline: true,
   pushJoined: true,
+  pushComment: true,
   pushResult: true,
   pushUpdated: false,
-  cacheSize: '12.4 MB'
+  cacheSize: '0 KB'
 }
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -43,6 +57,8 @@ export const useSettingsStore = defineStore('settings', () => {
     } catch {
       settings.value = { ...DEFAULTS }
     }
+    // 存储占用是会变的，不能沿用上次存的展示值
+    settings.value = { ...settings.value, cacheSize: readCacheSize() }
   }
 
   function persist() {
@@ -54,7 +70,7 @@ export const useSettingsStore = defineStore('settings', () => {
     persist()
   }
 
-  /** 清缓存：真实实现会算 storageInfo，这里只把展示值归零 */
+  /** 清缓存：清掉除登录态和设置以外的 key，然后把展示值按真实占用重算 */
   function clearCache() {
     try {
       const info = uni.getStorageInfoSync()
@@ -67,7 +83,7 @@ export const useSettingsStore = defineStore('settings', () => {
     } catch {
       // 拿不到存储信息时忽略
     }
-    settings.value = { ...settings.value, cacheSize: '0 MB' }
+    settings.value = { ...settings.value, cacheSize: readCacheSize() }
     persist()
   }
 

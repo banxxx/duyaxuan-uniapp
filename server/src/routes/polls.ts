@@ -18,9 +18,30 @@ import {
   restorePoll,
   searchPolls,
   softDeletePoll,
-  summaryGroups,
   updatePoll
 } from '../db/polls'
+import {
+  assignAnswers,
+  assertSummaryOwner,
+  createOption,
+  deleteOption,
+  getOption,
+  ignoreAnswers,
+  listCandidates,
+  listUnclassified,
+  resetSummary,
+  unassignAnswer,
+  updateOption
+} from '../db/summary'
+import {
+  createComment,
+  deleteComment,
+  listComments,
+  setCommentLike
+} from '../db/comments'
+import { remindMe } from '../db/notifications'
+import { getPollQrcode } from '../db/qrcode'
+import { acceptInvite, ensureInviteCode } from '../db/invites'
 import { castVote, myVote, revokeVote } from '../db/votes'
 import { listAnswers, myAnswers, submitAnswer, updateAnswer } from '../db/answers'
 
@@ -80,7 +101,8 @@ polls.get('/discover', async (c) => {
 })
 
 polls.get('/search', async (c) => {
-  return ok(c, await searchPolls(c.env.DB, c.get('userId'), c.req.query('keyword') ?? ''))
+  const sort = c.req.query('sort') === 'hot' ? 'hot' : 'latest'
+  return ok(c, await searchPolls(c.env.DB, c.get('userId'), c.req.query('keyword') ?? '', sort))
 })
 
 polls.post('/', requireAuth, async (c) => {
@@ -120,8 +142,43 @@ polls.post('/:id/end', requireAuth, async (c) => {
   return ok(c, null)
 })
 
-/** 提醒我：通知功能还没做，先收下请求别报错 */
+/** 小程序码：给海报和分享页用，同一 poll 只生成一次 */
+polls.get('/:id/qrcode', requireAuth, async (c) => {
+  const row = await getPollRowOrThrow(c.env.DB, c.req.param('id'))
+  // 关闭分享后，只有发起人自己还能取码
+  if (!row.allow_share && row.creator_id !== c.get('userId')) {
+    throw new HttpError(403, '发起人已关闭分享')
+  }
+  // 邀请码模式下，码里要带上邀请码，扫进来才能直接参与
+  const inviteCode =
+    row.join_method === 'invite' ? await ensureInviteCode(c.env.DB, row) : undefined
+  return ok(c, { url: await getPollQrcode(c.env.DB, c.env.BUCKET, c.env, row.id, inviteCode) })
+})
+
+/**
+ * 分享落地：记一条「谁带我来」的记录。
+ * 邀请码模式必须带对码；链接模式带不带都行，带了就记来源。
+ */
+polls.post('/:id/join', requireAuth, async (c) => {
+  const row = await getPollRowOrThrow(c.env.DB, c.req.param('id'))
+  const body = (await c.req.json().catch(() => ({}))) as { code?: string }
+  await acceptInvite(c.env.DB, row, c.get('userId')!, body.code)
+  return ok(c, { joined: true })
+})
+
+/** 邀请码：只有发起人拿得到，分享页展示、分享链接带上 */
+polls.get('/:id/invite-code', requireAuth, async (c) => {
+  const row = await getPollRowOrThrow(c.env.DB, c.req.param('id'))
+  if (row.creator_id !== c.get('userId')) {
+    throw new HttpError(403, '只有发起人可以查看邀请码')
+  }
+  return ok(c, { code: await ensureInviteCode(c.env.DB, row) })
+})
+
+/** 提醒我：记一条提醒，截止后第一次拉通知列表时补发 */
 polls.post('/:id/remind', requireAuth, async (c) => {
+  const row = await getPollRowOrThrow(c.env.DB, c.req.param('id'))
+  await remindMe(c.env.DB, row.id, c.get('userId')!)
   return ok(c, null)
 })
 
@@ -137,7 +194,7 @@ polls.post('/:id/vote', requireAuth, async (c) => {
   if (!Array.isArray(body.optionIds)) throw new HttpError(400, '请选择选项')
 
   const row = await getPollRowOrThrow(c.env.DB, id)
-  await castVote(c.env.DB, row, userId, body.optionIds, body.profileInfo, clientIp(c))
+  await castVote(c.env.DB, row, userId, body.optionIds, body.profileInfo, clientIp(c), c.env)
   return ok(c, await getPoll(c.env.DB, id, userId))
 })
 
@@ -153,11 +210,34 @@ polls.get('/:id/my-vote', requireAuth, async (c) => {
   return ok(c, await myVote(c.env.DB, c.req.param('id'), c.get('userId')!))
 })
 
-/* ---------------- 评论（暂未实现，先返回空数组） ---------------- */
+/* ---------------- 评论 ---------------- */
 
 polls.get('/:id/comments', async (c) => {
-  // 详情页会拉评论列表，返回 404 会让页面弹「请求失败」。功能没做之前返回空数组。
-  return ok(c, [])
+  return ok(c, await listComments(c.env.DB, c.req.param('id'), c.get('userId')))
+})
+
+polls.post('/:id/comments', requireAuth, async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  return ok(c, await createComment(c.env.DB, c.req.param('id'), c.get('userId')!, body, c.env))
+})
+
+polls.delete('/:id/comments/:commentId', requireAuth, async (c) => {
+  await deleteComment(c.env.DB, c.req.param('id'), c.get('userId')!, c.req.param('commentId'))
+  return ok(c, null)
+})
+
+polls.post('/:id/comments/:commentId/like', requireAuth, async (c) => {
+  return ok(
+    c,
+    await setCommentLike(c.env.DB, c.req.param('id'), c.get('userId')!, c.req.param('commentId'), true)
+  )
+})
+
+polls.delete('/:id/comments/:commentId/like', requireAuth, async (c) => {
+  return ok(
+    c,
+    await setCommentLike(c.env.DB, c.req.param('id'), c.get('userId')!, c.req.param('commentId'), false)
+  )
 })
 
 /* ---------------- 问卷回答 ---------------- */
@@ -176,7 +256,10 @@ polls.post('/:id/answers', requireAuth, async (c) => {
     profileInfo?: string
   }
   const row = await getPollRowOrThrow(c.env.DB, id)
-  return ok(c, await submitAnswer(c.env.DB, row, c.get('userId')!, body.content ?? '', body.profileInfo))
+  return ok(
+    c,
+    await submitAnswer(c.env.DB, row, c.get('userId')!, body.content ?? '', body.profileInfo, c.env)
+  )
 })
 
 polls.get('/:id/my-answers', requireAuth, async (c) => {
@@ -196,21 +279,105 @@ polls.put('/:id/answers/:answerId', requireAuth, async (c) => {
 /* ---------------- 数据页 ---------------- */
 
 polls.get('/:id/voters', async (c) => {
-  return ok(c, await pollVoters(c.env.DB, c.req.param('id'), c.get('userId')))
+  return ok(
+    c,
+    await pollVoters(c.env.DB, c.req.param('id'), c.get('userId'), c.req.query('cursor'))
+  )
 })
 
 polls.get('/:id/stats', async (c) => {
   return ok(c, await pollStats(c.env.DB, c.req.param('id')))
 })
 
-polls.get('/:id/summary/candidates', async (c) => {
-  const { candidates } = await summaryGroups(c.env.DB, c.req.param('id'))
-  return ok(c, candidates)
+/* ---------------- 汇总（问卷 → 投票） ----------------
+ *
+ * 回答里有参与者写的内容，不能像投票详情那样公开，
+ * 读和写都要求「登录 + 是这份问卷的发起人」。
+ */
+
+polls.get('/:id/summary/candidates', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  return ok(c, await listCandidates(DB, id))
 })
 
-polls.get('/:id/summary/unclassified', async (c) => {
-  const { unclassified } = await summaryGroups(c.env.DB, c.req.param('id'))
-  return ok(c, unclassified)
+polls.get('/:id/summary/unclassified', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  return ok(c, await listUnclassified(DB, id))
+})
+
+/** 编辑选项页：拿选项本身 + 归在它下面的回答 */
+polls.get('/:id/summary/options/:optionId', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  return ok(c, await getOption(DB, id, c.req.param('optionId')))
+})
+
+/** 新建候选选项，可顺手把选中的回答归进去 */
+polls.post('/:id/summary/options', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  const body = await c.req.json().catch(() => ({}))
+  return ok(c, await createOption(DB, id, body))
+})
+
+polls.put('/:id/summary/options/:optionId', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  const body = await c.req.json().catch(() => ({}))
+  await updateOption(DB, id, c.req.param('optionId'), body)
+  return ok(c, null)
+})
+
+polls.delete('/:id/summary/options/:optionId', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  await deleteOption(DB, id, c.req.param('optionId'))
+  return ok(c, null)
+})
+
+/** 归入已有选项 */
+polls.post('/:id/summary/options/:optionId/answers', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  const body = (await c.req.json().catch(() => ({}))) as { answerIds?: unknown }
+  await assignAnswers(DB, id, c.req.param('optionId'), body.answerIds)
+  return ok(c, null)
+})
+
+/** 移出：回到未归类 */
+polls.delete('/:id/summary/options/:optionId/answers/:answerId', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  await unassignAnswer(DB, id, c.req.param('optionId'), c.req.param('answerId'))
+  return ok(c, null)
+})
+
+/** 忽略：不进汇总，原文仍在问卷数据里 */
+polls.post('/:id/summary/ignore', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  const body = (await c.req.json().catch(() => ({}))) as { answerIds?: unknown }
+  return ok(c, { ignored: await ignoreAnswers(DB, id, body.answerIds) })
+})
+
+/** 重新归并：清掉整理结果，按原文重新分组（手动的调整会丢，前端要二次确认） */
+polls.post('/:id/summary/remerge', requireAuth, async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  await assertSummaryOwner(DB, id, c.get('userId')!)
+  await resetSummary(DB, id)
+  return ok(c, null)
 })
 
 export default polls

@@ -1,5 +1,15 @@
-import type { Poll, Paged, Comment, SurveyAnswer } from '@/types/api'
+import type {
+  Poll,
+  Paged,
+  Comment,
+  SurveyAnswer,
+  SummaryCandidate,
+  UnclassifiedAnswer,
+  SummaryOptionDetail,
+  VoterRecord
+} from '@/types/api'
 import { http } from '@/utils/request'
+import { resolveFileUrl } from '@/utils/api-base'
 import { useMock } from '@/utils/env'
 import {
   mockPolls,
@@ -14,7 +24,7 @@ import {
   mockUnclassified,
   mockPending
 } from '@/mock/data'
-import type { SummaryCandidate, UnclassifiedAnswer, PendingPoll } from '@/mock/data'
+import type { PendingPoll } from '@/mock/data'
 
 /**
  * 投票 / 问卷接口
@@ -103,14 +113,18 @@ export async function fetchDiscoverPolls(
   return http.get<Paged<Poll>>('/polls/discover', { status, cursor })
 }
 
-export async function searchPolls(keyword: string): Promise<Poll[]> {
+export async function searchPolls(
+  keyword: string,
+  sort: 'latest' | 'hot' = 'latest'
+): Promise<Poll[]> {
   if (USE_MOCK) {
     await delay()
     if (!keyword.trim()) return []
     const k = keyword.trim()
-    return mockPolls.filter((p) => p.title.includes(k) || (p.desc ?? '').includes(k))
+    const hit = mockPolls.filter((p) => p.title.includes(k) || (p.desc ?? '').includes(k))
+    return sort === 'hot' ? [...hit].sort((a, b) => b.voterCount - a.voterCount) : hit
   }
-  return http.get<Poll[]>('/polls/search', { keyword })
+  return http.get<Poll[]>('/polls/search', { keyword, sort })
 }
 
 export async function fetchPoll(id: string): Promise<Poll> {
@@ -134,7 +148,9 @@ export async function fetchStats(): Promise<Array<{ value: string | number; labe
 export async function votePoll(
   pollId: string,
   optionIds: string[],
-  profileInfo?: string
+  profileInfo?: string,
+  /** toast:false 时不弹默认错误，调用方自己处理（比如邀请码弹窗） */
+  opts?: { toast?: boolean }
 ): Promise<Poll> {
   if (USE_MOCK) {
     await delay(300)
@@ -148,7 +164,7 @@ export async function votePoll(
     if (profileInfo) mockMyProfileInfo[pollId] = profileInfo
     return JSON.parse(JSON.stringify(poll))
   }
-  return http.post<Poll>(`/polls/${pollId}/vote`, { optionIds, profileInfo })
+  return http.post<Poll>(`/polls/${pollId}/vote`, { optionIds, profileInfo }, opts)
 }
 
 /** 撤回我这一票（仅在「允许修改选择」且未截止时可用） */
@@ -260,6 +276,63 @@ export async function fetchComments(pollId: string): Promise<Comment[]> {
   return http.get<Comment[]>(`/polls/${pollId}/comments`)
 }
 
+/** 发评论；replyToId 是「回复」的目标评论 */
+export async function createComment(
+  pollId: string,
+  content: string,
+  replyToId?: string
+): Promise<Comment> {
+  if (USE_MOCK) {
+    await delay(200)
+    const comment: Comment = {
+      id: `c${Date.now()}`,
+      pollId,
+      content,
+      createdAt: Date.now(),
+      likeCount: 0,
+      liked: false,
+      isMine: true,
+      user: { id: '1024', name: '我' }
+    }
+    mockComments.unshift(comment)
+    const poll = mockPolls.find((p) => p.id === pollId)
+    if (poll) poll.commentCount = (poll.commentCount ?? 0) + 1
+    return { ...comment }
+  }
+  return http.post<Comment>(`/polls/${pollId}/comments`, { content, replyToId })
+}
+
+export async function deleteComment(pollId: string, commentId: string): Promise<void> {
+  if (USE_MOCK) {
+    await delay(160)
+    const i = mockComments.findIndex((c) => c.id === commentId)
+    if (i >= 0) mockComments.splice(i, 1)
+    return
+  }
+  return http.del<void>(`/polls/${pollId}/comments/${commentId}`)
+}
+
+/** 点赞 / 取消点赞，返回最新计数 */
+export async function setCommentLike(
+  pollId: string,
+  commentId: string,
+  liked: boolean
+): Promise<{ liked: boolean; likeCount: number }> {
+  if (USE_MOCK) {
+    await delay(140)
+    const hit = mockComments.find((c) => c.id === commentId)
+    if (!hit) throw new Error('评论不存在')
+    if (liked && !hit.liked) hit.likeCount += 1
+    if (!liked && hit.liked) hit.likeCount = Math.max(0, hit.likeCount - 1)
+    hit.liked = liked
+    return { liked, likeCount: hit.likeCount }
+  }
+  const url = `/polls/${pollId}/comments/${commentId}/like`
+  return liked
+    ? http.post<{ liked: boolean; likeCount: number }>(url)
+    : http.del<{ liked: boolean; likeCount: number }>(url)
+}
+
 export async function fetchAnswers(pollId: string, cursor?: string | null): Promise<Paged<SurveyAnswer>> {
   if (USE_MOCK) {
     await delay()
@@ -274,7 +347,9 @@ export async function fetchAnswers(pollId: string, cursor?: string | null): Prom
 export async function submitAnswer(
   pollId: string,
   content: string,
-  profileInfo?: string
+  profileInfo?: string,
+  /** toast:false 时不弹默认错误，调用方自己处理 */
+  opts?: { toast?: boolean }
 ): Promise<SurveyAnswer> {
   if (USE_MOCK) {
     await delay(300)
@@ -291,7 +366,7 @@ export async function submitAnswer(
     if (poll) poll.answerCount = (poll.answerCount ?? 0) + 1
     return answer
   }
-  return http.post<SurveyAnswer>(`/polls/${pollId}/answers`, { content, profileInfo })
+  return http.post<SurveyAnswer>(`/polls/${pollId}/answers`, { content, profileInfo }, opts)
 }
 
 /** 我在这份问卷里提交过的回答，按时间倒序（71 我的提交记录） */
@@ -318,12 +393,50 @@ export async function updateAnswer(pollId: string, answerId: string, content: st
 }
 
 /** 14/15 投票记录 */
-export async function fetchVoters(pollId: string) {
+export async function fetchVoters(
+  pollId: string,
+  cursor?: string | null
+): Promise<Paged<VoterRecord>> {
   if (USE_MOCK) {
     await delay(200)
-    return mockVoters(pollId)
+    const list = mockVoters(pollId)
+    return { list, cursor: null, hasMore: false, total: list.length }
   }
-  return http.get<ReturnType<typeof mockVoters>>(`/polls/${pollId}/voters`)
+  return http.get<Paged<VoterRecord>>(`/polls/${pollId}/voters`, { cursor })
+}
+
+/**
+ * 27/80 分享页的小程序码
+ *
+ * 后端生成一次就缓存在 R2，重复请求不会反复调微信接口。
+ * 返回的是 `/files/qrcodes/...` 相对地址，这里补全成完整 URL。
+ */
+/** 分享落地：记录「谁带我来」。邀请码不对时后端返回 403，调用方自己提示 */
+export async function joinPoll(pollId: string, code?: string): Promise<void> {
+  if (USE_MOCK) return
+  await http.post<{ joined: boolean }>(
+    `/polls/${pollId}/join`,
+    code ? { code } : {},
+    { toast: false }
+  )
+}
+
+/** 邀请码：只有发起人拿得到，分享页展示用 */
+export async function fetchInviteCode(pollId: string): Promise<string> {
+  if (USE_MOCK) return ''
+  const res = await http.get<{ code: string }>(`/polls/${pollId}/invite-code`, undefined, {
+    toast: false
+  })
+  return res.code
+}
+
+export async function fetchPollQrcode(pollId: string): Promise<string> {
+  if (USE_MOCK) {
+    await delay(120)
+    return ''
+  }
+  const res = await http.get<{ url: string }>(`/polls/${pollId}/qrcode`, undefined, { toast: false })
+  return resolveFileUrl(res.url)
 }
 
 /** 24/25 发布者数据 */
@@ -351,6 +464,92 @@ export async function fetchUnclassified(pollId: string): Promise<UnclassifiedAns
     return mockUnclassified
   }
   return http.get<UnclassifiedAnswer[]>(`/polls/${pollId}/summary/unclassified`)
+}
+
+/** 85 编辑选项：候选选项本身 + 归在它下面的回答明细 */
+export async function fetchSummaryOption(
+  pollId: string,
+  optionId: string
+): Promise<SummaryOptionDetail> {
+  if (USE_MOCK) {
+    await delay()
+    const hit = mockCandidates.find((c) => c.id === optionId) ?? mockCandidates[0]
+    return {
+      ...hit,
+      answers: mockAnswers.slice(0, 3).map((a) => ({
+        id: a.id,
+        createdAt: a.createdAt,
+        content: a.content
+      }))
+    }
+  }
+  return http.get<SummaryOptionDetail>(`/polls/${pollId}/summary/options/${optionId}`)
+}
+
+async function summaryWrite<T>(fn: () => Promise<T>): Promise<T> {
+  if (USE_MOCK) {
+    await delay(200)
+    return undefined as T
+  }
+  return fn()
+}
+
+/** 85 保存标题/说明 */
+export function updateSummaryOption(
+  pollId: string,
+  optionId: string,
+  patch: { title: string; desc: string }
+): Promise<void> {
+  return summaryWrite(() =>
+    http.put<void>(`/polls/${pollId}/summary/options/${optionId}`, patch)
+  )
+}
+
+/** 85 删除候选选项：下面的回答回到未归类 */
+export function deleteSummaryOption(pollId: string, optionId: string): Promise<void> {
+  return summaryWrite(() => http.del<void>(`/polls/${pollId}/summary/options/${optionId}`))
+}
+
+/** 86 用一条回答新建选项 */
+export function createSummaryOption(
+  pollId: string,
+  body: { title: string; desc?: string; answerIds?: string[] }
+): Promise<{ id: string }> {
+  return summaryWrite(() => http.post<{ id: string }>(`/polls/${pollId}/summary/options`, body))
+}
+
+/** 86 归入已有选项 */
+export function assignSummaryAnswers(
+  pollId: string,
+  optionId: string,
+  answerIds: string[]
+): Promise<void> {
+  return summaryWrite(() =>
+    http.post<void>(`/polls/${pollId}/summary/options/${optionId}/answers`, { answerIds })
+  )
+}
+
+/** 85 把一条回答移出选项，回到未归类 */
+export function unassignSummaryAnswer(
+  pollId: string,
+  optionId: string,
+  answerId: string
+): Promise<void> {
+  return summaryWrite(() =>
+    http.del<void>(`/polls/${pollId}/summary/options/${optionId}/answers/${answerId}`)
+  )
+}
+
+/** 86 忽略：不进汇总，原文仍留在问卷数据里 */
+export function ignoreSummaryAnswers(pollId: string, answerIds: string[]): Promise<{ ignored: number }> {
+  return summaryWrite(() =>
+    http.post<{ ignored: number }>(`/polls/${pollId}/summary/ignore`, { answerIds })
+  )
+}
+
+/** 84 重新归并：清掉整理结果后按原文重新分组 */
+export function remergeSummary(pollId: string): Promise<void> {
+  return summaryWrite(() => http.post<void>(`/polls/${pollId}/summary/remerge`))
 }
 
 /** 提前结束投票 */

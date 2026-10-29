@@ -55,6 +55,11 @@ function isLocked(key: string) {
 
 const lockedText = computed(() => (isSurvey.value ? '已有回答，不能再改' : '已有投票，不能再改'))
 
+/** 参与方式只有两档：链接 / 邀请码（后端会把老数据的 group、private 归一成 invite） */
+const joinText = computed(() =>
+  poll.value?.rules.joinMethod === 'invite' ? '邀请码' : '链接分享'
+)
+
 /** 91 的快捷期限：剩余天数最接近的档位高亮 */
 const activePreset = computed(() => {
   if (!poll.value) return 0
@@ -282,15 +287,7 @@ function pickDeadline(p: { key?: number }) {
             :desc="isLocked('joinMethod') ? lockedText : '谁可以看到并参与这个投票'"
             :locked="isLocked('joinMethod')"
           >
-            <text class="locked-value">
-              {{
-                poll.rules.joinMethod === 'group'
-                  ? '指定成员'
-                  : poll.rules.joinMethod === 'private'
-                    ? '邀请码'
-                    : '链接分享'
-              }}
-            </text>
+            <text class="locked-value">{{ joinText }}</text>
           </RuleRow>
         </view>
 
@@ -361,15 +358,7 @@ function pickDeadline(p: { key?: number }) {
             :desc="isLocked('joinMethod') ? lockedText : '谁可以看到并参与这份问卷'"
             :locked="isLocked('joinMethod')"
           >
-            <text class="locked-value">
-              {{
-                poll.rules.joinMethod === 'group'
-                  ? '指定成员'
-                  : poll.rules.joinMethod === 'private'
-                    ? '邀请码'
-                    : '链接分享'
-              }}
-            </text>
+            <text class="locked-value">{{ joinText }}</text>
           </RuleRow>
         </view>
 
@@ -429,7 +418,8 @@ export default { name: 'EditRulesPage' }
 
 <style lang="scss" scoped>
 .edit-rules {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

@@ -14,6 +14,8 @@ const EXT_BY_MIME: Record<string, string> = {
 }
 
 export const AVATAR_PREFIX = 'avatars/'
+/** 小程序码按 pollId + 环境存，生成一次就复用 */
+export const QRCODE_PREFIX = 'qrcodes/'
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024
 
 /** 从 MIME 或文件名推断扩展名，不是图片返回 null */
@@ -39,7 +41,8 @@ export function avatarKey(userId: string, ext: string): string {
  * 公开出去 —— 以后要是往里存别的东西（导出文件等），这个白名单就是边界。
  */
 export function isPublicKey(key: string): boolean {
-  return key.startsWith(AVATAR_PREFIX) && !key.includes('..')
+  if (key.includes('..')) return false
+  return key.startsWith(AVATAR_PREFIX) || key.startsWith(QRCODE_PREFIX)
 }
 
 /** 存进 users.avatar 的相对路径，前端拿 API 域名拼成完整地址 */

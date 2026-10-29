@@ -163,6 +163,7 @@ import AppSheet from '@/components/base/AppSheet.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import { useUserStore } from '@/stores/user'
 import { fetchMyPolls, fetchJoinedPolls } from '@/api/poll'
+import { fetchUnreadCount } from '@/api/notification'
 import { uploadAvatar, updateNickname } from '@/api/auth'
 import { getSafeArea, getPlatform } from '@/utils/platform'
 import { hideNativeTabBar } from '@/utils/tab'
@@ -191,7 +192,7 @@ const { contentTop, safeBottom } = getSafeArea()
 
 const createdCount = ref<number | null>(null)
 const joinedCount = ref<number | null>(null)
-const unread = ref(true)
+const unread = ref(false)
 
 onMounted(async () => {
   try {
@@ -203,8 +204,20 @@ onMounted(async () => {
   }
 })
 
-/** H5 端会渲染原生 tabBar，进来就藏掉（微信端 custom=true，没有原生栏，静默失败） */
-onShow(hideNativeTabBar)
+/** 未读数取服务端：进「我的」时刷新一次，点掉消息回来红点就没了 */
+async function refreshUnread() {
+  try {
+    unread.value = (await fetchUnreadCount()) > 0
+  } catch {
+    // 红点只是辅助信息，取不到就不显示
+  }
+}
+
+onShow(() => {
+  // H5 端会渲染原生 tabBar，进来就藏掉（微信端 custom=true，没有原生栏，静默失败）
+  hideNativeTabBar()
+  refreshUnread()
+})
 
 function open(url: string) {
   go(url)

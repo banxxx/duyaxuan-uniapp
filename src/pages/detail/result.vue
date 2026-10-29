@@ -8,8 +8,9 @@ import AppButton from '@/components/base/AppButton.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { fetchPoll, fetchMyVote, remindMe } from '@/api/poll'
 import { formatDate, formatDateTime, formatRelative, percent } from '@/utils/format'
-import { buildShareMessage } from '@/utils/share'
+import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
+import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
 import { backTo, go, ROUTES } from '@/utils/router'
 
 /**
@@ -84,6 +85,7 @@ async function load() {
   try {
     const p = await fetchPoll(pollId.value)
     poll.value = p
+    syncShareMenu(p.rules.allowShare)
     if (p.type !== 'survey') myVote.value = await fetchMyVote(p.id)
   } finally {
     loading.value = false
@@ -93,10 +95,15 @@ async function load() {
 onLoad((q) => {
   pollId.value = (q?.id as string) ?? ''
 })
-onMounted(load)
+onMounted(() => {
+  preloadSubscribeTemplates()
+  load()
+})
 
 async function onRemind() {
   if (!poll.value) return
+  // 订阅授权必须在点击事件里同步发起，await 之后再调就拿不到手势上下文了
+  requestSubscribe(['deadline'])
   await remindMe(poll.value.id)
   reminded.value = true
   uni.showToast({ title: '已设置，截止时提醒你', icon: 'none' })
@@ -199,13 +206,16 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
           </view>
 
           <view class="stats">
-            <view class="stats__item">
+            <!-- 关闭「查看投票人数」后，非发起人拿到的是 0，这一格直接不摆 -->
+            <view v-if="!poll.rules.hideVoterCount || poll.voterCount > 0" class="stats__item">
               <text class="stats__label">参与人数</text>
               <text class="stats__value">{{ poll.voterCount }}</text>
             </view>
             <view class="stats__item">
               <text class="stats__label">最近投票</text>
-              <text class="stats__value">{{ formatRelative(Date.now() - 2 * 60 * 1000) }}</text>
+              <text class="stats__value">
+                {{ poll.latestAt ? formatRelative(poll.latestAt) : '暂无' }}
+              </text>
             </view>
             <view class="stats__item">
               <text class="stats__label">{{ isEnded ? '截止时间' : '截止时间' }}</text>
@@ -294,7 +304,8 @@ export default { name: 'PollResultPage' }
 
 <style lang="scss" scoped>
 .result {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

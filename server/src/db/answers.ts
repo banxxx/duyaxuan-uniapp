@@ -1,6 +1,8 @@
-import type { AnswerRow, Paged, PollRowJoined, SurveyAnswerOut } from '../types'
+import type { AnswerRow, Env, Paged, PollRowJoined, SurveyAnswerOut } from '../types'
 import { newId } from '../lib/id'
 import { HttpError } from '../lib/response'
+import { assertCanJoin } from './invites'
+import { notifyJoined } from './notifications'
 import { assertPollOpen } from './polls'
 
 const PAGE_SIZE = 20
@@ -29,13 +31,16 @@ export async function submitAnswer(
   poll: PollRowJoined,
   userId: string,
   content: string,
-  profileInfo: string | undefined
+  profileInfo: string | undefined,
+  env?: Env
 ): Promise<SurveyAnswerOut> {
   if (poll.type !== 'survey') throw new HttpError(400, '这不是问卷')
   assertPollOpen(poll)
+  await assertCanJoin(db, poll, userId)
 
+  // 问卷允许「跳过未答」：空提交也算一份，计入 answer_count，
+  // 只是不参与汇总（summary 那边会把空内容忽略掉）
   const text = (content ?? '').trim()
-  if (!text) throw new HttpError(400, '回答不能为空')
   if (text.length > 2000) throw new HttpError(400, '回答最多 2000 字')
 
   // 同一份问卷：不允许重复时只能有一条；允许重复时 seq 递增
@@ -60,6 +65,8 @@ export async function submitAnswer(
       .prepare('UPDATE polls SET answer_count = answer_count + 1 WHERE id = ?')
       .bind(poll.id)
   ])
+
+  await notifyJoined(db, poll, userId, 'answer', text, env)
 
   return {
     id,

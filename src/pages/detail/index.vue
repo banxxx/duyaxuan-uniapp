@@ -17,11 +17,13 @@ import {
   fetchComments,
   fetchMyAnswers,
   fetchAnswers,
-  fetchVoters
+  fetchVoters,
+  joinPoll
 } from '@/api/poll'
 import { useUserStore } from '@/stores/user'
 import { formatCreatedAt, formatRemaining, formatRelative, charCount, percent } from '@/utils/format'
-import { buildShareMessage, buildTimelineMessage } from '@/utils/share'
+import { buildShareMessage, buildTimelineMessage, syncShareMenu } from '@/utils/share'
+import { askInviteCode } from '@/utils/invite'
 import { bottomInset } from '@/utils/platform'
 import { backTo, go, replace, ROUTES } from '@/utils/router'
 
@@ -73,6 +75,9 @@ const canSeeResult = computed(() => {
   if (v === 'after_end') return isEnded.value
   return hasVoted.value
 })
+
+/** 发起人关掉「查看投票人数」后，其他人看不到任何人数（后端也会把 voterCount 置 0） */
+const showVoterCount = computed(() => !poll.value?.rules.hideVoterCount || isOwner.value)
 
 /** 上限以规则里的 maxChoice 为准（创建时设定），老数据没有该字段时按 3 兜底 */
 const maxChoice = computed(() => {
@@ -165,6 +170,7 @@ async function load() {
   try {
     const p = await fetchPoll(pollId.value)
     poll.value = p
+    syncShareMenu(p.rules.allowShare)
 
     // 问卷且我还没答过、也不是发起人 → 直接去填写页，避免出现一个空壳详情
     if (p.type === 'survey') {
@@ -203,7 +209,7 @@ async function load() {
     // 参与入口的头像叠层：投票取投票人；问卷在上面已经按回答人取过了
     if (p.type !== 'survey' && (hasVoted.value || isOwner.value)) {
       const voters = await fetchVoters(p.id)
-      voterAvatars.value = voters.slice(0, 4).map((v, i) => v.user ?? { id: `anon${i}`, name: '匿' })
+      voterAvatars.value = voters.list.slice(0, 4).map((v, i) => v.user ?? { id: `anon${i}`, name: '匿' })
     }
   } catch {
     uni.showToast({ title: '加载失败', icon: 'none' })
@@ -269,16 +275,37 @@ function onSubmit() {
 }
 
 async function doVote() {
-  if (!poll.value) return
+  const p = poll.value
+  if (!p) return
   submitting.value = true
   try {
-    const next = await votePoll(poll.value.id, selection.value, infoValue.value.trim() || undefined)
-    poll.value = next
-    myVote.value = [...selection.value]
-    infoVisible.value = false
-    go(ROUTES.detailSuccess, { id: poll.value.id })
-  } catch {
-    uni.showToast({ title: '投票失败，请重试', icon: 'none' })
+    // 邀请码模式的投票：第一次被 403 拦下时收一次码，加入后重试一次
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const next = await votePoll(
+          p.id,
+          selection.value,
+          infoValue.value.trim() || undefined,
+          { toast: false }
+        )
+        poll.value = next
+        myVote.value = [...selection.value]
+        infoVisible.value = false
+        go(ROUTES.detailSuccess, { id: p.id })
+        return
+      } catch (err) {
+        const needInvite =
+          p.rules.joinMethod === 'invite' && (err as { code?: number })?.code === 403
+        if (!needInvite || attempt > 0) throw err
+
+        const code = await askInviteCode()
+        if (!code) return
+        await joinPoll(p.id, code)
+      }
+    }
+  } catch (err) {
+    const msg = (err as Error)?.message || '投票失败，请重试'
+    uni.showToast({ title: msg, icon: 'none' })
   } finally {
     submitting.value = false
   }
@@ -345,6 +372,7 @@ function goAnswers() {
 function goShare() {
   go(ROUTES.share, { id: pollId.value })
 }
+
 
 /** 发起人右上角「···」：和 41 列表里的面板同一套动作 */
 function openManage() {
@@ -480,7 +508,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
                   <AppIcon name="chart-no-axes-column" :size="13" color="#4F46E5" />
                   <text class="standings__title-text">当前投票情况</text>
                 </view>
-                <view class="standings__count" @tap="goVoters">
+                <view v-if="showVoterCount" class="standings__count" @tap="goVoters">
                   <text class="standings__count-text">{{ poll.voterCount }} 人已投票</text>
                   <AppIcon name="chevron-right" :size="12" color="#A1A1AA" />
                 </view>
@@ -566,7 +594,9 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
                 </view>
               </view>
               <view class="participants__text">
-                <text class="participants__count">{{ poll.voterCount }} 人已投票</text>
+                <text v-if="showVoterCount" class="participants__count">
+                  {{ poll.voterCount }} 人已投票
+                </text>
                 <text class="participants__sub">查看投票记录</text>
               </view>
               <AppIcon name="chevron-right" :size="16" color="#4F46E5" />
@@ -693,7 +723,13 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             </AppButton>
           </view>
           <view class="actions__main">
-            <AppButton size="submit" icon="share-2" @tap="goShare">分享投票</AppButton>
+            <!-- 发起人关掉分享后，这一格改成「查看结果」，不留一个点不动的空按钮 -->
+            <AppButton v-if="poll.rules.allowShare" size="submit" icon="share-2" @tap="goShare">
+              分享投票
+            </AppButton>
+            <AppButton v-else size="submit" :disabled="!canSeeResult" @tap="goResult">
+              {{ canSeeResult ? '查看结果' : '结果已关闭' }}
+            </AppButton>
           </view>
         </template>
 
@@ -739,8 +775,11 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
           </view>
 
           <view v-else class="actions__half">
-            <AppButton type="subtle" size="action" icon="share-2" @tap="goShare">
+            <AppButton v-if="poll.rules.allowShare" type="subtle" size="action" icon="share-2" @tap="goShare">
               分享问卷
+            </AppButton>
+            <AppButton v-else type="subtle" size="action" icon="history" @tap="goMine">
+              我的提交
             </AppButton>
           </view>
         </template>
@@ -790,7 +829,8 @@ export default { name: 'PollDetailPage' }
 
 <style lang="scss" scoped>
 .detail {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;

@@ -17,9 +17,14 @@ import type {
   PollType
 } from '../types'
 import { newId } from '../lib/id'
+import { newInviteCode } from './invites'
 import { HttpError } from '../lib/response'
 
 const PAGE_SIZE = 20
+/** 投票记录一页多少条 */
+const VOTERS_PAGE_SIZE = 50
+/** 删除后的「撤销」窗口：界面提示 5 秒，服务端放到 10 秒，给网络留余量 */
+const RESTORE_WINDOW_MS = 10_000
 const DAY_MS = 86_400_000
 /** 东八区偏移：统计「今天新增」「按小时分布」都要按中国时区切 */
 const TZ_OFFSET = 8 * 3_600_000
@@ -28,13 +33,52 @@ const TZ_OFFSET = 8 * 3_600_000
  * 行 → 前端对象
  * ============================================================ */
 
+/**
+ * 结果可见性：发起人永远能看；其他人按 result_visibility 判断。
+ * 放在服务端算，是因为接口直接返回票数，只在前端藏等于没藏。
+ */
+function canSeeResult(
+  row: PollRowJoined,
+  mine: { optionIds?: string[]; answered?: boolean } | undefined,
+  isCreator: boolean
+): boolean {
+  if (isCreator) return true
+  if (row.result_visibility === 'always') return true
+  if (row.result_visibility === 'hidden') return false
+  if (row.result_visibility === 'after_end') return row.status === 1 || row.end_at <= Date.now()
+  // after_vote：投过/答过才给看
+  return !!(mine?.optionIds?.length || mine?.answered)
+}
+
+/** FNV-1a，用来做「同一用户每次刷新顺序一致」的打乱 */
+function hashSeed(text: string): number {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+/**
+ * 选项随机：按「投票 + 查看者」做稳定排序。
+ * 不能真随机 —— 每次渲染顺序都变的话，用户点下去的和看到的对不上。
+ * 发起人自己看原顺序，编辑选项时不会错位。
+ */
+function shuffleOptions(options: PollOptionOut[], seed: string): PollOptionOut[] {
+  return [...options].sort((a, b) => hashSeed(`${seed}:${a.id}`) - hashSeed(`${seed}:${b.id}`))
+}
+
 function toPoll(
   row: PollRowJoined,
   options: OptionRow[],
-  mine?: { optionIds?: string[]; answered?: boolean }
+  mine?: { optionIds?: string[]; answered?: boolean },
+  viewerId?: string | null
 ): PollOut {
   const type = row.type as PollType
   const isSurvey = type === 'survey'
+  const isCreator = !!viewerId && viewerId === row.creator_id
+  const resultVisible = isSurvey || canSeeResult(row, mine, isCreator)
 
   const poll: PollOut = {
     id: row.id,
@@ -59,9 +103,11 @@ function toPoll(
       id: o.id,
       title: o.title,
       desc: o.desc ?? undefined,
-      votes: o.votes_count
+      // 结果不可见时票数直接给 0，避免从接口里把票数读出来
+      votes: resultVisible ? o.votes_count : 0
     })),
-    voterCount: row.voter_count,
+    // 关闭「查看投票人数」后，非发起人拿到的就是 0；前端据此不显示人数
+    voterCount: !isSurvey && row.hide_voter_count && !isCreator ? 0 : row.voter_count,
     commentCount: row.comment_count,
     viewCount: row.view_count
   }
@@ -78,6 +124,16 @@ function toPoll(
 
   if (row.source_survey_id) poll.sourceSurveyId = row.source_survey_id
   if (row.deleted_at) poll.deletedAt = row.deleted_at
+
+  // 选项随机只对查看者生效，发起人看的是创建时的顺序
+  if (!isSurvey && row.shuffle_options && !isCreator) {
+    poll.options = shuffleOptions(poll.options, `${row.id}:${viewerId ?? 'anon'}`)
+  }
+
+  // 邀请码只给发起人，分享链接/海报要带上它
+  if (isCreator && row.join_method === 'invite' && row.invite_code) {
+    poll.inviteCode = row.invite_code
+  }
 
   // 「我投了：安吉」「N 项」—— 列表行要显示，后端一次算好，
   // 避免列表每行再单独查一次我的选择
@@ -141,10 +197,15 @@ async function hydrate(
   }
 
   return rows.map((row) =>
-    toPoll(row, optionsByPoll.get(row.id) ?? [], {
-      optionIds: myVotes.get(row.id),
-      answered: answered.has(row.id)
-    })
+    toPoll(
+      row,
+      optionsByPoll.get(row.id) ?? [],
+      {
+        optionIds: myVotes.get(row.id),
+        answered: answered.has(row.id)
+      },
+      viewerId
+    )
   )
 }
 
@@ -247,8 +308,8 @@ export async function listDiscover(
 ): Promise<Paged<PollOut>> {
   const s = statusClause(status, Date.now())
   return listPolls(db, {
-    // 私密投票不出现在发现页
-    where: `p.deleted_at IS NULL AND p.join_method != 'private'${s.sql}`,
+    // 需要邀请码的投票不出现在发现页
+    where: `p.deleted_at IS NULL AND p.join_method NOT IN ('invite', 'private')${s.sql}`,
     params: s.params,
     viewerId,
     cursor
@@ -258,16 +319,22 @@ export async function listDiscover(
 /**
  * 02 首页 · 待我投票
  *
- * 真正的「待我投票」应该来自邀请记录（谁分享给了我）。目前没有分享落库，
- * 先用「进行中、不是我发起的、我还没投」按截止时间由近到远取前几条顶上。
- * 等做了分享链路，把这里换成 invites 表的联表查询即可。
+ * 只看「别人分享给我、我还没投」的：邀请记录由 share/join 落地页写入，
+ * 比「进行中 + 我没投」精确得多 —— 后者会把全站没人邀请过我的投票都算进来。
  */
 export async function listPending(db: D1Database, userId: string, limit = 5) {
   const now = Date.now()
   const { results } = await db
     .prepare(
-      `${SELECT_JOINED}
-       WHERE p.deleted_at IS NULL
+      `SELECT p.id, p.title, p.type, p.voter_count, p.max_choice, p.anonymous,
+              p.end_at, p.hide_voter_count,
+              COALESCE(inv.nickname, u.nickname) AS inviter_name
+       FROM invites i
+       JOIN polls p ON p.id = i.poll_id
+       LEFT JOIN users u ON u.id = p.creator_id
+       LEFT JOIN users inv ON inv.id = i.inviter_id
+       WHERE i.invitee_id = ?
+         AND p.deleted_at IS NULL
          AND p.status = 0 AND p.end_at > ?
          AND p.type != 'survey'
          AND p.creator_id != ?
@@ -275,15 +342,25 @@ export async function listPending(db: D1Database, userId: string, limit = 5) {
        ORDER BY p.end_at ASC
        LIMIT ?`
     )
-    .bind(now, userId, userId, limit)
-    .all<PollRowJoined>()
+    .bind(userId, now, userId, userId, limit)
+    .all<{
+      id: string
+      title: string
+      type: string
+      voter_count: number
+      max_choice: number
+      anonymous: number
+      end_at: number
+      hide_voter_count: number
+      inviter_name: string | null
+    }>()
 
   return results.map((r) => ({
     id: r.id,
     title: r.title,
     type: r.type as 'single' | 'multiple',
-    inviterName: r.creator_name ?? '已注销用户',
-    voterCount: r.voter_count,
+    inviterName: r.inviter_name ?? '朋友',
+    voterCount: r.hide_voter_count ? 0 : r.voter_count,
     anonymous: !!r.anonymous,
     maxChoice: r.max_choice,
     endAt: r.end_at
@@ -293,18 +370,31 @@ export async function listPending(db: D1Database, userId: string, limit = 5) {
 export async function searchPolls(
   db: D1Database,
   viewerId: string | null,
-  keyword: string
+  keyword: string,
+  sort: 'latest' | 'hot' = 'latest'
 ): Promise<PollOut[]> {
   const kw = keyword.trim()
   if (!kw) return []
   const like = `%${kw.replace(/[%_]/g, (m) => `\\${m}`)}%`
+  // 最热按参与人数排；投票和问卷的参与数分在两列，加起来才能放到一起比
+  const order =
+    sort === 'hot'
+      ? '(p.voter_count + p.answer_count) DESC, p.created_at DESC'
+      : 'p.created_at DESC'
   const { results } = await db
     .prepare(
       `${SELECT_JOINED}
-       WHERE p.deleted_at IS NULL AND (p.title LIKE ? ESCAPE '\\' OR p.desc LIKE ? ESCAPE '\\')
-       ORDER BY p.created_at DESC LIMIT 30`
+       WHERE p.deleted_at IS NULL
+         AND (p.title LIKE ? ESCAPE '\\' OR p.desc LIKE ? ESCAPE '\\')
+         -- 邀请码模式的投票不进搜索结果，除非我是发起人或者已经被邀请过
+         AND (
+           p.join_method NOT IN ('invite', 'private')
+           OR p.creator_id = ?
+           OR EXISTS (SELECT 1 FROM invites i WHERE i.poll_id = p.id AND i.invitee_id = ?)
+         )
+       ORDER BY ${order} LIMIT 30`
     )
-    .bind(like, like)
+    .bind(like, like, viewerId ?? '', viewerId ?? '')
     .all<PollRowJoined>()
   return hydrate(db, results, viewerId)
 }
@@ -329,7 +419,15 @@ export async function getPoll(
   if (row.deleted_at && row.creator_id !== viewerId) throw new HttpError(404, '投票不存在')
 
   const [poll] = await hydrate(db, [row], viewerId)
-  return poll
+
+  // 「最近投票」只有详情页要，列表页不需要，所以只在这里补一次
+  const table = row.type === 'survey' ? 'answers' : 'votes'
+  const latest = await db
+    .prepare(`SELECT MAX(created_at) AS t FROM ${table} WHERE poll_id = ?`)
+    .bind(id)
+    .first<{ t: number | null }>()
+
+  return { ...poll, latestAt: latest?.t ?? undefined }
 }
 
 export async function bumpViewCount(db: D1Database, id: string): Promise<void> {
@@ -366,8 +464,15 @@ export interface PollBody {
 }
 
 const RESULT_VISIBILITIES = ['always', 'after_vote', 'after_end', 'hidden']
-const JOIN_METHODS = ['link', 'group', 'private']
+const JOIN_METHODS = ['link', 'invite']
 const MAX_OPTIONS = 20
+
+/** 参与方式只保留两档：链接可投 / 需要邀请码。
+ *  老数据里的 group、private 都算「需要邀请码」。 */
+function normalizeJoinMethod(raw: string | undefined): 'link' | 'invite' {
+  if (raw === 'invite' || raw === 'private' || raw === 'group') return 'invite'
+  return 'link'
+}
 
 function normalizeType(raw: string | undefined): PollType {
   return raw === 'survey' || raw === 'multiple' ? raw : 'single'
@@ -401,7 +506,7 @@ function normalizeRules(input: RulesInput | undefined, type: PollType, fallbackE
         : 'after_vote',
     shuffleOptions: type !== 'survey' && r.shuffleOptions ? 1 : 0,
     hideVoterCount: type !== 'survey' && r.hideVoterCount ? 1 : 0,
-    joinMethod: JOIN_METHODS.includes(r.joinMethod ?? '') ? (r.joinMethod as string) : 'link',
+    joinMethod: normalizeJoinMethod(r.joinMethod),
     profileField: r.profileField ? String(r.profileField).trim().slice(0, 20) : null,
     endAt: Number.isFinite(endAt) && endAt > 0 ? Math.trunc(endAt) : fallbackEndAt
   }
@@ -439,8 +544,8 @@ export async function createPoll(
            id, creator_id, type, title, desc, status, created_at, end_at,
            anonymous, allow_edit, allow_share, allow_comment, allow_repeat, limit_ip,
            max_choice, result_visibility, shuffle_options, hide_voter_count,
-           join_method, profile_field, source_survey_id
-         ) VALUES (?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+           join_method, invite_code, profile_field, source_survey_id
+         ) VALUES (?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .bind(
         pollId,
@@ -461,6 +566,7 @@ export async function createPoll(
         rules.shuffleOptions,
         rules.hideVoterCount,
         rules.joinMethod,
+        rules.joinMethod === 'invite' ? newInviteCode() : null,
         rules.profileField,
         body.sourceSurveyId ?? null
       )
@@ -504,7 +610,8 @@ export async function updatePoll(
            title = ?, desc = ?, end_at = ?,
            anonymous = ?, allow_edit = ?, allow_share = ?, allow_comment = ?,
            allow_repeat = ?, limit_ip = ?, max_choice = ?, result_visibility = ?,
-           shuffle_options = ?, hide_voter_count = ?, join_method = ?, profile_field = ?
+           shuffle_options = ?, hide_voter_count = ?, join_method = ?,
+           invite_code = ?, profile_field = ?
          WHERE id = ?`
       )
       .bind(
@@ -522,6 +629,7 @@ export async function updatePoll(
         rules.shuffleOptions,
         rules.hideVoterCount,
         rules.joinMethod,
+        rules.joinMethod === 'invite' ? row.invite_code ?? newInviteCode() : null,
         rules.profileField,
         pollId
       )
@@ -601,6 +709,11 @@ export async function restorePoll(
   const row = await findPollRow(db, pollId)
   if (!row) throw new HttpError(404, '投票不存在')
   if (row.creator_id !== userId) throw new HttpError(403, '只有发起人可以恢复')
+  if (!row.deleted_at) throw new HttpError(400, '这个投票没有被删除')
+  // 界面上「撤销」只给 5 秒，服务端留 10 秒余量，避免请求在路上超时
+  if (Date.now() - row.deleted_at > RESTORE_WINDOW_MS) {
+    throw new HttpError(410, '撤销时间已过，投票已删除')
+  }
   await db.prepare('UPDATE polls SET deleted_at = NULL WHERE id = ?').bind(pollId).run()
 }
 
@@ -750,19 +863,29 @@ export async function pollStats(db: D1Database, pollId: string) {
  * 14/15 投票记录
  * ============================================================ */
 
-export async function pollVoters(db: D1Database, pollId: string, viewerId: string | null) {
+export async function pollVoters(
+  db: D1Database,
+  pollId: string,
+  viewerId: string | null,
+  cursor?: string | null
+) {
   const row = await getPollRowOrThrow(db, pollId)
   const isOwner = row.creator_id === viewerId
+  // cursor 是上一页最后一条的 created_at，多取一条用来判断还有没有下一页
+  const before = cursor ? Number(cursor) : null
+  const where = before ? 'AND v.created_at < ?' : ''
+  const binds: Array<string | number> = before ? [pollId, before, VOTERS_PAGE_SIZE + 1] : [pollId, VOTERS_PAGE_SIZE + 1]
 
   const { results } = await db
     .prepare(
       `SELECT v.id, v.created_at, v.option_ids, v.profile_info,
               u.id AS user_id, u.nickname AS user_name
        FROM votes v LEFT JOIN users u ON u.id = v.user_id
-       WHERE v.poll_id = ?
-       ORDER BY v.created_at DESC LIMIT 200`
+       WHERE v.poll_id = ? ${where}
+       ORDER BY v.created_at DESC
+       LIMIT ?`
     )
-    .bind(pollId)
+    .bind(...binds)
     .all<{
       id: string
       created_at: number
@@ -778,7 +901,10 @@ export async function pollVoters(db: D1Database, pollId: string, viewerId: strin
     .all<{ id: string; title: string }>()
   const titles = new Map(optRes.results.map((o) => [o.id, o.title]))
 
-  return results.map((v) => ({
+  const hasMore = results.length > VOTERS_PAGE_SIZE
+  const page = hasMore ? results.slice(0, VOTERS_PAGE_SIZE) : results
+
+  const list = page.map((v) => ({
     id: v.id,
     createdAt: v.created_at,
     // 匿名投票不返回投票人，哪怕是发起人
@@ -790,51 +916,12 @@ export async function pollVoters(db: D1Database, pollId: string, viewerId: strin
     // 发起人要求填的个人信息只有发起人能看到
     profileInfo: isOwner ? (v.profile_info ?? undefined) : undefined
   }))
-}
 
-/* ============================================================
- * 84/86 问卷汇总
- *
- * 真正的「把自由回答归成选项」需要语义归类（大模型或聚类算法），
- * 这里先用「内容完全相同」做最小可用的分组：重复出现的回答成为候选选项，
- * 其余进未归类。等接了模型只换这一个函数。
- * ============================================================ */
-
-export async function summaryGroups(db: D1Database, pollId: string) {
-  const { results } = await db
-    .prepare(
-      `SELECT id, content, created_at FROM answers WHERE poll_id = ? ORDER BY created_at DESC`
-    )
-    .bind(pollId)
-    .all<{ id: string; content: string; created_at: number }>()
-
-  const groups = new Map<string, typeof results>()
-  for (const a of results) {
-    const key = a.content.trim()
-    const arr = groups.get(key)
-    if (arr) arr.push(a)
-    else groups.set(key, [a])
+  return {
+    list,
+    cursor: hasMore ? String(page[page.length - 1].created_at) : null,
+    hasMore,
+    total: row.voter_count
   }
-
-  const repeated = [...groups.entries()].filter(([, list]) => list.length >= 2)
-  const candidateKeys = new Set(repeated.map(([key]) => key))
-
-  const candidates = repeated
-    .sort((a, b) => b[1].length - a[1].length)
-    .map(([content, list], i) => ({
-      id: `c_${i + 1}`,
-      title: content.slice(0, 12),
-      desc: content.length > 12 ? content.slice(0, 30) : '',
-      answerCount: list.length,
-      sample: content.slice(0, 40)
-    }))
-
-  const unclassified = [...groups.entries()]
-    .filter(([key]) => !candidateKeys.has(key))
-    .flatMap(([, list]) => list)
-    .sort((a, b) => b.created_at - a.created_at)
-    .slice(0, 50)
-    .map((a) => ({ id: a.id, createdAt: a.created_at, content: a.content }))
-
-  return { candidates, unclassified }
 }
+

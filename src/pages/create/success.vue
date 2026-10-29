@@ -7,8 +7,11 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { useDraftStore } from '@/stores/draft'
-import { buildShareMessage } from '@/utils/share'
+import { useSettingsStore } from '@/stores/settings'
+import type { PushPrefs } from '@/api/notification'
+import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
+import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
 import { go, reset, ROUTES, switchTab } from '@/utils/router'
 
 /**
@@ -21,12 +24,15 @@ import { go, reset, ROUTES, switchTab } from '@/utils/router'
  * 这一版先把二维码位画出来，点「查看并分享」走系统分享。
  */
 const draft = useDraftStore()
+const settings = useSettingsStore()
 
 const poll = ref<Poll | null>(null)
 const loading = ref(true)
 const failed = ref(false)
 
 const isSurvey = ref(false)
+/** 本次是否已经同意过订阅（只影响按钮文案，不代表永久订阅） */
+const notifyOn = ref(false)
 
 async function submit() {
   loading.value = true
@@ -35,6 +41,7 @@ async function submit() {
     isSurvey.value = draft.draft.type === 'survey'
     const created = await draft.submit()
     poll.value = created
+    syncShareMenu(created.rules.allowShare)
   } catch {
     failed.value = true
   } finally {
@@ -42,7 +49,12 @@ async function submit() {
   }
 }
 
-onLoad(submit)
+onLoad(() => {
+  settings.restore()
+  // 模板 ID 提前拉好，点「开启消息提醒」时才能同步弹授权框
+  preloadSubscribeTemplates()
+  submit()
+})
 
 function goData() {
   // 创建流程已经结束：把 type/content/rules 三层从栈里清掉，
@@ -56,6 +68,27 @@ function goDetail() {
 
 function goHome() {
   switchTab(ROUTES.home)
+}
+
+/**
+ * 发布后引导发起人开一次订阅：这是「有人参与 / 有评论」通知的接收方，
+ * 放在这里比藏进设置页更容易被点。微信一次授权只换一条消息。
+ */
+function enableNotify() {
+  if (notifyOn.value) return
+  const s = settings.settings
+  const prefs: PushPrefs = {
+    enabled: s.pushEnabled,
+    joined: s.pushJoined,
+    comment: s.pushComment,
+    deadline: s.pushDeadline,
+    result: s.pushResult
+  }
+  requestSubscribe(['joined', 'comment'], prefs, (accepted) => {
+    if (!accepted.length) return
+    notifyOn.value = true
+    uni.showToast({ title: '已开启消息提醒', icon: 'none' })
+  })
 }
 
 /** 27/80 分享页：海报 + 分享渠道 */
@@ -139,6 +172,16 @@ onShareAppMessage(() =>
           <view class="actions__secondary" hover-class="actions__secondary--active" @tap="goDetail">
             <text class="actions__secondary-text">查看{{ isSurvey ? '问卷' : '投票' }}详情</text>
           </view>
+          <view
+            class="actions__secondary"
+            :class="{ 'actions__secondary--on': notifyOn }"
+            hover-class="actions__secondary--active"
+            @tap="enableNotify"
+          >
+            <text class="actions__secondary-text" :class="{ 'actions__secondary-text--on': notifyOn }">
+              {{ notifyOn ? '已开启消息提醒' : '开启消息提醒' }}
+            </text>
+          </view>
           <view class="actions__secondary" hover-class="actions__secondary--active" @tap="goHome">
             <text class="actions__secondary-text">返回首页</text>
           </view>
@@ -154,7 +197,8 @@ export default { name: 'CreateSuccessPage' }
 
 <style lang="scss" scoped>
 .published {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -367,12 +411,22 @@ export default { name: 'CreateSuccessPage' }
     &--active {
       background: $subtle;
     }
+
+    /* 已经同意过订阅：按钮变成「已开启」，视觉上不再催用户点 */
+    &--on {
+      background: $accent-soft;
+      border-color: $accent;
+    }
   }
 
   &__secondary-text {
     font-size: 15px;
     font-weight: 600;
     color: $ink;
+
+    &--on {
+      color: $accent;
+    }
   }
 }
 </style>

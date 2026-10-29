@@ -6,6 +6,7 @@ import AppSheet from '@/components/base/AppSheet.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import MenuRow from '@/components/business/MenuRow.vue'
 import { useUserStore } from '@/stores/user'
+import { fetchDevAccounts } from '@/api/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go, reset } from '@/utils/router'
@@ -38,6 +39,35 @@ const meta = computed(() => {
 
 /** 两个确认弹层 */
 const sheet = ref<'logout' | 'cache' | null>(null)
+
+/**
+ * 开发工具：长按「关于我们」切换测试账号
+ *
+ * 后端 /auth/dev-login 只在 .dev.vars 配了 DEV_LOGIN=true 时存在，
+ * 这里再用 import.meta.env.DEV 挡一层 —— 生产包里连请求都不会发。
+ * 配合 npm run seed 灌入的账号，可以在一台设备上来回切发起人/参与者。
+ */
+async function openDevAccounts() {
+  if (!import.meta.env.DEV) return
+  const accounts = await fetchDevAccounts().catch(() => [])
+  if (!accounts.length) {
+    uni.showToast({ title: '没有可切换的测试账号', icon: 'none' })
+    return
+  }
+  uni.showActionSheet({
+    itemList: accounts.map((a) => a.nickname || a.id),
+    success: async (r) => {
+      const target = accounts[r.tapIndex]
+      if (!target || target.id === user.profile?.id) return
+      try {
+        await user.loginAs(target.id)
+        reset(ROUTES.home)
+      } catch {
+        // 失败原因由请求层 toast
+      }
+    }
+  })
+}
 
 onMounted(() => settings.restore())
 
@@ -114,12 +144,15 @@ function confirmClear() {
             <view class="group__sep" />
             <MenuRow title="用户协议" icon="file-text" @tap="open('/pages/settings/doc?type=terms')" />
             <view class="group__sep" />
-            <MenuRow
-              title="关于我们"
-              icon="info"
-              :value="`v${version}`"
-              @tap="open('/pages/settings/doc?type=about')"
-            />
+            <!-- 长按「关于我们」切换测试账号：只在开发构建里生效，线上没有这个后门 -->
+            <view @longpress="openDevAccounts">
+              <MenuRow
+                title="关于我们"
+                icon="info"
+                :value="`v${version}`"
+                @tap="open('/pages/settings/doc?type=about')"
+              />
+            </view>
           </view>
         </view>
 
@@ -175,7 +208,8 @@ export default { name: 'SettingsPage' }
 
 <style lang="scss" scoped>
 .settings {
-  min-height: 100vh;
+  /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
+  height: 100vh;
   background: $bg;
   display: flex;
   flex-direction: column;
