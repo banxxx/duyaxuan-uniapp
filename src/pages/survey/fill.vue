@@ -98,7 +98,7 @@ async function doSubmit() {
 }
 
 onShareAppMessage(() =>
-  poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }
+  poll.value ? buildShareMessage(poll.value) : { title: '杜雅轩', path: '/pages/index/index' }
 )
 </script>
 

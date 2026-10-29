@@ -193,7 +193,7 @@ function renderPoster(qrPath: string): Promise<void> {
 
     ctx.setFillStyle('#4F46E5')
     ctx.setFontSize(12)
-    ctx.fillText('投票吧 · 扫码参与', W / 2, 412)
+    ctx.fillText('杜雅轩 · 扫码参与', W / 2, 412)
 
     // 老版 canvas 的 draw 回调不保证图片已解码完，稍等一帧再导出
     ctx.draw(false, () => setTimeout(resolve, 150))
@@ -258,9 +258,9 @@ async function savePoster() {
 }
 
 onShareAppMessage(() =>
-  poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }
+  poll.value ? buildShareMessage(poll.value) : { title: '杜雅轩', path: '/pages/index/index' }
 )
-onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: '投票吧' }))
+onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: '杜雅轩' }))
 </script>
 
 <template>

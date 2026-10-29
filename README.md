@@ -1,4 +1,4 @@
-# 投票吧 · duyaxuan-uniapp
+# 杜雅轩 · duyaxuan-uniapp
 
 微信 / QQ / 抖音三端小程序，一套代码。设计稿 `E:/Projects/Pen/duyaxuan.pen`（96 屏）在 `src/pages` 下收敛成 36 个页面。
 

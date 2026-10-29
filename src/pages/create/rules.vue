@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import type { JoinMethod, ResultVisibility } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
@@ -32,6 +32,37 @@ const isSurvey = computed(() => draft.draft.type === 'survey')
 /** 单选 / 多选分段 */
 const typeMode = ref<'single' | 'multiple'>('single')
 const maxChoice = ref(3)
+
+/**
+ * 多选的「最多可选」上限 = 用户实际填写的选项数。
+ *
+ * 以前写死 9，选项只有 3 个时也能加到 9，详情页就出现「最多选 9 项」但只有 3 个可勾，
+ * 规则自相矛盾。空标题的选项不会提交，计数时一并排除。
+ * 下限固定 2：多选的上限是 1 的话，和单选没区别。
+ */
+const optionCount = computed(
+  () => draft.draft.options.filter((o) => o.title.trim()).length
+)
+const maxChoiceMax = computed(() => Math.max(2, optionCount.value))
+
+/**
+ * 把 maxChoice 收进 [2, 选项数] 区间；选项增删、回填草稿后都要调一次。
+ * 顺手写回草稿：不写的话，回上一步改完选项再进来，用户刚调的上限会丢。
+ */
+function clampMaxChoice() {
+  const next = Math.min(Math.max(2, maxChoice.value), maxChoiceMax.value)
+  if (next === maxChoice.value) return
+  maxChoice.value = next
+  draft.patchRules({ maxChoice: next })
+}
+
+function stepMaxChoice(delta: number) {
+  maxChoice.value = Math.min(Math.max(2, maxChoice.value + delta), maxChoiceMax.value)
+  draft.patchRules({ maxChoice: maxChoice.value })
+}
+
+// 从内容页返回后如果删过选项，草稿里的上限可能比选项数还大
+watch(optionCount, clampMaxChoice)
 
 /** 通用弹层 */
 type SheetKind = 'join' | 'result' | 'profile' | null
@@ -70,6 +101,7 @@ onLoad(() => {
   draft.restore()
   typeMode.value = draft.draft.type === 'multiple' ? 'multiple' : 'single'
   maxChoice.value = draft.draft.rules.maxChoice ?? 3
+  clampMaxChoice()
   profileTitle.value = draft.draft.rules.profileField ?? ''
   // 回填截止时间：草稿里已有 endAt 就按它和「现在 + 1/3/7 天」比对，
   // 对不上任何快捷档就落到「自定义」，否则用户会看到选中了「3 天」但时间对不上
@@ -149,8 +181,10 @@ function cancel() {
 function publish() {
   if (typeMode.value === 'multiple') draft.draft.type = 'multiple'
   else if (draft.draft.type !== 'survey') draft.draft.type = 'single'
-  // 上限写进规则，详情页和待办卡都读这一个值，不在各处再猜
-  draft.draft.rules.maxChoice = typeMode.value === 'multiple' ? maxChoice.value : 1
+  // 上限写进规则，详情页和待办卡都读这一个值，不在各处再猜。
+  // 发布前再收一次口，防止选项在别处被删到比上限还少。
+  draft.draft.rules.maxChoice =
+    typeMode.value === 'multiple' ? Math.min(maxChoice.value, maxChoiceMax.value) : 1
   draft.patch({})
   go(ROUTES.createSuccess)
 }
@@ -210,28 +244,34 @@ function publish() {
               <view
                 class="seg__item"
                 :class="{ 'seg__item--on': typeMode === 'multiple' }"
-                @tap="typeMode = 'multiple'"
+                @tap="typeMode = 'multiple'; clampMaxChoice()"
               >
                 <text class="seg__text" :class="{ 'seg__text--on': typeMode === 'multiple' }">多选</text>
               </view>
             </view>
           </RuleRow>
 
-          <RuleRow v-if="typeMode === 'multiple'" title="最多可选" desc="超过上限时禁止继续勾选">
+          <RuleRow
+            v-if="typeMode === 'multiple'"
+            title="最多可选"
+            :desc="`最多 ${maxChoiceMax} 项，超过上限时禁止继续勾选`"
+          >
             <!-- 设计稿 31：Stepper − 值 +，而不是一排数字块 -->
             <view class="stepper">
               <view
                 class="stepper__btn"
-                hover-class="stepper__btn--active"
-                @tap="maxChoice = Math.max(2, maxChoice - 1)"
+                :class="{ 'stepper__btn--off': maxChoice <= 2 }"
+                :hover-class="maxChoice <= 2 ? 'none' : 'stepper__btn--active'"
+                @tap="stepMaxChoice(-1)"
               >
                 <AppIcon name="minus" :size="13" color="#71717A" />
               </view>
               <text class="stepper__value">{{ maxChoice }}</text>
               <view
                 class="stepper__btn"
-                hover-class="stepper__btn--active"
-                @tap="maxChoice = Math.min(9, maxChoice + 1)"
+                :class="{ 'stepper__btn--off': maxChoice >= maxChoiceMax }"
+                :hover-class="maxChoice >= maxChoiceMax ? 'none' : 'stepper__btn--active'"
+                @tap="stepMaxChoice(1)"
               >
                 <AppIcon name="plus" :size="13" color="#09090B" />
               </view>
@@ -741,6 +781,11 @@ export default { name: 'CreateRulesPage' }
 
     &--active {
       opacity: 0.6;
+    }
+
+    /* 到边界了：视觉上变灰，同时 hover-class 已被换成 none，不会再给按压反馈 */
+    &--off {
+      opacity: 0.3;
     }
   }
 

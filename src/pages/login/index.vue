@@ -4,10 +4,9 @@
     <view class="login__content">
       <view class="login__top">
         <view class="login__brand">
-          <view class="login__mark">
-            <AppIcon name="vote" :size="21" color="#FFFFFF" :stroke-width="2" />
-          </view>
-          <text class="login__name">投票吧</text>
+          <!-- 品牌标直接用小程序头像原图：它本身是方图，圆角靠容器裁 -->
+          <image class="login__mark" src="/static/logo.png" mode="aspectFill" />
+          <text class="login__name">杜雅轩</text>
         </view>
 
         <view class="login__hero">
@@ -168,10 +167,10 @@ export default { name: 'LoginPage' }
     width: 40px;
     height: 40px;
     border-radius: 12px;
-    background: $accent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    /* 原图是不透明的方图，圆角只能靠裁；flex-shrink 防止窄屏被文字挤扁 */
+    overflow: hidden;
+    flex-shrink: 0;
+    background: $surface;
   }
 
   &__name {

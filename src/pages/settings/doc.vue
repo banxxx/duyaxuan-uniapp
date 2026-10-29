@@ -39,7 +39,7 @@ const DOCS: Record<'terms' | 'privacy', Section[]> = {
   terms: [
     {
       h: '一、协议的适用范围',
-      p: '本协议是你与「投票吧」小程序运营方（以下简称「我们」）之间，就使用本小程序及相关服务所订立的协议。你通过微信授权登录、创建或参与投票、使用本服务的其他功能，即表示你已完整阅读并同意本协议的全部内容。若你不同意本协议的任何条款，请停止使用本服务。'
+      p: '本协议是你与「杜雅轩」小程序运营方（以下简称「我们」）之间，就使用本小程序及相关服务所订立的协议。你通过微信授权登录、创建或参与投票、使用本服务的其他功能，即表示你已完整阅读并同意本协议的全部内容。若你不同意本协议的任何条款，请停止使用本服务。'
     },
     {
       h: '二、服务内容',
@@ -217,10 +217,8 @@ function open(url: string) {
       <!-- 48 关于我们 -->
       <view v-if="isAbout" class="doc__content doc__content--about" :style="{ paddingBottom: bottomInset(20) }">
         <view class="logo">
-          <view class="logo__mark">
-            <AppIcon name="vote" :size="34" color="#FFFFFF" :stroke-width="2" />
-          </view>
-          <text class="logo__name">投票吧</text>
+          <image class="logo__mark" src="/static/logo.png" mode="aspectFill" />
+          <text class="logo__name">杜雅轩</text>
           <text class="logo__ver">版本 {{ VERSION }}</text>
         </view>
 
@@ -254,7 +252,7 @@ function open(url: string) {
           </view>
         </view>
 
-        <text class="doc__copy">© 2026 投票吧 · 保留所有权利</text>
+        <text class="doc__copy">© 2026 杜雅轩 · 保留所有权利</text>
       </view>
 
       <!-- 47 / 52 协议正文 -->
@@ -340,10 +338,9 @@ export default { name: 'DocPage' }
     width: 72px;
     height: 72px;
     border-radius: 20px;
-    background: $accent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    /* 原图自带蓝底，直接铺满，靠圆角裁出应用图标的样子 */
+    overflow: hidden;
+    background: $surface;
   }
 
   &__name {

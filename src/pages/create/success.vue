@@ -7,15 +7,9 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { useDraftStore } from '@/stores/draft'
-import { useSettingsStore } from '@/stores/settings'
-import type { PushPrefs } from '@/api/notification'
+import { fetchPollQrcode } from '@/api/poll'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
-import {
-  hasSubscribeTemplates,
-  preloadSubscribeTemplates,
-  requestSubscribe
-} from '@/utils/subscribe'
 import { go, reset, ROUTES, switchTab } from '@/utils/router'
 
 /**
@@ -24,21 +18,23 @@ import { go, reset, ROUTES, switchTab } from '@/utils/router'
  * 提交发生在进入本页时（onLoad），不是点「发布」那一刻——
  * 这样从规则页退回来还能改，不会产生半成品数据。
  *
- * 海报位保留但不生成图：小程序端生成海报要 canvas + 授权，属于后续迭代；
- * 这一版先把二维码位画出来，点「查看并分享」走系统分享。
+ * 缩略海报用真实小程序码（后端生成、R2 缓存），拿不到时才退回手绘占位；
+ * 点「查看并分享」进 27/80 海报页，可以保存大图。
+ *
+ * 这里不再放「开启消息提醒」：订阅消息是一次授权换一条，入口在
+ * 「设置 · 消息通知」里更合适，发布成功页留一个按钮反而和三个出口抢注意力。
  */
 const draft = useDraftStore()
-const settings = useSettingsStore()
 
 const poll = ref<Poll | null>(null)
 const loading = ref(true)
 const failed = ref(false)
 
 const isSurvey = ref(false)
-/** 本次是否已经同意过订阅（只影响按钮文案，不代表永久订阅） */
-const notifyOn = ref(false)
-/** 服务端配了订阅模板才显示入口，否则点了也不会弹授权框 */
-const canNotify = ref(false)
+
+/** 缩略图里的小程序码 */
+const qrUrl = ref('')
+const qrLoading = ref(false)
 
 async function submit() {
   loading.value = true
@@ -48,6 +44,7 @@ async function submit() {
     const created = await draft.submit()
     poll.value = created
     syncShareMenu(created.rules.allowShare)
+    loadQr(created.id)
   } catch {
     failed.value = true
   } finally {
@@ -55,12 +52,22 @@ async function submit() {
   }
 }
 
+/**
+ * 小程序码单独请求：生成要调一次微信接口，慢的时候一两秒，
+ * 不能让它挡住「已发布」的文案和按钮先出来。
+ */
+async function loadQr(id: string) {
+  qrLoading.value = true
+  try {
+    qrUrl.value = await fetchPollQrcode(id)
+  } catch {
+    // 没配 AppID / 没开 R2 / 网络问题都退回占位图案，不影响本页
+  } finally {
+    qrLoading.value = false
+  }
+}
+
 onLoad(() => {
-  settings.restore()
-  // 模板 ID 提前拉好，点「开启消息提醒」时才能同步弹授权框
-  preloadSubscribeTemplates().then(() => {
-    canNotify.value = hasSubscribeTemplates()
-  })
   submit()
 })
 
@@ -78,35 +85,13 @@ function goHome() {
   switchTab(ROUTES.home)
 }
 
-/**
- * 发布后引导发起人开一次订阅：这是「有人参与 / 有评论」通知的接收方，
- * 放在这里比藏进设置页更容易被点。微信一次授权只换一条消息。
- */
-function enableNotify() {
-  if (notifyOn.value) return
-  const s = settings.settings
-  const prefs: PushPrefs = {
-    enabled: s.pushEnabled,
-    joined: s.pushJoined,
-    comment: s.pushComment,
-    deadline: s.pushDeadline,
-    result: s.pushResult,
-    updated: s.pushUpdated
-  }
-  requestSubscribe(['joined', 'comment'], prefs, (accepted) => {
-    if (!accepted.length) return
-    notifyOn.value = true
-    uni.showToast({ title: '已开启消息提醒', icon: 'none' })
-  })
-}
-
 /** 27/80 分享页：海报 + 分享渠道 */
 function goShare() {
   if (poll.value) go(ROUTES.share, { id: poll.value.id })
 }
 
 onShareAppMessage(() =>
-  poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }
+  poll.value ? buildShareMessage(poll.value) : { title: '杜雅轩', path: '/pages/index/index' }
 )
 </script>
 
@@ -148,9 +133,20 @@ onShareAppMessage(() =>
             </view>
             <view class="poster__thumb-body">
               <view class="poster__qr">
-                <view class="poster__qr-corner poster__qr-corner--tl" />
-                <view class="poster__qr-corner poster__qr-corner--tr" />
-                <view class="poster__qr-corner poster__qr-corner--bl" />
+                <!-- 真小程序码；生成中留白，失败才退回三个定位角的手绘占位 -->
+                <image
+                  v-if="qrUrl"
+                  class="poster__qr-img"
+                  :src="qrUrl"
+                  mode="aspectFit"
+                  show-menu-by-longpress
+                />
+                <view v-else-if="qrLoading" class="poster__qr-spinner" />
+                <template v-else>
+                  <view class="poster__qr-corner poster__qr-corner--tl" />
+                  <view class="poster__qr-corner poster__qr-corner--tr" />
+                  <view class="poster__qr-corner poster__qr-corner--bl" />
+                </template>
               </view>
               <text class="poster__thumb-scan">扫码{{ isSurvey ? '填写' : '参与' }}</text>
             </view>
@@ -180,17 +176,6 @@ onShareAppMessage(() =>
           </view>
           <view class="actions__secondary" hover-class="actions__secondary--active" @tap="goDetail">
             <text class="actions__secondary-text">查看{{ isSurvey ? '问卷' : '投票' }}详情</text>
-          </view>
-          <view
-            v-if="canNotify"
-            class="actions__secondary"
-            :class="{ 'actions__secondary--on': notifyOn }"
-            hover-class="actions__secondary--active"
-            @tap="enableNotify"
-          >
-            <text class="actions__secondary-text" :class="{ 'actions__secondary-text--on': notifyOn }">
-              {{ notifyOn ? '已开启消息提醒' : '开启消息提醒' }}
-            </text>
           </view>
           <view class="actions__secondary" hover-class="actions__secondary--active" @tap="goHome">
             <text class="actions__secondary-text">返回首页</text>
@@ -294,13 +279,31 @@ export default { name: 'CreateSuccessPage' }
     gap: 3px;
   }
 
-  /* 二维码占位：三个定位角 + 空白，真实二维码后续用 canvas 生成 */
+  /* 二维码：真码 40×40；拿不到时退回三个定位角的占位 */
   &__qr {
     width: 40px;
     height: 40px;
     position: relative;
     background: $surface;
     border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__qr-img {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* 生成中：白底上转一个小圈，避免先闪一下占位再换成真码 */
+  &__qr-spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid $line;
+    border-top-color: $accent;
+    animation: qr-spin 0.8s linear infinite;
   }
 
   &__qr-corner {
@@ -421,22 +424,18 @@ export default { name: 'CreateSuccessPage' }
     &--active {
       background: $subtle;
     }
-
-    /* 已经同意过订阅：按钮变成「已开启」，视觉上不再催用户点 */
-    &--on {
-      background: $accent-soft;
-      border-color: $accent;
-    }
   }
 
   &__secondary-text {
     font-size: 15px;
     font-weight: 600;
     color: $ink;
+  }
+}
 
-    &--on {
-      color: $accent;
-    }
+@keyframes qr-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

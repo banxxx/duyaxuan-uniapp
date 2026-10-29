@@ -12,7 +12,7 @@ import { flushScheduled } from './db/notifications'
 import type { Env } from './types'
 
 /**
- * 投票吧 API
+ * 杜雅轩 API
  *
  * 路由前缀和前端 src/api/*.ts 里的路径一一对应，没有额外的 /v1 ——
  * 小程序端的 VITE_API_BASE_URL 直接填 https://<worker>.workers.dev 就行。

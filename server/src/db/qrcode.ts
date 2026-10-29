@@ -18,6 +18,20 @@ import type { Env } from '../types'
 /* access_token / env_version 在 lib/wx.ts，和订阅消息共用一份缓存 */
 
 /**
+ * 小程序码的外观
+ *
+ * getwxacodeunlimit 只开放两个外观参数：line_color（码点颜色）和
+ * is_hyaline（透明底）。圆点、渐变、中心 logo 都改不了 —— 小程序码是微信
+ * 服务端渲染的，客户端拿到的就是一张位图，能自定义的只有这两项。
+ *
+ * 所以这里做「品牌色 + 透明底」：码点用主色靛蓝，背景透明，
+ * 放在白色卡片/海报上比默认纯黑更贴合界面，扫码识别率不受影响。
+ */
+const LINE_COLOR = { r: 79, g: 70, b: 229 } // #4F46E5
+/** 外观版本：改了配色/透明底必须带上，否则会命中 R2 里的旧图 */
+const STYLE_TAG = 'indigo'
+
+/**
  * 拿这条投票的小程序码，返回可访问的相对地址 `/files/qrcodes/...`
  *
  * 同一 poll + 同一环境只生成一次，之后直接读 R2 —— 每个码都要调一次微信接口，
@@ -35,7 +49,7 @@ export async function getPollQrcode(
   const version = envVersion(env.WX_ENV_VERSION)
   // 邀请码进 scene：扫进来直接带上，不用让用户手输
   const scene = inviteCode ? `${pollId}-${inviteCode}` : pollId
-  const key = `${QRCODE_PREFIX}${pollId}-${version}${inviteCode ? `-${inviteCode}` : ''}.png`
+  const key = `${QRCODE_PREFIX}${pollId}-${version}-${STYLE_TAG}${inviteCode ? `-${inviteCode}` : ''}.png`
 
   const cached = await bucket.head(key)
   if (cached) return publicUrl(key)
@@ -65,7 +79,8 @@ export async function getPollQrcode(
           env_version: version,
           width: 430,
           auto_color: false,
-          is_hyaline: false
+          line_color: LINE_COLOR,
+          is_hyaline: true
         })
       }
     )

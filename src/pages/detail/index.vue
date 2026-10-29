@@ -423,8 +423,8 @@ function openManage() {
   })
 }
 
-onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '投票吧', path: '/pages/index/index' }))
-onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: '投票吧' }))
+onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '杜雅轩', path: '/pages/index/index' }))
+onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: '杜雅轩' }))
 </script>
 
 <template>

@@ -128,6 +128,10 @@ const grid = computed<DayCell[][]>(() => {
   // 补齐到整周，最后一行不留半截
   while (cells.length % 7 !== 0) cells.push({ key: `tail${cells.length}`, day: null, disabled: true, selected: false })
 
+  // 固定 6 行（42 格）：不同月份只占 4~6 行，行数一变弹层高度就跟着跳，
+  // 切月份时整个面板会上下弹一下。补满 42 格后每屏都是同样的高度。
+  while (cells.length < 42) cells.push({ key: `tail${cells.length}`, day: null, disabled: true, selected: false })
+
   const weeks: DayCell[][] = []
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
   return weeks
@@ -183,34 +187,28 @@ const quickActive = computed(() => {
   return QUICK_TIMES.find((t) => t === `${hh}:${mm}`) ?? ''
 })
 
-/* 滚轮：只渲染当前值上下各两格，靠 CSS 定位到中间，不做无限循环 */
-const hourList = computed(() => {
-  const base = hour.value
-  return [-2, -1, 0, 1, 2].map((offset) => {
-    const v = (base + offset + 24) % 24
-    return { value: v, label: String(v).padStart(2, '0'), offset }
-  })
-})
-
-const minuteList = computed(() => {
-  const base = minute.value
-  return [-2, -1, 0, 1, 2].map((offset) => {
-    const v = (base + offset + 60) % 60
-    return { value: v, label: String(v).padStart(2, '0'), offset }
-  })
-})
-
 /**
- * 点上下相邻格就前进/后退一格。
- * 设计稿的滚轮是滑动选择，小程序里手写惯性滚动容易和页面滚动打架，
- * 这里用「点一下走一格」——行为可预期，也不会误触。
+ * 滚轮数据：小时 0–23、分钟 0–59。
+ *
+ * 之前是自绘的「点一下走一格」——做不了惯性滚动，手感很别扭。
+ * 现在换成原生 <picker-view>：滚动、惯性、吸附都由平台负责，
+ * 停稳后抛 change，把列下标写回 picked 就行。
+ * 列下标和值一一对应（小时列第 0 项就是 0 点），不用再算偏移。
  */
-function stepHour(delta: number) {
-  setTime((hour.value + delta + 24) % 24, minute.value)
-}
+const HOURS = Array.from({ length: 24 }, (_, i) => i)
+const MINUTES = Array.from({ length: 60 }, (_, i) => i)
 
-function stepMinute(delta: number) {
-  setTime(hour.value, (minute.value + delta + 60) % 60)
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** picker-view 的受控值：两列各自停在哪个下标 */
+const wheelValue = computed(() => [hour.value, minute.value])
+
+/** 滚动停稳后触发；和当前值相同就跳过，避免多余的响应式更新 */
+function onWheelChange(e: { detail: { value: number[] } }) {
+  const [h, m] = e.detail?.value ?? []
+  if (typeof h !== 'number' || typeof m !== 'number') return
+  if (h === hour.value && m === minute.value) return
+  setTime(h, m)
 }
 
 /* ---------------- 输出 ---------------- */
@@ -356,50 +354,33 @@ function onConfirm() {
         </view>
 
         <view class="wheel">
+          <!-- 选中带自己画：原生 indicator 的背景层可能盖住文字，这里只借它的高度 -->
           <view class="wheel__band" />
 
-          <view class="wheel__col">
-            <view
-              v-for="h in hourList"
-              :key="`h${h.offset}`"
-              class="wheel__cell"
-              :class="{ 'wheel__cell--mid': h.offset === 0 }"
-              @tap="h.offset !== 0 && stepHour(h.offset)"
-            >
-              <text
-                class="wheel__text"
-                :class="{
-                  'wheel__text--mid': h.offset === 0,
-                  'wheel__text--near': Math.abs(h.offset) === 1
-                }"
-              >{{ h.label }}</text>
-            </view>
-          </view>
+          <picker-view
+            class="wheel__view"
+            :value="wheelValue"
+            indicator-style="height: 48px; border: none; background: transparent;"
+            @change="onWheelChange"
+          >
+            <picker-view-column>
+              <view v-for="h in HOURS" :key="h" class="wheel__item">
+                <text class="wheel__text" :class="{ 'wheel__text--on': h === hour }">{{ pad(h) }}</text>
+              </view>
+            </picker-view-column>
+            <picker-view-column>
+              <view v-for="m in MINUTES" :key="m" class="wheel__item">
+                <text class="wheel__text" :class="{ 'wheel__text--on': m === minute }">{{ pad(m) }}</text>
+              </view>
+            </picker-view-column>
+          </picker-view>
 
           <text class="wheel__colon">:</text>
-
-          <view class="wheel__col">
-            <view
-              v-for="m in minuteList"
-              :key="`m${m.offset}`"
-              class="wheel__cell"
-              :class="{ 'wheel__cell--mid': m.offset === 0 }"
-              @tap="m.offset !== 0 && stepMinute(m.offset)"
-            >
-              <text
-                class="wheel__text"
-                :class="{
-                  'wheel__text--mid': m.offset === 0,
-                  'wheel__text--near': Math.abs(m.offset) === 1
-                }"
-              >{{ m.label }}</text>
-            </view>
-          </view>
         </view>
 
         <view class="hint">
           <AppIcon name="move-vertical" :size="11" color="#A1A1AA" />
-          <text class="hint__text">点上下两侧的数字调整小时与分钟</text>
+          <text class="hint__text">上下滑动调整小时与分钟</text>
         </view>
 
         <view class="dtp__confirm" hover-class="dtp__confirm--active" @tap="onConfirm">
@@ -744,15 +725,15 @@ export default { name: 'AppDateTimePicker' }
   }
 }
 
-/* 滚轮：186 高，中间一条 164×48 的 $accent-soft 选中带 */
+/* 滚轮：186 高，原生 picker-view 负责滚动与吸附，中间一条 164×48 的选中带 */
 .wheel {
   position: relative;
   height: 186px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
 
+  /* 选中带在底层，文字在 picker-view 里，永远压在上面 */
   &__band {
     position: absolute;
     top: 50%;
@@ -763,57 +744,53 @@ export default { name: 'AppDateTimePicker' }
     border-radius: 12px;
     background: $accent-soft;
     pointer-events: none;
+    z-index: 0;
   }
 
-  &__col {
+  /* 宽度就是选中带的宽度，两列各占一半 */
+  &__view {
     position: relative;
-    width: 72px;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
+    z-index: 1;
+    width: 164px;
+    height: 186px;
+    /* 宿主默认可能带白底，会盖住下面的选中带 */
+    background: transparent;
   }
 
-  &__cell {
-    height: 40px;
+  /* 每格 48，和 indicator 同高，停稳后正好落在带子中间 */
+  &__item {
+    height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform $dur-fast $ease-both;
-
-    &--mid {
-      height: 52px;
-    }
   }
 
   &__text {
     font-size: 18px;
     color: $faint;
     font-family: $font-num;
-    transition: font-size $dur-fast $ease-both, color $dur-fast $ease-both;
+    transition:
+      color $dur-fast $ease-both,
+      font-size $dur-fast $ease-both;
 
-    /* 相邻一格稍深，远处的更淡，制造纵深 */
-    &--near {
-      color: $muted;
-    }
-
-    /* 中间：24/700 $accent-ink */
-    &--mid {
+    /* 当前停在中间的那一格：24/700 $accent-ink */
+    &--on {
       font-size: 24px;
       font-weight: 700;
       color: $accent-ink;
     }
   }
 
+  /* 冒号浮在两列中间；不能吃触摸事件，否则会挡住滚轮 */
   &__colon {
-    /* 选中带是绝对定位的，会盖住静态流里的元素 —— 冒号必须自己也定位才能浮上来 */
-    position: relative;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     font-size: 20px;
     font-weight: 700;
     color: $ink;
-    margin-top: -4px;
+    pointer-events: none;
   }
 }
 
