@@ -1418,6 +1418,12 @@ export default { name: 'PollDetailPage' }
     font-size: 12px;
     color: $muted;
     line-height: 1.5;
+    /* 预览只露两行：500 字的长评论不能把详情卡撑开，全文去讨论区看 */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    word-break: break-word;
   }
 }
 

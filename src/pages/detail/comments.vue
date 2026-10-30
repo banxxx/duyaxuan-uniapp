@@ -16,7 +16,7 @@ import {
 } from '@/api/poll'
 import { useUserStore } from '@/stores/user'
 import { formatRelative } from '@/utils/format'
-import { bottomInset } from '@/utils/platform'
+import { bottomInset, getSafeArea } from '@/utils/platform'
 import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
 
 /**
@@ -40,8 +40,15 @@ const tab = ref<'latest' | 'hot' | 'mine'>('latest')
 const draft = ref('')
 const sending = ref(false)
 const pollId = ref('')
-/** 回复谁：界面上的「回复 xx」提示条 + 提交时带 replyToId */
+/**
+ * 回复谁：不单独显示「回复 xx」提示条，也不把 @某人 真的写进输入框 ——
+ * 只在 placeholder 里用灰字显示 @某人，一开始打字就自然消失。
+ * 提交时带 replyToId，列表里会显示成「回复 @xx」。
+ */
 const replyTo = ref<{ id: string; name: string } | null>(null)
+
+/** 输入框焦点：点「回复」后把光标送回输入框 */
+const composerFocus = ref(false)
 
 /**
  * 键盘高度。
@@ -54,24 +61,52 @@ const keyboardHeight = ref(0)
 /** 放大后的编辑框（输入框右侧的「放大」） */
 const editorOpen = ref(false)
 const editorFocus = ref(false)
+/** 收起中：等键盘收完再卸载 textarea，避免原生层残留（见 closeEditor） */
+const editorClosing = ref(false)
+let closeTimer: ReturnType<typeof setTimeout> | null = null
+/** 收起瞬间冻结编辑框尺寸，键盘回落时不再来回改 textarea 高度 */
+const closingInset = ref(0)
+const closingInputHeight = ref('')
 
-/** 编辑框按内容长高：3 行起步，最多 8 行，再长就在框里滚 */
-const EDITOR_MIN_ROWS = 3
-const EDITOR_MAX_ROWS = 8
-const EDITOR_LINE_HEIGHT = 22
-/** 上下内边距，高度是 border-box，要一起算进去 */
-const EDITOR_PAD_Y = 24
-/** 一行大约放多少个字（15px 字号、350 宽的面板）—— 只用来估高度，不要求精确 */
-const EDITOR_COLS = 20
+const { statusBarHeight, navBarHeight, capsuleInset, safeBottom } = getSafeArea()
 
-const editorHeight = computed(() => {
-  let lines = 0
-  for (const line of draft.value.split('\n')) {
-    lines += Math.max(1, Math.ceil(line.length / EDITOR_COLS))
+/**
+ * 放大后的编辑框铺满整屏（和 B 站的全屏输入一样），高度按窗口实际尺寸算：
+ * 顶部是一条和导航栏等高的工具行（放下收起键，顺便让开右上角系统胶囊），
+ * 底部扣掉键盘（或安全区）和一条工具条。
+ *
+ * 注意：收起键必须放在 textarea 的盒子外面。textarea 是原生组件，
+ * 层级高于普通 view，叠在它上面的按钮在部分安卓机上收不到点击 ——
+ * 之前点收起没反应就是这个原因，所以这里单独给它一行，而不是绝对定位盖上去。
+ *
+ * 样式里的 px 构建时会按 390 设计稿换算成 rpx，所以工具条高度这里也要
+ * 用同一个系数换算成设备 px，否则文字框会差出几十像素。
+ */
+const winInfo = (() => {
+  try {
+    return uni.getSystemInfoSync() as { windowHeight?: number; windowWidth?: number }
+  } catch {
+    return {}
   }
-  const rows = Math.min(EDITOR_MAX_ROWS, Math.max(EDITOR_MIN_ROWS, lines))
-  return `${rows * EDITOR_LINE_HEIGHT + EDITOR_PAD_Y}px`
+})()
+const windowHeight = winInfo.windowHeight ?? 667
+const designScale = (winInfo.windowWidth ?? 375) / 390
+const EDITOR_FOOT_H = 56 * designScale
+
+const editorInputHeight = computed(() => {
+  // 键盘弹起时让开键盘，收起时让开底部小横条
+  const bottom = keyboardHeight.value > 0 ? keyboardHeight.value : safeBottom
+  return `${Math.max(160, windowHeight - statusBarHeight - navBarHeight - bottom - EDITOR_FOOT_H)}px`
 })
+
+/** 工具行右侧要给系统胶囊让位，和 AppNavBar 用同一套算法 */
+const editorHeadPadding = computed(() => `${Math.max(capsuleInset, 20)}px`)
+
+/** 有正文才允许发送；空输入框（只剩灰色 @ 占位）按空处理 */
+const canSend = computed(() => !!draft.value.trim())
+
+/** 回复时的灰色占位文案：@某人，输入文字后由 placeholder 自动消失 */
+const replyPlaceholder = computed(() => `@${replyTo.value?.name ?? ''}`)
 
 /** 输入栏底部留白：键盘弹起时让开键盘，收起时退回安全区 */
 const composerInset = computed(() =>
@@ -80,11 +115,21 @@ const composerInset = computed(() =>
 
 function onKeyboard(res: { height: number }) {
   keyboardHeight.value = res.height
+  // 收起过程中键盘高度归零 = 动画结束，这时再卸载 textarea 才安全
+  if (editorClosing.value && res.height === 0) finishClose()
 }
 
 /** 放大：开全屏编辑框，焦点交给里面的 textarea */
 function openEditor() {
+  // 上一轮收起还没走完又点开了，取消掉，别把新开的编辑框关掉
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
+  }
+  editorClosing.value = false
   editorOpen.value = true
+  // 底部输入框别再抢焦点，焦点交给全屏编辑框
+  composerFocus.value = false
   nextTick(() => {
     // 微信里紧接着聚焦偶尔弹不出键盘，隔一帧再点一次
     setTimeout(() => {
@@ -93,18 +138,60 @@ function openEditor() {
   })
 }
 
-function closeEditor() {
-  editorFocus.value = false
-  editorOpen.value = false
-  try {
-    uni.hideKeyboard()
-  } catch {
-    /* 非小程序端没有这个 API */
+/**
+ * 收起时的顺序很关键：
+ *
+ * textarea 是原生组件，键盘还弹着就把它 v-if 卸载，微信会在屏幕上留一层
+ * 看不见的原生层，之后整页都点不动（看起来就是「卡住了」）。
+ * 所以先失焦、收键盘，等键盘真正收完（onKeyboard 高度归零）再卸载；
+ * 个别机型不回调高度变化，用 400ms 兜底。
+ */
+function finishClose() {
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
   }
+  if (!editorClosing.value) return
+  editorClosing.value = false
+  editorOpen.value = false
+}
+
+function closeEditor() {
+  if (!editorOpen.value || editorClosing.value) return
+  editorClosing.value = true
+  // 冻结当前尺寸：原生 textarea 收起过程中反复重排，最容易卡住
+  closingInset.value = keyboardHeight.value > 0 ? keyboardHeight.value : safeBottom
+  closingInputHeight.value = editorInputHeight.value
+  // 有些端不支持键盘高度回调，用「编辑框刚刚还在聚焦」当作键盘可能弹着的信号
+  const keyboardLikelyUp = keyboardHeight.value > 0 || editorFocus.value
+  editorFocus.value = false
+  // 收起键盘时把下面的输入框焦点也放掉，免得编辑器关了焦点又被抢回去
+  composerFocus.value = false
+  // 等失焦真正生效再收键盘，避免「失焦」和「收键盘」同时打到原生组件上
+  nextTick(() => {
+    try {
+      uni.hideKeyboard()
+    } catch {
+      /* 非小程序端没有这个 API */
+    }
+  })
+  // 键盘没弹：留一帧让失焦先生效；弹着就等键盘收完（高度归零），最多 400ms 兜底
+  closeTimer = setTimeout(finishClose, keyboardLikelyUp ? 400 : 60)
+}
+
+/** 点「回复」后聚焦输入框：小程序里 focus 要先复位再置 true 才会重新弹键盘 */
+function focusComposer() {
+  composerFocus.value = false
+  nextTick(() => {
+    setTimeout(() => {
+      composerFocus.value = true
+    }, 30)
+  })
 }
 
 /** 全屏编辑框里发送：成功才关掉，失败留在原地继续改 */
 async function sendFromEditor() {
+  if (editorClosing.value) return
   if (await send()) closeEditor()
 }
 
@@ -220,6 +307,93 @@ function revealThread(t: Thread) {
   shownReplies.value = next
 }
 
+/*
+ * 长评论折叠
+ *
+ * 500 字的评论整条铺开会把一屏占满，所以正文先只露几行，点「展开全文」再看。
+ * 小程序里量不到文本实际行数，这里按「一行大概几个汉字」估算截断位置：
+ * 汉字/全角按 1、英文数字按 0.55、emoji 按 2，显式换行照算。
+ *
+ * 折叠状态和「展开全部 N 条回复」用的 shownReplies 是两套独立状态：
+ * 一个控制单条正文露多少字，一个控制楼层下露几条回复，互不干扰。
+ */
+const ROOT_FOLD_LINES = 4
+const ROOT_FOLD_COLS = 22
+const REPLY_FOLD_LINES = 4
+const REPLY_FOLD_COLS = 19
+
+/** 单个字符占几个汉字宽（用来估算换行） */
+function charWidth(ch: string): number {
+  const code = ch.codePointAt(0) ?? 0
+  if (code > 0xffff) return 2 // emoji 等增补字符
+  return code < 0x2e80 ? 0.55 : 1 // 英文、数字、半角符号
+}
+
+interface FoldedText {
+  text: string
+  folded: boolean
+}
+
+/** 按行数上限截断正文，放不下时截到最后一个完整字符并补省略号 */
+function foldText(source: string, cols: number, maxLines: number): FoldedText {
+  const chars = Array.from(source)
+  let lines = 1
+  let width = 0
+  let cut = 0
+  for (; cut < chars.length; cut++) {
+    const ch = chars[cut]
+    if (ch === '\n') {
+      lines += 1
+      width = 0
+      if (lines > maxLines) break
+      continue
+    }
+    const w = charWidth(ch)
+    if (width + w > cols) {
+      lines += 1
+      width = w
+      if (lines > maxLines) break
+    } else {
+      width += w
+    }
+  }
+  if (cut >= chars.length) return { text: source, folded: false }
+  return { text: `${chars.slice(0, cut).join('').replace(/[\s\n]+$/, '')}…`, folded: true }
+}
+
+/** 这条评论按楼层正文（13px）显示时要不要折叠 */
+function rootFold(c: Comment): FoldedText {
+  return foldText(c.content, ROOT_FOLD_COLS, ROOT_FOLD_LINES)
+}
+
+/** 这条评论按回复正文（12px、更窄）显示时要不要折叠 */
+function replyFold(c: Comment): FoldedText {
+  return foldText(c.content, REPLY_FOLD_COLS, REPLY_FOLD_LINES)
+}
+
+/** 展开过全文的评论 id（和回复展开状态彼此独立） */
+const expandedText = ref(new Set<string>())
+
+function isTextExpanded(id: string): boolean {
+  return expandedText.value.has(id)
+}
+
+function toggleText(id: string) {
+  const next = new Set(expandedText.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedText.value = next
+}
+
+/** 正文显示什么：展开后给全文，否则给截断结果 */
+function rootText(c: Comment): string {
+  return isTextExpanded(c.id) ? c.content : rootFold(c).text
+}
+
+function replyText(c: Comment): string {
+  return isTextExpanded(c.id) ? c.content : replyFold(c).text
+}
+
 const pinned = computed(() => {
   const p = poll.value
   if (!p) return ''
@@ -273,6 +447,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (closeTimer) {
+    clearTimeout(closeTimer)
+    closeTimer = null
+  }
   try {
     uni.offKeyboardHeightChange(onKeyboard)
   } catch {
@@ -324,12 +502,9 @@ async function like(c: Comment) {
 }
 
 function reply(c: Comment) {
-  // 只换回复目标，已经打了一半的字不能跟着清掉
+  // 只换回复目标：@某人 走灰色占位，不碰已经打了一半的正文
   replyTo.value = { id: c.id, name: c.user.name }
-}
-
-function cancelReply() {
-  replyTo.value = null
+  focusComposer()
 }
 
 /** 长按删除：作者本人或发起人 */
@@ -414,7 +589,13 @@ function onLongPress(c: Comment) {
                 <text v-if="t.root.replyTo" class="comment__reply">
                   回复 {{ t.root.replyTo.name }}：
                 </text>
-                <text class="comment__text">{{ t.root.content }}</text>
+                <text class="comment__text">{{ rootText(t.root) }}</text>
+                <!-- 长评论先折叠，展开/收起只影响这一条正文，不动楼层的回复展开状态 -->
+                <text
+                  v-if="rootFold(t.root).folded"
+                  class="comment__fold"
+                  @tap="toggleText(t.root.id)"
+                >{{ isTextExpanded(t.root.id) ? '收起' : '展开全文' }}</text>
 
                 <view class="comment__foot">
                   <text class="comment__time">{{ formatRelative(t.root.createdAt) }}</text>
@@ -460,7 +641,13 @@ function onLongPress(c: Comment) {
                     <text v-if="r.replyTo" class="reply__to">回复 @{{ r.replyTo.name }}</text>
                   </view>
 
-                  <text class="reply__text">{{ r.content }}</text>
+                  <text class="reply__text">{{ replyText(r) }}</text>
+                  <!-- 长回复先折叠，展开/收起只影响这一条，不动下面的回复批次 -->
+                  <text
+                    v-if="replyFold(r).folded"
+                    class="comment__fold"
+                    @tap="toggleText(r.id)"
+                  >{{ isTextExpanded(r.id) ? '收起' : '展开全文' }}</text>
 
                   <view class="reply__foot">
                     <text class="reply__time">{{ formatRelative(r.createdAt) }}</text>
@@ -503,42 +690,38 @@ function onLongPress(c: Comment) {
 
       <!-- 输入栏：键盘弹起时整条抬起来，靠 composerInset 让出键盘高度 -->
       <view v-if="poll?.rules.allowComment" class="composer" :style="{ paddingBottom: composerInset }">
-        <!-- 回复谁：提交时带 replyToId，清空或发送后消失 -->
-        <view v-if="replyTo" class="composer__reply">
-          <text class="composer__reply-text">回复 {{ replyTo.name }}</text>
-          <view class="composer__reply-close" @tap="cancelReply">
-            <AppIcon name="x" :size="10" color="#71717A" :stroke-width="2.5" />
-          </view>
-        </view>
         <view class="composer__row">
+          <!-- 输入框就是一个细长胶囊，右侧内嵌放大键 —— 和截图里的常态输入一致 -->
           <view class="composer__field">
             <input
               v-model="draft"
               class="composer__input"
-              :placeholder="replyTo ? `回复 ${replyTo.name}…` : '说点什么…'"
+              :placeholder="replyTo ? replyPlaceholder : '说点什么…'"
               placeholder-class="composer__ph"
               confirm-type="send"
               maxlength="500"
+              :focus="composerFocus"
               :adjust-position="false"
               :cursor-spacing="0"
               @confirm="send"
+              @blur="composerFocus = false"
             />
             <!-- 放大：没写字时压暗，写了字点亮；点开全屏编辑框 -->
             <view
               class="composer__expand"
-              :class="{ 'composer__expand--on': draft.trim() }"
+              :class="{ 'composer__expand--on': canSend }"
               @tap="openEditor"
             >
-              <AppIcon name="maximize-2" :size="14" :color="draft.trim() ? '#4F46E5' : '#A1A1AA'" />
+              <AppIcon name="maximize-2" :size="14" :color="canSend ? '#4F46E5' : '#A1A1AA'" />
             </view>
           </view>
-          <!-- 发送中按钮压暗，挡住重复点击；失败后草稿还在，可以直接重发 -->
+          <!-- 发送：圆角胶囊，空内容时灰底，和截图里的「发布」位置一致 -->
           <view
             class="composer__send"
-            :class="{ 'composer__send--on': draft.trim(), 'composer__send--busy': sending }"
+            :class="{ 'composer__send--on': canSend, 'composer__send--busy': sending }"
             @tap="send"
           >
-            <AppIcon name="send" :size="16" color="#FFFFFF" />
+            <text class="composer__send-text" :class="{ 'composer__send-text--on': canSend }">发送</text>
           </view>
         </view>
       </view>
@@ -548,49 +731,52 @@ function onLongPress(c: Comment) {
       </view>
 
       <!--
-        放大后的编辑框：贴底的一块面板，底边永远压在键盘上沿。
-        输入越多，面板靠 textarea 长高往上顶，而不是把内容往屏幕外挤。
+        放大后的编辑框：整屏白底（和截图里的全屏输入一致）。
+        顶部是一条和导航栏等高的工具行：收起键在系统胶囊左边、单独占一行，
+        不会和原生 textarea 叠在一起；底部工具条贴在键盘上沿。
       -->
       <view
         v-if="editorOpen"
         class="editor"
-        :style="{ paddingBottom: keyboardHeight ? keyboardHeight + 'px' : bottomInset(0) }"
+        :style="{
+          paddingTop: statusBarHeight + 'px',
+          paddingBottom: (editorClosing ? closingInset : keyboardHeight > 0 ? keyboardHeight : safeBottom) + 'px'
+        }"
       >
-        <view class="editor__mask" @tap="closeEditor" @touchmove.stop.prevent />
-
-        <view class="editor__panel">
-          <view class="editor__head">
-            <text class="editor__target">{{ replyTo ? `回复 ${replyTo.name}` : '写评论' }}</text>
-            <view class="editor__close" @tap="closeEditor">
-              <AppIcon name="x" :size="16" color="#71717A" :stroke-width="2" />
-            </view>
+        <!-- 工具行：收起键放在这里，单独占一行，不会和原生 textarea 叠在一起 -->
+        <view
+          class="editor__head"
+          :style="{ height: navBarHeight + 'px', paddingRight: editorHeadPadding }"
+        >
+          <view class="editor__collapse" @tap="closeEditor">
+            <AppIcon name="minimize-2" :size="18" color="#71717A" />
           </view>
+        </view>
 
-          <textarea
-            v-model="draft"
-            class="editor__input"
-            :style="{ height: editorHeight }"
-            :focus="editorFocus"
-            :maxlength="500"
-            :adjust-position="false"
-            :show-confirm-bar="false"
-            :disable-default-padding="true"
-            :cursor-spacing="16"
-            :placeholder="replyTo ? `回复 ${replyTo.name}…` : '说点什么…'"
-            placeholder-class="editor__ph"
-          />
+        <textarea
+          v-model="draft"
+          class="editor__input"
+          :style="{ height: editorClosing ? closingInputHeight : editorInputHeight }"
+          :focus="editorFocus"
+          :maxlength="500"
+          :adjust-position="false"
+          :show-confirm-bar="false"
+          :disable-default-padding="true"
+          :cursor-spacing="16"
+          :placeholder="replyTo ? replyPlaceholder : '说点什么…'"
+          placeholder-class="editor__ph"
+        />
 
-          <view class="editor__foot">
-            <text class="editor__count" :class="{ 'editor__count--max': draft.length >= 500 }">
-              {{ draft.length }}/500
-            </text>
-            <view
-              class="editor__send"
-              :class="{ 'editor__send--on': draft.trim(), 'editor__send--busy': sending }"
-              @tap="sendFromEditor"
-            >
-              <text class="editor__send-text">发送</text>
-            </view>
+        <view class="editor__foot">
+          <text class="editor__count" :class="{ 'editor__count--max': draft.length >= 500 }">
+            {{ draft.length }}/500
+          </text>
+          <view
+            class="editor__send"
+            :class="{ 'editor__send--on': canSend, 'editor__send--busy': sending }"
+            @tap="sendFromEditor"
+          >
+            <text class="editor__send-text" :class="{ 'editor__send-text--on': canSend }">发送</text>
           </view>
         </view>
       </view>
@@ -727,6 +913,18 @@ export default { name: 'PollCommentsPage' }
     font-size: 13px;
     color: $ink;
     line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* 「展开全文 / 收起」：贴在正文下方，和回复批次入口分开 */
+  &__fold {
+    align-self: flex-start;
+    padding: 1px 0;
+    font-size: 11px;
+    font-weight: 500;
+    color: $accent;
+    line-height: 1.4;
   }
 
   /* 时间在左、操作在右：头部只剩名字，视觉上少一层 */
@@ -848,6 +1046,8 @@ export default { name: 'PollCommentsPage' }
     font-size: 12px;
     color: $ink;
     line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   &__foot {
@@ -875,11 +1075,10 @@ export default { name: 'PollCommentsPage' }
   }
 }
 
-/* 输入栏：设计稿 26 —— 42 高的 $subtle 输入框 + 42 的方形发送按钮，间距 10 */
+/* 输入栏：和截图 3 一样，常态是一条细长胶囊 + 右侧发送胶囊 */
 .composer {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   /* 下边距由 bottomInset() 内联控制 */
   padding: 10px 16px 0;
   background: $surface;
@@ -892,33 +1091,13 @@ export default { name: 'PollCommentsPage' }
     gap: 10px;
   }
 
-  /* 回复提示：贴在输入框上方，高度固定，去掉时输入栏不跳 */
-  &__reply {
-    height: 22px;
-    padding: 0 8px 0 10px;
-    border-radius: 8px;
-    background: $subtle;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  &__reply-text {
-    font-size: 11px;
-    color: $muted;
-  }
-
-  &__reply-close {
-    padding: 2px 0 2px 8px;
-  }
-
-  /* 输入框 + 放大按钮合成一个胶囊，放大键贴在右内侧（B 站的位置） */
+  /* 输入框：整条胶囊，放大键贴在右内侧 */
   &__field {
     flex: 1;
-    height: 42px;
+    height: 40px;
     min-width: 0;
-    padding-right: 4px;
-    border-radius: 12px;
+    padding: 0 4px 0 16px;
+    border-radius: 999px;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -926,19 +1105,23 @@ export default { name: 'PollCommentsPage' }
 
   &__input {
     flex: 1;
-    height: 42px;
+    height: 40px;
     min-width: 0;
-    padding: 0 8px 0 14px;
+    padding-right: 4px;
     background: transparent;
-    font-size: 13px;
+    font-size: 14px;
     color: $ink;
+  }
+
+  &__ph {
+    color: $faint;
   }
 
   /* 放大：空着时压暗，开始写字才点亮，不抢输入框的注意力 */
   &__expand {
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -949,121 +1132,12 @@ export default { name: 'PollCommentsPage' }
     }
   }
 
-  &__ph {
-    color: $faint;
-  }
-
+  /* 发送：和截图里的「发布」一样是圆角胶囊，空内容时压成灰底 */
   &__send {
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-    background: $line;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    &--on {
-      background: $accent;
-    }
-
-    &--busy {
-      opacity: 0.55;
-    }
-  }
-}
-
-/*
- * 放大后的编辑框：贴底的一块面板。
- * 外层 padding-bottom 内联成键盘高度，所以面板底边永远压在键盘上沿；
- * 输入变多时 textarea 长高，面板往上顶，发送键始终贴着键盘。
- */
-.editor {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 300;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-
-  &__mask {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    background: rgba(9, 9, 11, 0.32);
-  }
-
-  &__panel {
-    position: relative;
-    padding: 14px $gutter 12px;
-    border-radius: 16px 16px 0 0;
-    background: $surface;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  &__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  &__target {
-    font-size: 12px;
-    font-weight: 500;
-    color: $muted;
-  }
-
-  &__close {
-    width: 24px;
-    height: 24px;
-    margin-right: -4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  /* 高度由 editorHeight 内联控制（3~8 行），再长就在框里滚 */
-  &__input {
-    width: 100%;
-    padding: 12px 14px;
-    border-radius: 12px;
-    background: $subtle;
-    font-size: 15px;
-    line-height: 22px;
-    color: $ink;
-  }
-
-  &__ph {
-    color: $faint;
-  }
-
-  &__foot {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  &__count {
-    font-size: 11px;
-    color: $faint;
-
-    &--max {
-      color: $accent;
-    }
-  }
-
-  /* 发送键落在面板右下角，也就是键盘正上方 */
-  &__send {
-    height: 34px;
+    height: 38px;
     padding: 0 18px;
-    border-radius: 10px;
-    background: $line;
+    border-radius: 999px;
+    background: $subtle;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1080,7 +1154,111 @@ export default { name: 'PollCommentsPage' }
   &__send-text {
     font-size: 13px;
     font-weight: 600;
-    color: #ffffff;
+    color: $muted;
+
+    &--on {
+      color: #ffffff;
+    }
+  }
+}
+
+/*
+ * 放大后的编辑框：整屏白底（截图 2）。
+ * 外层上下 padding 由内联控制：上面让开状态栏 + 胶囊，下面让开键盘或安全区；
+ * 输入区高度由 editorInputHeight 按窗口尺寸算出来，工具条压在键盘上沿。
+ */
+.editor {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 300;
+  box-sizing: border-box;
+  background: $surface;
+  display: flex;
+  flex-direction: column;
+
+  /* 工具行：高度内联成导航栏高度，右侧内联让开系统胶囊 */
+  &__head {
+    padding-left: $gutter;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-shrink: 0;
+  }
+
+  &__collapse {
+    /* 图标 18，点击区域放大到 40，手指不用瞄准 */
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 高度由 editorInputHeight 内联控制，铺满整屏 */
+  &__input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0 $gutter;
+    background: transparent;
+    font-size: 16px;
+    line-height: 26px;
+    color: $ink;
+  }
+
+  &__ph {
+    color: $faint;
+  }
+
+  /* 工具条：高度必须和 JS 里的 EDITOR_FOOT_H（56 设计 px）保持一致 */
+  &__foot {
+    height: 56px;
+    padding: 0 $gutter;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  &__count {
+    font-size: 11px;
+    color: $faint;
+
+    &--max {
+      color: $accent;
+    }
+  }
+
+  /* 发送键落在工具条右侧，也就是键盘正上方 */
+  &__send {
+    height: 36px;
+    padding: 0 20px;
+    border-radius: 999px;
+    background: $subtle;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &--on {
+      background: $accent;
+    }
+
+    &--busy {
+      opacity: 0.55;
+    }
+  }
+
+  &__send-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: $muted;
+
+    &--on {
+      color: #ffffff;
+    }
   }
 }
 
