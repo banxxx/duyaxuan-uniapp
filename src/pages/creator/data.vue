@@ -6,7 +6,9 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
+import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppEmpty from '@/components/base/AppEmpty.vue'
 import { fetchPoll, fetchPollStats, endPoll } from '@/api/poll'
 import { formatDate, formatDateTime, formatRelative, formatRemaining, percent } from '@/utils/format'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
@@ -29,11 +31,23 @@ const poll = ref<Poll | null>(null)
 const stats = ref<ReturnType<typeof import('@/api/poll').fetchPollStats> extends Promise<infer T> ? T : never>()
 
 const loading = ref(true)
+/** 首屏加载失败：没有缓存内容时给错误页，而不是空白页 */
+const loadError = ref(false)
 const pollId = ref('')
 const endSheet = ref(false)
+/** 右上角「···」：查看结果 / 回答记录 */
+const moreVisible = ref(false)
 
 const isEnded = computed(() => !!poll.value && poll.value.rules.endAt <= Date.now())
 const isSurvey = computed(() => poll.value?.type === 'survey')
+
+const moreItems = computed(() => [
+  {
+    key: 'view',
+    label: isSurvey.value ? '查看回答记录' : '查看结果页',
+    icon: isSurvey.value ? 'message-square-text' : 'bar-chart-3'
+  }
+])
 
 /**
  * 投票看选项票数之和，问卷没有选项，直接看回答数。
@@ -85,12 +99,16 @@ async function load() {
     stats.value = cached.stats
   }
   loading.value = !cached
+  loadError.value = false
   try {
     const [p, s] = await Promise.all([fetchPoll(pollId.value), fetchPollStats(pollId.value)])
     poll.value = p
     stats.value = s
     syncShareMenu(p.rules.allowShare)
     cacheSet(cacheKey.pollData(pollId.value), { poll: p, stats: s })
+  } catch {
+    // 有缓存就继续用缓存；连缓存都没有才整页报错
+    if (!poll.value || !stats.value) loadError.value = true
   } finally {
     loading.value = false
   }
@@ -119,19 +137,15 @@ async function onEnd() {
 
 /** 导航栏右侧的「···」：设计稿是操作入口，不是一个直达结果页的图标 */
 function onMore() {
+  moreVisible.value = true
+}
+
+function onMoreAction(key: string) {
   // 问卷没有「结果页」（没有选项和票数），入口落到回答记录，
   // 从那里再进汇总；投票才是结果页。
-  uni.showActionSheet({
-    itemList: [isSurvey.value ? '查看回答记录' : '查看结果页'],
-    success: (r) => {
-      if (r.tapIndex !== 0) return
-      if (isSurvey.value) {
-        go(ROUTES.surveyAnswers, { id: pollId.value })
-      } else {
-        goResult()
-      }
-    }
-  })
+  if (key !== 'view') return
+  if (isSurvey.value) go(ROUTES.surveyAnswers, { id: pollId.value })
+  else goResult()
 }
 
 function goVoters() {
@@ -163,6 +177,16 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
     <view v-if="loading" class="data__body">
       <AppSkeleton type="stats" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="数据加载失败"
+      desc="网络不太稳定，或者你没有查看这份数据的权限"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <scroll-view v-else-if="poll && stats" class="data__scroll" scroll-y>
       <view class="data__content">
@@ -367,6 +391,14 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
         </view>
       </view>
     </AppSheet>
+
+    <AppActionSheet
+      :visible="moreVisible"
+      title="查看数据"
+      :items="moreItems"
+      @close="moreVisible = false"
+      @select="onMoreAction"
+    />
   </view>
 </template>
 
@@ -463,7 +495,7 @@ export default { name: 'CreatorDataPage' }
   &__badge-text {
     font-size: 11px;
     font-weight: 500;
-    color: #fff;
+    color: $white;
   }
 
   &__right {
@@ -474,7 +506,7 @@ export default { name: 'CreatorDataPage' }
   &__title {
     font-size: 15px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
     line-height: 1.4;
   }
 
@@ -526,7 +558,7 @@ export default { name: 'CreatorDataPage' }
   &__stat-total {
     font-size: 13px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 
   &__stat-note {
@@ -750,7 +782,7 @@ export default { name: 'CreatorDataPage' }
     color: $faint;
 
     &--first {
-      color: #fff;
+      color: $white;
     }
   }
 
@@ -800,7 +832,7 @@ export default { name: 'CreatorDataPage' }
   &__fill {
     height: 100%;
     border-radius: 4px;
-    background: #d4d4d8;
+    background: $track;
 
     &--first {
       background: $accent;
@@ -909,7 +941,7 @@ export default { name: 'CreatorDataPage' }
   &__fill {
     height: 100%;
     border-radius: 3px;
-    background: #d4d4d8;
+    background: $track;
 
     &--peak {
       background: $accent;

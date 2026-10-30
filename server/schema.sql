@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS polls (
   desc              TEXT,
   status            INTEGER NOT NULL DEFAULT 0,  -- 0 进行中 / 1 已结束
   deleted_at        INTEGER,                     -- 软删除，支持「恢复」
+  updated_at        INTEGER,                     -- 最近一次内容编辑时间（null = 从未编辑）
   created_at        INTEGER NOT NULL,
   end_at            INTEGER NOT NULL,
 
@@ -58,7 +59,7 @@ CREATE TABLE IF NOT EXISTS polls (
   shuffle_options   INTEGER NOT NULL DEFAULT 0,
   hide_voter_count  INTEGER NOT NULL DEFAULT 0,
   join_method       TEXT NOT NULL DEFAULT 'link', -- link（持链接可投）| invite（需要邀请码）
-  invite_code       TEXT,                        -- 邀请码，join_method=invite 时生成；链接里带着它
+  invite_code       TEXT,                        -- 邀请码，join_method=invite 时生成；由发起人单独告知，不随链接传播
   profile_field     TEXT,                        -- 需要参与者填的字段名，null = 不需要
 
   -- 冗余计数
@@ -229,18 +230,6 @@ CREATE TABLE IF NOT EXISTS poll_reminders (
 CREATE INDEX IF NOT EXISTS ix_poll_reminders_user ON poll_reminders(user_id);
 
 -- ------------------------------------------------------------
--- 反馈（58 帮助与反馈）
--- ------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS feedback (
-  id         TEXT PRIMARY KEY,
-  user_id    TEXT,                          -- 允许未登录提交，所以可空
-  content    TEXT NOT NULL,
-  contact    TEXT,
-  created_at INTEGER NOT NULL
-);
-
--- ------------------------------------------------------------
 -- 微信 access_token 缓存
 --
 -- access_token 有调用频率限制（每天 2000 次左右），必须缓存复用。
@@ -292,3 +281,19 @@ CREATE TABLE IF NOT EXISTS wx_push_log (
   pushed_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, poll_id, kind)
 );
+
+-- ------------------------------------------------------------
+-- 写接口限流（固定窗口）
+--
+-- key = 桶名 + 用户/IP。窗口内第一次请求写 count=1，之后原子 +1；
+-- 跨窗口时直接重置。过期行由 Cron 清理，不影响限流正确性
+-- （复用过期行时 window_start 对不上，本来就当新窗口处理）。
+-- ------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key          TEXT PRIMARY KEY,
+  window_start INTEGER NOT NULL,
+  count        INTEGER NOT NULL,
+  expires_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_rate_limits_expires ON rate_limits(expires_at);

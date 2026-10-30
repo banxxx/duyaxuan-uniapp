@@ -473,9 +473,11 @@ export function mockStats() {
 export interface PendingPoll {
   id: string
   title: string
-  type: 'single' | 'multiple'
+  /** survey 是受邀但还没填写的问卷 */
+  type: 'single' | 'multiple' | 'survey'
   inviterName: string
   voterCount: number
+  answerCount?: number
   anonymous: boolean
   maxChoice?: number
   endAt: number
@@ -496,6 +498,7 @@ export const mockPending: PendingPoll[] = PENDING_IDS.map((id) => {
     type: p.type as 'single' | 'multiple',
     inviterName: p.creatorName,
     voterCount: p.voterCount,
+    answerCount: p.answerCount,
     anonymous: p.rules.anonymous,
     maxChoice: p.rules.maxChoice,
     endAt: p.rules.endAt

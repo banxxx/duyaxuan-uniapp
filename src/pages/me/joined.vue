@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
 import type { Poll } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppTabBar from '@/components/base/AppTabBar.vue'
+import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import PollRow from '@/components/business/PollRow.vue'
 import { fetchJoinedPolls } from '@/api/poll'
 import { getSafeArea } from '@/utils/platform'
@@ -29,8 +30,16 @@ const filters = [
 ]
 
 const status = ref<'all' | 'ongoing' | 'ended'>('all')
+
+/** 导航栏「···」：和页面里的分段控件做同一件事，但用统一的底部菜单呈现 */
+const filterVisible = ref(false)
+const filterItems = computed(() =>
+  filters.map((f) => ({ key: f.value, label: f.label, selected: status.value === f.value }))
+)
 const list = ref<Poll[]>([])
 const loading = ref(false)
+/** 首屏加载失败：没有缓存内容时换成错误页，别把「请求失败」显示成「还没参与过」 */
+const loadError = ref(false)
 const cursor = ref<string | null>(null)
 const hasMore = ref(true)
 
@@ -54,6 +63,7 @@ function seed(v: string) {
 async function load(reset = false) {
   if (loading.value) return
   loading.value = true
+  loadError.value = false
   try {
     if (reset) {
       cursor.value = null
@@ -70,6 +80,9 @@ async function load(reset = false) {
         hasMore: res.hasMore
       })
     }
+  } catch {
+    // 翻页失败保留已有列表；首屏空白才整页报错
+    if (!list.value.length) loadError.value = true
   } finally {
     loading.value = false
   }
@@ -99,13 +112,11 @@ function openDetail(poll: Poll) {
 
 /** 42 导航右上角是「···」：只有筛状态这类全局动作，不做行级管理 */
 function openMore() {
-  uni.showActionSheet({
-    itemList: ['只看进行中', '只看已结束', '查看全部'],
-    success: (r) => {
-      status.value = (['ongoing', 'ended', 'all'] as const)[r.tapIndex]
-      load(true)
-    }
-  })
+  filterVisible.value = true
+}
+
+function onFilterAction(key: string) {
+  if (key !== status.value) onFilter(key as typeof status.value)
 }
 
 /** 空状态没有「发起」，回首页让用户自己挑一条参与 */
@@ -151,7 +162,17 @@ function goHome() {
         />
 
         <AppEmpty
-          v-if="!loading && !list.length"
+          v-if="!loading && loadError && !list.length"
+          icon="wifi-off"
+          title="加载失败"
+          desc="网络不太稳定，或者服务暂时不可用，稍后再试"
+          action="重新加载"
+          action-icon="refresh-cw"
+          @action="load(true)"
+        />
+
+        <AppEmpty
+          v-else-if="!loading && !list.length"
           icon="inbox"
           title="还没有参与过投票"
           desc="去发现页看看大家发起的投票吧"
@@ -163,6 +184,14 @@ function goHome() {
 
     <AppTabBar current="me" />
     <view class="page__tabspace" :style="{ height: `calc(64px + ${safeBottom}px)` }" />
+
+    <AppActionSheet
+      :visible="filterVisible"
+      title="筛选"
+      :items="filterItems"
+      @close="filterVisible = false"
+      @select="onFilterAction"
+    />
   </view>
 </template>
 

@@ -109,7 +109,7 @@ export default { name: 'AppEmpty' }
   &__action-text {
     font-size: 14px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 }
 

@@ -51,6 +51,28 @@ function paginate<T>(list: T[], cursor?: string | null, size = 20): Paged<T> {
   }
 }
 
+/**
+ * 兼容两种后端返回：
+ *   旧版列表接口直接返回数组，新版返回 { list, cursor, hasMore, total }。
+ *
+ * 必须统一成 Paged：否则在旧后端上 `res.list` 是 undefined，页面 render 时
+ * 读 `.length` / `.filter` 会抛错，Vue 停在上一帧 —— 表现就是骨架屏一直不消失，
+ * 而且请求本身是 200，请求层的超时也不会触发。
+ */
+function toPaged<T>(data: T[] | Paged<T> | null | undefined): Paged<T> {
+  if (Array.isArray(data)) {
+    return { list: data, cursor: null, hasMore: false, total: data.length }
+  }
+  if (!data) return { list: [], cursor: null, hasMore: false, total: 0 }
+  const list = Array.isArray(data.list) ? data.list : []
+  return {
+    list,
+    cursor: data.cursor ?? null,
+    hasMore: !!data.hasMore,
+    total: typeof data.total === 'number' ? data.total : list.length
+  }
+}
+
 export async function fetchMyPolls(
   status: 'all' | 'ongoing' | 'ended' = 'all',
   cursor?: string | null
@@ -66,7 +88,7 @@ export async function fetchMyPolls(
       })
     return paginate(list, cursor)
   }
-  return http.get<Paged<Poll>>('/polls/mine', { status, cursor })
+  return toPaged(await http.get<Paged<Poll> | Poll[]>('/polls/mine', { status, cursor }))
 }
 
 export async function fetchJoinedPolls(
@@ -90,16 +112,27 @@ export async function fetchJoinedPolls(
       )
     return paginate(list, cursor)
   }
-  return http.get<Paged<Poll>>('/polls/joined', { status, cursor })
+  return toPaged(await http.get<Paged<Poll> | Poll[]>('/polls/joined', { status, cursor }))
 }
 
 /** 02 首页 · 待我投票：别人邀请我、我还没投的，按截止时间由近到远 */
-export async function fetchPendingPolls(): Promise<PendingPoll[]> {
+export async function fetchPendingPolls(
+  limit?: number,
+  cursor?: string | null
+): Promise<Paged<PendingPoll>> {
   if (USE_MOCK) {
     await delay(200)
-    return mockPending
+    const page = mockPending.slice(0, limit ?? mockPending.length)
+    return {
+      list: page,
+      cursor: null,
+      hasMore: page.length < mockPending.length,
+      total: mockPending.length
+    }
   }
-  return http.get<PendingPoll[]>('/polls/pending')
+  return toPaged(
+    await http.get<Paged<PendingPoll> | PendingPoll[]>('/polls/pending', { limit, cursor })
+  )
 }
 
 export async function fetchDiscoverPolls(
@@ -110,7 +143,7 @@ export async function fetchDiscoverPolls(
     await delay()
     return paginate(mockPolls, cursor)
   }
-  return http.get<Paged<Poll>>('/polls/discover', { status, cursor })
+  return toPaged(await http.get<Paged<Poll> | Poll[]>('/polls/discover', { status, cursor }))
 }
 
 export async function searchPolls(
@@ -236,7 +269,8 @@ export async function updatePoll(id: string, body: Record<string, any>): Promise
     if (!hit) throw new Error('投票不存在')
     hit.title = body.title
     hit.desc = body.desc || undefined
-    hit.rules = body.rules
+    // 只改主题/说明的页面不会带 rules，不能把已有规则冲成 undefined
+    if (body.rules) hit.rules = body.rules
     if (body.type !== 'survey' && Array.isArray(body.options)) {
       hit.options = body.options.map((o: any, i: number) => ({
         id: o.id ?? `o_new_${i}`,
@@ -270,13 +304,21 @@ export async function restorePoll(id: string): Promise<void> {
 
 export async function fetchComments(
   pollId: string,
-  opts?: { toast?: boolean }
-): Promise<Comment[]> {
+  opts?: { toast?: boolean; cursor?: string | null; sort?: 'latest' | 'hot' }
+): Promise<Paged<Comment>> {
   if (USE_MOCK) {
     await delay()
-    return mockComments.filter((c) => c.pollId === pollId)
+    const list = mockComments.filter((c) => c.pollId === pollId)
+    if (opts?.sort === 'hot') list.sort((a, b) => b.likeCount - a.likeCount)
+    return paginate(list, opts?.cursor ?? null, 50)
   }
-  return http.get<Comment[]>(`/polls/${pollId}/comments`, undefined, opts)
+  return toPaged(
+    await http.get<Paged<Comment> | Comment[]>(
+      `/polls/${pollId}/comments`,
+      { cursor: opts?.cursor ?? null, sort: opts?.sort ?? 'latest' },
+      opts
+    )
+  )
 }
 
 /** 发评论；replyToId 是「回复」的目标评论 */
@@ -351,7 +393,9 @@ export async function fetchAnswers(
       cursor
     )
   }
-  return http.get<Paged<SurveyAnswer>>(`/polls/${pollId}/answers`, { cursor }, opts)
+  return toPaged(
+    await http.get<Paged<SurveyAnswer> | SurveyAnswer[]>(`/polls/${pollId}/answers`, { cursor }, opts)
+  )
 }
 
 export async function submitAnswer(
@@ -405,14 +449,17 @@ export async function updateAnswer(pollId: string, answerId: string, content: st
 /** 14/15 投票记录 */
 export async function fetchVoters(
   pollId: string,
-  cursor?: string | null
+  cursor?: string | null,
+  opts?: { toast?: boolean }
 ): Promise<Paged<VoterRecord>> {
   if (USE_MOCK) {
     await delay(200)
     const list = mockVoters(pollId)
     return { list, cursor: null, hasMore: false, total: list.length }
   }
-  return http.get<Paged<VoterRecord>>(`/polls/${pollId}/voters`, { cursor })
+  return toPaged(
+    await http.get<Paged<VoterRecord> | VoterRecord[]>(`/polls/${pollId}/voters`, { cursor }, opts)
+  )
 }
 
 /**
@@ -445,7 +492,11 @@ export async function fetchPollQrcode(pollId: string): Promise<string> {
     await delay(120)
     return ''
   }
-  const res = await http.get<{ url: string }>(`/polls/${pollId}/qrcode`, undefined, { toast: false })
+  // 首次生成要调微信接口 + 写 R2，比普通查询慢，单独放宽到 20s
+  const res = await http.get<{ url: string }>(`/polls/${pollId}/qrcode`, undefined, {
+    toast: false,
+    timeout: 20000
+  })
   return resolveFileUrl(res.url)
 }
 
@@ -468,12 +519,20 @@ export async function fetchSummaryCandidates(pollId: string): Promise<SummaryCan
 }
 
 /** 86 未归类回答 */
-export async function fetchUnclassified(pollId: string): Promise<UnclassifiedAnswer[]> {
+export async function fetchUnclassified(
+  pollId: string,
+  cursor?: string | null
+): Promise<Paged<UnclassifiedAnswer>> {
   if (USE_MOCK) {
     await delay(150)
-    return mockUnclassified
+    return paginate(mockUnclassified, cursor, 100)
   }
-  return http.get<UnclassifiedAnswer[]>(`/polls/${pollId}/summary/unclassified`)
+  return toPaged(
+    await http.get<Paged<UnclassifiedAnswer> | UnclassifiedAnswer[]>(
+      `/polls/${pollId}/summary/unclassified`,
+      { cursor }
+    )
+  )
 }
 
 /** 85 编辑选项：候选选项本身 + 归在它下面的回答明细 */
@@ -551,9 +610,13 @@ export function unassignSummaryAnswer(
 }
 
 /** 86 忽略：不进汇总，原文仍留在问卷数据里 */
-export function ignoreSummaryAnswers(pollId: string, answerIds: string[]): Promise<{ ignored: number }> {
+export function ignoreSummaryAnswers(
+  pollId: string,
+  answerIds: string[],
+  all = false
+): Promise<{ ignored: number }> {
   return summaryWrite(() =>
-    http.post<{ ignored: number }>(`/polls/${pollId}/summary/ignore`, { answerIds })
+    http.post<{ ignored: number }>(`/polls/${pollId}/summary/ignore`, { answerIds, all })
   )
 }
 

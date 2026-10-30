@@ -181,7 +181,7 @@ export default { name: 'SurveyDonePage' }
   &__primary-text {
     font-size: 15px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 
   &__secondary {

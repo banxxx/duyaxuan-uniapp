@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types'
 import { ok } from '../lib/response'
+import { enforceRateLimit, RATE_LIMITS } from '../lib/rate-limit'
 import { requireAuth } from '../middleware/auth'
 import { listNotifications, markRead, unreadCount } from '../db/notifications'
 import { getPrefs, parsePrefs, recordSubscription, savePrefs, templates } from '../db/push'
@@ -23,6 +24,7 @@ notifications.get('/unread-count', async (c) => {
 
 /** 不传 ids = 全部标为已读 */
 notifications.post('/read', async (c) => {
+  await enforceRateLimit(c, RATE_LIMITS.notifyWrite)
   const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown }
   const ids = Array.isArray(body.ids)
     ? body.ids.filter((id): id is string => typeof id === 'string')
@@ -44,6 +46,7 @@ notifications.get('/templates', (c) => {
  * 只接受当前环境配置过的模板 ID，随便传一个别的不会写进表里。
  */
 notifications.post('/subscribe', async (c) => {
+  await enforceRateLimit(c, RATE_LIMITS.notifyWrite)
   const body = (await c.req.json().catch(() => ({}))) as {
     templateIds?: unknown
     prefs?: unknown
@@ -59,8 +62,14 @@ notifications.post('/subscribe', async (c) => {
   return ok(c, { accepted: ids.length })
 })
 
+/** 读推送偏好：换设备 / 清缓存后，本地开关要跟着服务端走 */
+notifications.get('/prefs', async (c) => {
+  return ok(c, await getPrefs(c.env.DB, c.get('userId')!))
+})
+
 /** 推送开关：订阅消息是服务端发的，本地开关必须同步一份上来 */
 notifications.post('/prefs', async (c) => {
+  await enforceRateLimit(c, RATE_LIMITS.notifyWrite)
   const body = (await c.req.json().catch(() => ({}))) as { prefs?: unknown }
   const patch = parsePrefs(body.prefs)
   if (!patch) return ok(c, await getPrefs(c.env.DB, c.get('userId')!))

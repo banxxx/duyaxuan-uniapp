@@ -4,7 +4,6 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import { mockFaq } from '@/mock/data'
-import { submitFeedback } from '@/api/notification'
 import { bottomInset } from '@/utils/platform'
 
 /**
@@ -14,12 +13,10 @@ import { bottomInset } from '@/utils/platform'
  * 全展开会让页面一屏塞满文字，用户反而找不到自己那条。
  *
  * 搜索是本地过滤问题+答案，FAQ 只有几条，没必要走接口。
- * 反馈内容写进本地 storage 并 toast，真实环境是 POST /feedback。
+ * 反馈只留客服邮箱，点击复制——站内反馈没有后台查看入口，不再收。
  */
 const keyword = ref('')
 const openIndex = ref<number[]>([0])
-const feedback = ref('')
-const submitting = ref(false)
 
 const list = computed(() => {
   const k = keyword.value.trim()
@@ -37,25 +34,9 @@ function toggle(i: number) {
   else openIndex.value.push(i)
 }
 
-const canSubmit = computed(() => feedback.value.trim().length >= 5 && !submitting.value)
-
-async function submit() {
-  if (!canSubmit.value) return
-  submitting.value = true
-  try {
-    await submitFeedback(feedback.value.trim())
-    feedback.value = ''
-    uni.showToast({ title: '已收到，我们会尽快回复', icon: 'none' })
-  } catch {
-    // 失败原因由请求层 toast，这里保留输入内容方便重试
-  } finally {
-    submitting.value = false
-  }
-}
-
 function copyMail() {
   uni.setClipboardData({
-    data: 'support@vote.jun',
+    data: 'posoovo@gmail.com',
     success: () => uni.showToast({ title: '邮箱已复制', icon: 'none' })
   })
 }
@@ -101,33 +82,21 @@ function copyMail() {
           v-else
           icon="search"
           title="没有找到相关问题"
-          desc="换个关键词试试，或者在下面直接告诉我们"
+          desc="换个关键词试试，或直接发邮件给我们"
         />
 
-        <!-- 反馈 -->
-        <view class="feedback">
-          <text class="feedback__title">没找到答案？</text>
-          <text class="feedback__desc">告诉我们你遇到的问题，我们会尽快回复</text>
-          <view class="feedback__box">
-            <textarea
-              v-model="feedback"
-              class="feedback__input"
-              :maxlength="200"
-              placeholder="描述你的问题或建议…"
-              placeholder-class="feedback__ph"
-            />
+        <!-- 没找到答案：只留客服邮箱，点击复制 -->
+        <view class="contact">
+          <view class="contact__head">
+            <text class="contact__title">没找到答案？</text>
+            <text class="contact__desc">发邮件告诉我们，我们会尽快回复</text>
           </view>
-          <view
-            class="feedback__btn"
-            :class="{ 'feedback__btn--off': !canSubmit }"
-            hover-class="feedback__btn--active"
-            @tap="submit"
-          >
-            <text class="feedback__btn-text">{{ submitting ? '提交中…' : '提交反馈' }}</text>
+          <view class="contact__mail" hover-class="contact__mail--active" @tap="copyMail">
+            <AppIcon name="mail" :size="14" color="#4F46E5" />
+            <text class="contact__mail-text">posoovo@gmail.com</text>
+            <text class="contact__copy">复制</text>
           </view>
         </view>
-
-        <text class="support__mail" @tap="copyMail">客服邮箱 support@vote.jun</text>
       </view>
     </scroll-view>
   </view>
@@ -162,12 +131,6 @@ export default { name: 'SupportPage' }
     font-size: 13px;
     font-weight: 700;
     color: $ink;
-  }
-
-  &__mail {
-    font-size: 11px;
-    color: $faint;
-    text-align: center;
   }
 }
 
@@ -248,7 +211,7 @@ export default { name: 'SupportPage' }
   }
 }
 
-.feedback {
+.contact {
   padding: 16px;
   border-radius: 14px;
   background: $surface;
@@ -256,6 +219,12 @@ export default { name: 'SupportPage' }
   display: flex;
   flex-direction: column;
   gap: 12px;
+
+  &__head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 
   &__title {
     font-size: 13px;
@@ -268,50 +237,31 @@ export default { name: 'SupportPage' }
     color: $muted;
   }
 
-  &__box {
-    position: relative;
+  /* 点整行复制，不用精确点到邮箱文字 */
+  &__mail {
     padding: 12px;
     border-radius: 10px;
     background: $subtle;
-    height: 84px;
-    box-sizing: border-box;
-  }
-
-  &__input {
-    width: 100%;
-    /* 跟着 84 高的灰框走：写死 44 的话下面空一截，多打两行还会被截 */
-    height: 100%;
-    font-size: 12px;
-    color: $ink;
-    line-height: 1.5;
-  }
-
-  &__ph {
-    color: $faint;
-    font-size: 12px;
-  }
-
-  &__btn {
-    height: 44px;
-    border-radius: 12px;
-    background: $accent;
     display: flex;
     align-items: center;
-    justify-content: center;
-
-    &--off {
-      opacity: 0.4;
-    }
+    gap: 8px;
 
     &--active {
-      opacity: 0.85;
+      opacity: 0.8;
     }
   }
 
-  &__btn-text {
-    font-size: 13px;
+  &__mail-text {
+    flex: 1;
+    font-size: 12px;
     font-weight: 600;
-    color: #fff;
+    color: $ink;
+  }
+
+  &__copy {
+    font-size: 11px;
+    color: $accent;
+    flex-shrink: 0;
   }
 }
 </style>

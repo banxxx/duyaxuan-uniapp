@@ -40,6 +40,7 @@ interface VoterRow {
 const poll = ref<Poll | null>(null)
 const voters = ref<VoterRow[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 const keyword = ref('')
 const sort = ref<'latest' | 'name'>('latest')
 const pollId = ref('')
@@ -124,10 +125,19 @@ async function load() {
     hasMore.value = cached.hasMore
   }
   loading.value = !cached
+  loadError.value = false
+  if (!pollId.value) {
+    loading.value = false
+    loadError.value = true
+    return
+  }
   try {
     poll.value = await fetchPoll(pollId.value)
     await loadPage(true)
     saveSnapshot()
+  } catch {
+    // 有快照就继续看上一次的记录；什么都没有才换成错误态，避免白屏
+    if (!poll.value) loadError.value = true
   } finally {
     loading.value = false
   }
@@ -163,6 +173,16 @@ onPullDownRefresh(async () => {
     <view v-if="loading" class="voters__body">
       <AppSkeleton type="list" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="记录加载失败"
+      desc="网络不太稳定，或者你没有查看这份记录的权限"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <template v-else-if="poll">
       <scroll-view class="voters__scroll" scroll-y>

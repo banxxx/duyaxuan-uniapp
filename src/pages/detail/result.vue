@@ -6,13 +6,16 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppEmpty from '@/components/base/AppEmpty.vue'
 import { fetchPoll, fetchMyVote, remindMe } from '@/api/poll'
 import { formatDate, formatDateTime, formatRelative, percent } from '@/utils/format'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
+import { canSeePollResult } from '@/utils/result-visibility'
 import { bottomInset } from '@/utils/platform'
 import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
 import { backTo, go, replace, ROUTES } from '@/utils/router'
 import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
+import { useUserStore } from '@/stores/user'
 
 /**
  * 21 结果 · 实时统计 / 22 结果 · 待公布 / 23 结果 · 已关闭
@@ -25,13 +28,17 @@ import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
  * 「投票记录」和 14/15 是两件事：这里是票数聚合，那里是逐票流水，
  * 所以排名行右侧只放一个跳转链接，不在这里展开明细。
  */
+const user = useUserStore()
 const poll = ref<Poll | null>(null)
 const myVote = ref<string[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 const reminded = ref(false)
 const pollId = ref('')
 
 const isEnded = computed(() => !!poll.value && poll.value.rules.endAt <= Date.now())
+const isOwner = computed(() => !!poll.value && poll.value.creatorId === user.profile?.id)
+const hasVoted = computed(() => myVote.value.length > 0)
 /** 总时长不足 2 小时时没有「结束前 2 小时」这个时间点，不显示提醒按钮 */
 const canRemind = computed(
   () =>
@@ -40,14 +47,18 @@ const canRemind = computed(
     poll.value.rules.endAt - poll.value.createdAt > 2 * 3600_000
 )
 
-type Mode = 'visible' | 'pending' | 'closed'
+type Mode = 'visible' | 'pending' | 'locked' | 'closed'
 const mode = computed<Mode>(() => {
   const p = poll.value
   if (!p) return 'closed'
+  if (canSeePollResult(p, { isOwner: isOwner.value, hasVoted: hasVoted.value, isEnded: isEnded.value })) {
+    return 'visible'
+  }
   const v = p.rules.resultVisibility ?? 'after_vote'
   if (v === 'hidden') return 'closed'
-  if (v === 'after_end') return isEnded.value ? 'visible' : 'pending'
-  return 'visible'
+  if (v === 'after_end') return 'pending'
+  // after_vote 且还没投票：结果要先投了才能看
+  return 'locked'
 })
 
 const totalVotes = computed(() => poll.value?.options.reduce((s, o) => s + o.votes, 0) ?? 0)
@@ -101,6 +112,12 @@ async function load() {
     myVote.value = cached.myVote
   }
   loading.value = !cached
+  loadError.value = false
+  if (!pollId.value) {
+    loading.value = false
+    loadError.value = true
+    return
+  }
   try {
     const p = await fetchPoll(pollId.value)
     // 问卷没有选项票数，结果页对它没有意义；旧链接 / 误入口统一回详情页
@@ -112,6 +129,8 @@ async function load() {
     syncShareMenu(p.rules.allowShare)
     myVote.value = await fetchMyVote(p.id)
     cacheSet(cacheKey.pollResult(p.id), { poll: p, myVote: myVote.value })
+  } catch {
+    if (!poll.value) loadError.value = true
   } finally {
     loading.value = false
   }
@@ -166,6 +185,16 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
     <view v-if="loading" class="result__body">
       <AppSkeleton type="stats" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="结果加载失败"
+      desc="网络不太稳定，重试一下就好"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <scroll-view v-else-if="poll" class="result__scroll" scroll-y>
       <view class="result__content">
@@ -302,6 +331,21 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
           </view>
         </template>
 
+        <!-- ================= 投票后才可看 ================= -->
+        <template v-else-if="mode === 'locked'">
+          <view class="state">
+            <view class="state__icon">
+              <AppIcon name="lock" :size="28" color="#A1A1AA" />
+            </view>
+            <text class="state__title">投票后才能查看结果</text>
+            <text class="state__desc">发起人设置了投票后公布，去投出你的选择就能看到实时票数</text>
+          </view>
+
+          <view class="state__actions">
+            <AppButton type="ink" size="cta" :radius="14" @tap="backToDetail">去投票</AppButton>
+          </view>
+        </template>
+
         <!-- ================= 23 已关闭 ================= -->
         <template v-else>
           <view class="state">
@@ -330,7 +374,11 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
     </scroll-view>
 
     <!-- 21 底部只有一个「分享给同事」，进 27 分享页拿海报 -->
-    <view v-if="poll && mode === 'visible'" class="result__actions" :style="{ paddingBottom: bottomInset(20) }">
+    <view
+      v-if="poll && mode === 'visible' && poll.rules.allowShare"
+      class="result__actions"
+      :style="{ paddingBottom: bottomInset(20) }"
+    >
       <AppButton type="subtle" size="cta" icon="link" @tap="goShare">分享给同事</AppButton>
     </view>
   </view>
@@ -412,13 +460,13 @@ export default { name: 'PollResultPage' }
     width: 6px;
     height: 6px;
     border-radius: 3px;
-    background: #047857;
+    background: $success;
   }
 
   &__badge-text {
     font-size: 11px;
     font-weight: 500;
-    color: #fff;
+    color: $white;
   }
 
   &__total {
@@ -429,7 +477,7 @@ export default { name: 'PollResultPage' }
   &__title {
     font-size: 19px;
     font-weight: 700;
-    color: #fff;
+    color: $white;
     line-height: 1.35;
   }
 
@@ -467,7 +515,7 @@ export default { name: 'PollResultPage' }
   &__winner-name {
     font-size: 15px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 
   &__winner-pct {
@@ -567,7 +615,7 @@ export default { name: 'PollResultPage' }
     color: $faint;
 
     &--first {
-      color: #fff;
+      color: $white;
     }
   }
 
@@ -619,7 +667,7 @@ export default { name: 'PollResultPage' }
   &__fill {
     height: 100%;
     border-radius: 4px;
-    background: #d4d4d8;
+    background: $track;
 
     &--first {
       background: $accent;
@@ -736,7 +784,7 @@ export default { name: 'PollResultPage' }
   &__value {
     font-size: 26px;
     font-weight: 700;
-    color: #fff;
+    color: $white;
     font-family: $font-num;
   }
 

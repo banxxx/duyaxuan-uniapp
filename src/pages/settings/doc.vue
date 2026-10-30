@@ -3,10 +3,7 @@ import { ref, computed } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
-import { useUserStore } from '@/stores/user'
-import { API_BASE } from '@/utils/api-base'
-import { useMock } from '@/utils/env'
-import { bottomInset, getPlatform } from '@/utils/platform'
+import { bottomInset } from '@/utils/platform'
 import { go } from '@/utils/router'
 
 /**
@@ -99,13 +96,13 @@ const DOCS: Record<'terms' | 'privacy', Section[]> = {
     },
     {
       h: '十六、联系我们',
-      p: '如对本协议有疑问、意见或投诉，可通过「帮助与反馈」或 support@vote.jun 联系我们，我们会在 15 个工作日内答复。'
+      p: '如对本协议有疑问、意见或投诉，可通过「帮助与反馈」或 posoovo@gmail.com 联系我们，我们会在 15 个工作日内答复。'
     }
   ],
   privacy: [
     {
       h: '一、我们收集哪些信息',
-      p: '（1）账号信息：你通过微信授权登录时，微信返回的 openid、unionid，用于识别你的账号。我们不会自动获取你的微信昵称、头像或好友关系，昵称和头像只有你在「编辑资料」中主动选择后才会保存。\n（2）你主动填写的资料：昵称、头像、个人简介。\n（3）你创建的内容：投票与问卷的标题、说明、选项、规则、截止时间。\n（4）参与记录：你选择的选项、提交的问卷回答、提交时间；为支持「限同一 IP 提交」和防刷票，还会记录提交时的 IP 地址。\n（5）互动信息：你发表的评论、点赞记录。\n（6）通知相关：你授权订阅消息的模板、推送记录与已读状态。\n（7）反馈信息：你通过「帮助与反馈」提交的内容和联系方式。\n（8）运行日志：接口请求时间、错误信息、IP 地址等，用于故障排查与安全防护。\n我们不会收集你的通讯录、精确位置或微信好友关系。'
+      p: '（1）账号信息：你通过微信授权登录时，微信返回的 openid、unionid，用于识别你的账号。我们不会自动获取你的微信昵称、头像或好友关系，昵称和头像只有你在「编辑资料」中主动选择后才会保存。\n（2）你主动填写的资料：昵称、头像、个人简介。\n（3）你创建的内容：投票与问卷的标题、说明、选项、规则、截止时间。\n（4）参与记录：你选择的选项、提交的问卷回答、提交时间；为支持「限同一 IP 提交」和防刷票，还会记录提交时的 IP 地址。\n（5）互动信息：你发表的评论、点赞记录。\n（6）通知相关：你授权订阅消息的模板、推送记录与已读状态。\n（7）运行日志：接口请求时间、错误信息、IP 地址等，用于故障排查与安全防护。\n我们不会收集你的通讯录、精确位置或微信好友关系。'
     },
     {
       h: '二、我们如何使用这些信息',
@@ -149,41 +146,12 @@ const DOCS: Record<'terms' | 'privacy', Section[]> = {
     },
     {
       h: '十二、联系我们',
-      p: '如对本政策有任何疑问、意见或投诉，可通过「帮助与反馈」或 support@vote.jun 联系我们，我们会在 15 个工作日内答复。'
+      p: '如对本政策有任何疑问、意见或投诉，可通过「帮助与反馈」或 posoovo@gmail.com 联系我们，我们会在 15 个工作日内答复。'
     }
   ]
 }
 
 const type = ref<DocType>('terms')
-
-/**
- * 开发版诊断信息。
- *
- * 真机排查「数据没上云 / 头像不对」时，最先要确认两件事：
- *   1. 当前包连的是哪个接口（有没有退回 mock）
- *   2. 两个客户端是不是同一个账号
- * 这两行只在开发构建里出现，生产包不会暴露接口地址。
- */
-const user = useUserStore()
-const isDev = import.meta.env.DEV
-const accountId = computed(() => user.profile?.id ?? '')
-const apiLabel = computed(() => (useMock() ? '本地假数据（未连后端）' : API_BASE))
-
-/**
- * 宿主环境原始值：平台判定 + uniPlatform + app。
- *
- * QQ 里跑微信小程序时，这三项的组合决定登录走哪条路：
- * 判定成 qq 会去要 QQ 的 openid，但微信运行时给的是微信 code。
- * 真机 / QQ 里没法开控制台，所以把原始值直接显示在关于页。
- */
-const runtimeLabel = computed(() => {
-  try {
-    const info = uni.getSystemInfoSync() as Record<string, any>
-    return `${getPlatform()} · ${info.uniPlatform ?? '-'} · ${info.app ?? '-'}`
-  } catch {
-    return getPlatform()
-  }
-})
 
 const isAbout = computed(() => type.value === 'about')
 const title = computed(() => {
@@ -231,24 +199,6 @@ function open(url: string) {
           <view class="row" hover-class="row--active" @tap="open('/pages/settings/doc?type=privacy')">
             <text class="row__title">隐私政策</text>
             <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
-          </view>
-        </view>
-
-        <!-- 开发版专用：确认接口环境与账号，排查真机数据不同步 -->
-        <view v-if="isDev" class="group">
-          <view class="row">
-            <text class="row__title">当前账号</text>
-            <text class="row__value">{{ accountId || '-' }}</text>
-          </view>
-          <view class="group__sep" />
-          <view class="row">
-            <text class="row__title">接口环境</text>
-            <text class="row__value">{{ apiLabel }}</text>
-          </view>
-          <view class="group__sep" />
-          <view class="row">
-            <text class="row__title">运行环境</text>
-            <text class="row__value">{{ runtimeLabel }}</text>
           </view>
         </view>
 

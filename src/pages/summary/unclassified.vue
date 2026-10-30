@@ -7,6 +7,7 @@ import AppButton from '@/components/base/AppButton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
+import AppConfirmSheet from '@/components/base/AppConfirmSheet.vue'
 import {
   assignSummaryAnswers,
   createSummaryOption,
@@ -30,7 +31,13 @@ import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 const list = ref<UnclassifiedAnswer[]>([])
 const candidates = ref<SummaryCandidate[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 const surveyId = ref('')
+/** 未归类总数 / 分页状态：列表一次只取 100 条 */
+const total = ref(0)
+const cursor = ref<string | null>(null)
+const hasMore = ref(false)
+const loadingMore = ref(false)
 
 /** 新建选项弹层 */
 const newSheet = ref(false)
@@ -44,6 +51,9 @@ const pickSheet = ref(false)
 interface UnclassifiedSnapshot {
   list: UnclassifiedAnswer[]
   candidates: SummaryCandidate[]
+  total: number
+  cursor: string | null
+  hasMore: boolean
 }
 
 /** 新建/归入/忽略都会改动两条列表，写完就作废，下次进来重新拉 */
@@ -57,15 +67,55 @@ async function load() {
   if (cached) {
     list.value = cached.list
     candidates.value = cached.candidates
+    total.value = cached.total ?? cached.list.length
+    cursor.value = cached.cursor ?? null
+    hasMore.value = cached.hasMore ?? false
   }
   loading.value = !cached
+  loadError.value = false
+  if (!surveyId.value) {
+    loading.value = false
+    loadError.value = true
+    return
+  }
   try {
-    const [u, c] = await Promise.all([fetchUnclassified(surveyId.value), fetchSummaryCandidates(surveyId.value)])
-    list.value = u
+    const [u, c] = await Promise.all([
+      fetchUnclassified(surveyId.value),
+      fetchSummaryCandidates(surveyId.value)
+    ])
+    list.value = u.list
+    total.value = u.total
+    cursor.value = u.cursor
+    hasMore.value = u.hasMore
     candidates.value = c
-    cacheSet(cacheKey.summaryUnclassified(surveyId.value), { list: u, candidates: c })
+    cacheSet(cacheKey.summaryUnclassified(surveyId.value), {
+      list: u.list,
+      candidates: c,
+      total: u.total,
+      cursor: u.cursor,
+      hasMore: u.hasMore
+    })
+  } catch {
+    if (!cached) loadError.value = true
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMore() {
+  if (!hasMore.value || loadingMore.value || loading.value) return
+  loadingMore.value = true
+  try {
+    const next = await fetchUnclassified(surveyId.value, cursor.value)
+    const seen = new Set(list.value.map((x) => x.id))
+    list.value = [...list.value, ...next.list.filter((x) => !seen.has(x.id))]
+    cursor.value = next.cursor
+    hasMore.value = next.hasMore
+    total.value = next.total
+  } catch {
+    uni.showToast({ title: '加载失败，请重试', icon: 'none' })
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -98,6 +148,7 @@ async function confirmNew() {
       sample: target.content
     })
     list.value = list.value.filter((x) => x.id !== target.id)
+    total.value = Math.max(0, total.value - 1)
     newSheet.value = false
     invalidate()
     uni.showToast({ title: '已新建选项', icon: 'none' })
@@ -119,6 +170,7 @@ async function pickInto(c: SummaryCandidate) {
     await assignSummaryAnswers(surveyId.value, c.id, [target.id])
     c.answerCount += 1
     list.value = list.value.filter((x) => x.id !== target.id)
+    total.value = Math.max(0, total.value - 1)
     pickSheet.value = false
     invalidate()
     uni.showToast({ title: `已归入「${c.title}」`, icon: 'none' })
@@ -131,32 +183,33 @@ async function ignore(a: UnclassifiedAnswer) {
   try {
     await ignoreSummaryAnswers(surveyId.value, [a.id])
     list.value = list.value.filter((x) => x.id !== a.id)
+    total.value = Math.max(0, total.value - 1)
     invalidate()
   } catch {
     uni.showToast({ title: '操作失败，请重试', icon: 'none' })
   }
 }
 
+const ignoreAllVisible = ref(false)
+
 function ignoreAll() {
-  if (!list.value.length) return
-  uni.showModal({
-    title: '忽略全部未归类回答？',
-    content: '这些回答不会进入这次汇总，但原文仍保留在问卷数据里。',
-    confirmText: '全部忽略',
-    success: async (r) => {
-      if (!r.confirm) return
-      try {
-        await ignoreSummaryAnswers(
-          surveyId.value,
-          list.value.map((x) => x.id)
-        )
-        list.value = []
-        invalidate()
-      } catch {
-        uni.showToast({ title: '操作失败，请重试', icon: 'none' })
-      }
-    }
-  })
+  if (!total.value) return
+  ignoreAllVisible.value = true
+}
+
+async function doIgnoreAll() {
+  ignoreAllVisible.value = false
+  try {
+    // 让服务端按「全部未归类」处理：只传当前这一页的 id 会漏掉后面的回答
+    await ignoreSummaryAnswers(surveyId.value, [], true)
+    list.value = []
+    total.value = 0
+    hasMore.value = false
+    cursor.value = null
+    invalidate()
+  } catch {
+    uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+  }
 }
 
 function goBack() {
@@ -176,8 +229,18 @@ function goBack() {
       <AppSkeleton type="list" />
     </view>
 
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="未归类回答加载失败"
+      desc="网络不太稳定，或者你没有整理这份问卷的权限"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
+
     <template v-else>
-      <scroll-view class="unclassified__scroll" scroll-y>
+      <scroll-view class="unclassified__scroll" scroll-y @scrolltolower="loadMore">
         <view class="unclassified__content">
           <!-- 86 的说明条：$warning-soft r14 pad[12,14] -->
           <view class="intro">
@@ -185,7 +248,7 @@ function goBack() {
               <AppIcon name="triangle-alert" :size="15" color="#D97706" />
             </view>
             <text class="intro__text">
-              {{ list.length }} 条回答没能归到已有选项，可能是新地点，或者写得太笼统。归成新选项，或直接忽略。
+              {{ total }} 条回答没能归到已有选项，可能是新地点，或者写得太笼统。归成新选项，或直接忽略。
             </text>
           </view>
 
@@ -214,6 +277,9 @@ function goBack() {
               </view>
             </template>
           </view>
+
+          <text v-if="list.length && loadingMore" class="unclassified__more">加载更多…</text>
+          <text v-else-if="list.length && !hasMore" class="unclassified__more">没有更多了</text>
 
           <AppEmpty
             v-if="!list.length"
@@ -269,6 +335,15 @@ function goBack() {
         </view>
       </view>
     </AppSheet>
+
+    <AppConfirmSheet
+      :visible="ignoreAllVisible"
+      title="忽略全部未归类回答？"
+      desc="这些回答不会进入这次汇总，但原文仍保留在问卷数据里。"
+      confirm-text="全部忽略"
+      @close="ignoreAllVisible = false"
+      @confirm="doIgnoreAll"
+    />
   </view>
 </template>
 
@@ -304,6 +379,13 @@ export default { name: 'SummaryUnclassifiedPage' }
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+
+  &__more {
+    padding: 10px 0 2px;
+    font-size: 11px;
+    color: $faint;
+    text-align: center;
   }
 
   &__actions {

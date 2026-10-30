@@ -255,7 +255,7 @@ export default { name: 'LoginPage' }
   &__action-text {
     font-size: 15px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
 
     &--off {
       color: $faint;
@@ -266,7 +266,7 @@ export default { name: 'LoginPage' }
     width: 15px;
     height: 15px;
     border: 2px solid rgba(255, 255, 255, 0.4);
-    border-top-color: #fff;
+    border-top-color: $white;
     border-radius: 50%;
     animation: login-spin 0.7s linear infinite;
   }

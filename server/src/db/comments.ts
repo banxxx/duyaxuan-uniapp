@@ -17,57 +17,62 @@ import { assertCanJoin, isInviteOnly } from './invites'
  */
 
 const MAX_LENGTH = 500
-const LIST_LIMIT = 200
+const LIST_PAGE = 50
 
 /**
- * 26 / 79 评论列表
+ * 游标编码。
  *
- * `reply_to_id` 存被回复评论的 id，展示时 JOIN 出作者昵称。
- * 原评论被删了 replyTo 就自然为空，不会显示「回复 undefined」。
+ * 最新排序是 `created_at:id`；最热排序多一个 like_count 做主键。
+ * 只用 created_at 会在同一毫秒两条评论时互相挤掉，所以都要带上 id 做最后一层。
  */
-export async function listComments(
-  db: D1Database,
-  pollId: string,
-  viewerId: string | null
-) {
-  const row = await getPollRowOrThrow(db, pollId)
-  // 详情页本身可以公开预览，但邀请制投票的评论正文不能靠知道 poll id 读到
-  if (isInviteOnly(row)) {
-    if (!viewerId) throw new HttpError(403, '需要邀请码才能参与')
-    await assertCanJoin(db, row, viewerId)
-  }
-  const { results } = await db
-    .prepare(
-      `SELECT c.*,
-              u.nickname AS user_name, u.avatar AS user_avatar,
-              rc.id AS reply_id, rc.user_id AS reply_user_id, ru.nickname AS reply_name,
-              (SELECT COUNT(*) FROM comment_likes l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked
-       FROM comments c
-       LEFT JOIN users u ON u.id = c.user_id
-       LEFT JOIN comments rc ON rc.id = c.reply_to_id AND rc.deleted_at IS NULL
-       LEFT JOIN users ru ON ru.id = rc.user_id
-       WHERE c.poll_id = ? AND c.deleted_at IS NULL
-       ORDER BY c.created_at DESC
-       LIMIT ?`
-    )
-    .bind(viewerId ?? '', pollId, LIST_LIMIT)
-    .all<{
-      id: string
-      poll_id: string
-      user_id: string
-      content: string
-      reply_to_id: string | null
-      like_count: number
-      created_at: number
-      user_name: string | null
-      user_avatar: string | null
-      reply_id: string | null
-      reply_user_id: string | null
-      reply_name: string | null
-      liked: number
-    }>()
+function encodeLatestCursor(createdAt: number, id: string): string {
+  return `${createdAt}:${id}`
+}
 
-  return results.map((row) => ({
+function encodeHotCursor(likeCount: number, createdAt: number, id: string): string {
+  return `${likeCount}:${createdAt}:${id}`
+}
+
+function decodeLatestCursor(cursor: string | null | undefined): { at: number; id: string } | null {
+  if (!cursor) return null
+  const i = cursor.indexOf(':')
+  if (i <= 0) return null
+  const at = Number(cursor.slice(0, i))
+  const id = cursor.slice(i + 1)
+  if (!Number.isFinite(at) || !id) return null
+  return { at, id }
+}
+
+function decodeHotCursor(
+  cursor: string | null | undefined
+): { likes: number; at: number; id: string } | null {
+  if (!cursor) return null
+  const parts = cursor.split(':')
+  if (parts.length !== 3) return null
+  const likes = Number(parts[0])
+  const at = Number(parts[1])
+  if (!Number.isFinite(likes) || !Number.isFinite(at) || !parts[2]) return null
+  return { likes, at, id: parts[2] }
+}
+
+interface CommentRow {
+  id: string
+  poll_id: string
+  user_id: string
+  content: string
+  reply_to_id: string | null
+  like_count: number
+  created_at: number
+  user_name: string | null
+  user_avatar: string | null
+  reply_id: string | null
+  reply_user_id: string | null
+  reply_name: string | null
+  liked: number
+}
+
+function toComment(row: CommentRow, viewerId: string | null) {
+  return {
     id: row.id,
     pollId: row.poll_id,
     content: row.content,
@@ -86,7 +91,90 @@ export async function listComments(
       row.reply_user_id && row.reply_name
         ? { id: row.reply_user_id, name: row.reply_name }
         : undefined
-  }))
+  }
+}
+
+/**
+ * 26 / 79 评论列表（分页）
+ *
+ * `reply_to_id` 存被回复评论的 id，展示时 JOIN 出作者昵称。
+ * 原评论被删了 replyTo 就自然为空，不会显示「回复 undefined」。
+ *
+ * 以前写死 LIMIT 200，讨论区页面没有「加载更多」，超过 200 条就再也看不到。
+ * 现在按游标分页：讨论区在翻页的同时可能有人发新评论，offset 会让新评论把
+ * 后面的内容往前挤、跳过一条，游标则始终从「上次看到的位置」继续。
+ *
+ * sort=latest 按时间倒序；sort=hot 按点赞数倒序（赞数相同时按时间倒序）。
+ */
+export async function listComments(
+  db: D1Database,
+  pollId: string,
+  viewerId: string | null,
+  cursor?: string | null,
+  sort: 'latest' | 'hot' = 'latest'
+): Promise<{ list: ReturnType<typeof toComment>[]; cursor: string | null; hasMore: boolean; total: number }> {
+  const row = await getPollRowOrThrow(db, pollId)
+  // 详情页本身可以公开预览，但邀请制投票的评论正文不能靠知道 poll id 读到
+  if (isInviteOnly(row)) {
+    if (!viewerId) throw new HttpError(403, '需要邀请码才能参与')
+    await assertCanJoin(db, row, viewerId)
+  }
+
+  const totalRow = await db
+    .prepare('SELECT COUNT(*) AS n FROM comments WHERE poll_id = ? AND deleted_at IS NULL')
+    .bind(pollId)
+    .first<{ n: number }>()
+  const total = totalRow?.n ?? 0
+
+  let where: string
+  let binds: Array<string | number>
+  let order: string
+
+  if (sort === 'hot') {
+    const after = decodeHotCursor(cursor)
+    where = after
+      ? 'AND (c.like_count < ? OR (c.like_count = ? AND c.created_at < ?) OR (c.like_count = ? AND c.created_at = ? AND c.id < ?))'
+      : ''
+    binds = after
+      ? [viewerId ?? '', pollId, after.likes, after.likes, after.at, after.likes, after.at, after.id, LIST_PAGE + 1]
+      : [viewerId ?? '', pollId, LIST_PAGE + 1]
+    order = 'c.like_count DESC, c.created_at DESC, c.id DESC'
+  } else {
+    const after = decodeLatestCursor(cursor)
+    where = after ? 'AND (c.created_at < ? OR (c.created_at = ? AND c.id < ?))' : ''
+    binds = after
+      ? [viewerId ?? '', pollId, after.at, after.at, after.id, LIST_PAGE + 1]
+      : [viewerId ?? '', pollId, LIST_PAGE + 1]
+    order = 'c.created_at DESC, c.id DESC'
+  }
+
+  const { results } = await db
+    .prepare(
+      `SELECT c.*,
+              u.nickname AS user_name, u.avatar AS user_avatar,
+              rc.id AS reply_id, rc.user_id AS reply_user_id, ru.nickname AS reply_name,
+              (SELECT COUNT(*) FROM comment_likes l WHERE l.comment_id = c.id AND l.user_id = ?) AS liked
+       FROM comments c
+       LEFT JOIN users u ON u.id = c.user_id
+       LEFT JOIN comments rc ON rc.id = c.reply_to_id AND rc.deleted_at IS NULL
+       LEFT JOIN users ru ON ru.id = rc.user_id
+       WHERE c.poll_id = ? AND c.deleted_at IS NULL ${where}
+       ORDER BY ${order}
+       LIMIT ?`
+    )
+    .bind(...binds)
+    .all<CommentRow>()
+
+  const hasMore = results.length > LIST_PAGE
+  const page = hasMore ? results.slice(0, LIST_PAGE) : results
+  const list = page.map((r) => toComment(r, viewerId))
+  const last = page[page.length - 1]
+  const nextCursor = !hasMore || !last
+    ? null
+    : sort === 'hot'
+      ? encodeHotCursor(last.like_count, last.created_at, last.id)
+      : encodeLatestCursor(last.created_at, last.id)
+  return { list, cursor: nextCursor, hasMore, total }
 }
 
 /** 发评论：`allow_comment` 关掉后直接拒绝，不靠前端藏输入框 */

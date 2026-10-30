@@ -178,7 +178,7 @@ export default { name: 'AppButton' }
 
   &--primary {
     background: $accent;
-    color: #fff;
+    color: $white;
   }
 
   &--subtle {
@@ -196,13 +196,13 @@ export default { name: 'AppButton' }
 
   &--danger {
     background: $danger;
-    color: #fff;
+    color: $white;
   }
 
   /* 22/23 的「返回投票详情」：黑底白字，不跟主色抢视线 */
   &--ink {
     background: $ink;
-    color: #fff;
+    color: $white;
   }
 
   &--ghost {
@@ -242,7 +242,7 @@ export default { name: 'AppButton' }
     width: 14px;
     height: 14px;
     border: 2px solid rgba(255, 255, 255, 0.4);
-    border-top-color: #fff;
+    border-top-color: $white;
     border-radius: 50%;
     animation: btn-spin 0.7s linear infinite;
   }

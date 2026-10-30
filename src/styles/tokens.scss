@@ -11,19 +11,23 @@ $muted: #71717a; // 次要文字、副标题
 $faint: #a1a1aa; // 占位符、时间、弱提示
 $line: #e4e4e7; // 描边、分割线
 $subtle: #f4f4f5; // 次级底色、禁用开关轨道
+$track: #d4d4d8; // 进度轨道、禁用态填充
 $bg: #fafafa; // 页面底色
 $surface: #ffffff; // 卡片、弹层
+$white: #ffffff; // 彩色按钮/图标上的白字
 
 /* 品牌色 */
 $accent: #4f46e5;
 $accent-ink: #4338ca;
 $accent-soft: #eef2ff;
+$accent-200: #c7d2fe; // 深色条上的浅紫文字（如撤销）
 
 /* 语义色 */
 $success: #047857; // 设计稿 success = #047857（规范卡上的文字写的是 #10B981，以色板与变量为准）
 $success-soft: #d1fae5;
 $warning: #d97706;
 $warning-soft: #fef3c7;
+$warning-line: #fde68a; // 紧急卡片的描边（比 $warning 更浅，用于边界而非文字）
 $danger: #dc2626;
 $danger-soft: #fee2e2; // 危险提示图标底色（53）
 $danger-mist: #fef2f2; // 危险提示卡底色（53）
@@ -68,7 +72,7 @@ $uni-color-success: $success;
 $uni-color-warning: $warning;
 $uni-color-error: $danger;
 $uni-text-color: $ink;
-$uni-text-color-inverse: #fff;
+$uni-text-color-inverse: $white;
 $uni-text-color-grey: $muted;
 $uni-text-color-placeholder: $faint;
 $uni-text-color-disable: $faint;

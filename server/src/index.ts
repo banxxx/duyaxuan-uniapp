@@ -7,8 +7,8 @@ import user from './routes/user'
 import polls from './routes/polls'
 import files from './routes/files'
 import notifications from './routes/notifications'
-import feedback from './routes/feedback'
 import { flushScheduled } from './db/notifications'
+import { cleanupRateLimits } from './lib/rate-limit'
 import type { Env } from './types'
 
 /**
@@ -30,7 +30,6 @@ app.route('/user', user)
 app.route('/polls', polls)
 app.route('/files', files)
 app.route('/notifications', notifications)
-app.route('/feedback', feedback)
 
 app.notFound((c) => fail(c, 404, '接口不存在'))
 
@@ -55,6 +54,10 @@ export default {
   scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
       flushScheduled(env).catch((err) => console.error('[cron] 补发通知失败', err))
+    )
+    // 限流表的过期行顺手清掉，不和补发通知互相阻塞
+    ctx.waitUntil(
+      cleanupRateLimits(env.DB).catch((err) => console.error('[cron] 清理限流记录失败', err))
     )
   }
 }

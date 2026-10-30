@@ -143,7 +143,7 @@ export default { name: 'SwipeRow' }
     color: $ink;
 
     &--light {
-      color: #fff;
+      color: $white;
     }
   }
 

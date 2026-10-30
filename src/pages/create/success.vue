@@ -253,7 +253,7 @@ export default { name: 'CreateSuccessPage' }
     width: 92px;
     border-radius: 9px;
     overflow: hidden;
-    background: #fff;
+    background: $white;
     border: 1px solid $line;
     flex-shrink: 0;
     display: flex;
@@ -269,7 +269,7 @@ export default { name: 'CreateSuccessPage' }
   &__thumb-title {
     font-size: 7px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
     line-height: 1.3;
   }
 
@@ -412,7 +412,7 @@ export default { name: 'CreateSuccessPage' }
   &__primary-text {
     font-size: 15px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 
   &__secondary {

@@ -353,7 +353,6 @@ const cleanup = [
   "DELETE FROM options WHERE id LIKE 'seed%' OR poll_id LIKE 'seed%'",
   "DELETE FROM invites WHERE id LIKE 'seed%' OR poll_id LIKE 'seed%'",
   "DELETE FROM polls WHERE id LIKE 'seed%'",
-  "DELETE FROM feedback WHERE id LIKE 'seed%'",
   // 订阅消息的额度和偏好按账号存；种子账号每次重建，旧额度一起清掉，
   // 免得测试时遗留的授权让下一次「重灌后投票」莫名推一条服务通知
   "DELETE FROM wx_subscriptions WHERE user_id LIKE 'seed%'",

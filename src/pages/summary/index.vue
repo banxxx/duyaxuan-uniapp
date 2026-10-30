@@ -6,6 +6,7 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppConfirmSheet from '@/components/base/AppConfirmSheet.vue'
 import {
   fetchPoll,
   fetchSummaryCandidates,
@@ -31,7 +32,10 @@ import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 const poll = ref<Poll | null>(null)
 const candidates = ref<SummaryCandidate[]>([])
 const unclassified = ref<UnclassifiedAnswer[]>([])
+/** 未归类总数：列表分批取，计数不能用当前这一页的长度 */
+const unclassifiedTotal = ref(0)
 const loading = ref(true)
+const loadError = ref(false)
 const surveyId = ref('')
 
 const classifiedCount = computed(() => candidates.value.reduce((s, c) => s + c.answerCount, 0))
@@ -41,6 +45,7 @@ interface SummarySnapshot {
   poll: Poll
   candidates: SummaryCandidate[]
   unclassified: UnclassifiedAnswer[]
+  unclassifiedTotal: number
 }
 
 async function load() {
@@ -49,9 +54,16 @@ async function load() {
     poll.value = cached.poll
     candidates.value = cached.candidates
     unclassified.value = cached.unclassified
+    unclassifiedTotal.value = cached.unclassifiedTotal ?? cached.unclassified.length
   }
   // 从 85/86 退回来时页面是复用的，有内容就不该再铺一次骨架
   loading.value = !cached
+  loadError.value = false
+  if (!surveyId.value) {
+    loading.value = false
+    loadError.value = true
+    return
+  }
   try {
     const p = await fetchPoll(surveyId.value)
     poll.value = p
@@ -60,8 +72,16 @@ async function load() {
       fetchUnclassified(p.id)
     ])
     candidates.value = c
-    unclassified.value = u
-    cacheSet(cacheKey.pollSummary(surveyId.value), { poll: p, candidates: c, unclassified: u })
+    unclassified.value = u.list
+    unclassifiedTotal.value = u.total
+    cacheSet(cacheKey.pollSummary(surveyId.value), {
+      poll: p,
+      candidates: c,
+      unclassified: u.list,
+      unclassifiedTotal: u.total
+    })
+  } catch {
+    if (!poll.value) loadError.value = true
   } finally {
     loading.value = false
   }
@@ -92,27 +112,59 @@ function goBack() {
  * 「重新归并」：后端清掉这次的整理结果，按原文重新分组。
  * 手动改过的标题、归到别的选项的回答都会丢，所以要二次确认。
  */
+const remergeVisible = ref(false)
+
 function remerge() {
-  uni.showModal({
-    title: '重新归并？',
-    content: '会按回答原文重新分组，手动调整过的选项标题和归类会丢失。',
-    confirmText: '重新归并',
-    success: async (r) => {
-      if (!r.confirm) return
-      uni.showLoading({ title: '正在归并' })
-      try {
-        await remergeSummary(surveyId.value)
-        // 重新归并后旧分组全部作废
-        cacheDrop(cacheKey.pollSummary(surveyId.value))
-        await load()
-        uni.showToast({ title: '已重新归并', icon: 'none' })
-      } catch {
-        uni.showToast({ title: '归并失败，请重试', icon: 'none' })
-      } finally {
-        uni.hideLoading()
-      }
+  remergeVisible.value = true
+}
+
+async function doRemerge() {
+  remergeVisible.value = false
+  uni.showLoading({ title: '正在归并' })
+  try {
+    await remergeSummary(surveyId.value)
+    // 重新归并后旧分组全部作废
+    cacheDrop(cacheKey.pollSummary(surveyId.value))
+    await load()
+    uni.showToast({ title: '已重新归并', icon: 'none' })
+  } catch {
+    uni.showToast({ title: '归并失败，请重试', icon: 'none' })
+  } finally {
+    uni.hideLoading()
+  }
+}
+
+const MAX_DRAFT_OPTIONS = 12
+
+/**
+ * 候选 → 草稿选项。
+ *
+ * 创建页最多 12 个：超出的不能静默丢掉，前 11 个照常带入，
+ * 剩下的合并成「其他」，回答原文仍保留在问卷里。
+ * 老数据可能留下同名候选（去重是后加的），这里再兜一次底。
+ */
+function draftOptions(list: SummaryCandidate[]): Array<{ title: string; desc: string }> {
+  const used = new Set<string>()
+  const make = (c: SummaryCandidate) => {
+    const base = (c.title.trim() || '未命名选项').slice(0, 12)
+    let title = base
+    let n = 2
+    while (used.has(title)) {
+      const suffix = `（${n++}）`
+      title = base.slice(0, 12 - suffix.length) + suffix
     }
-  })
+    used.add(title)
+    return { title, desc: c.desc }
+  }
+
+  if (list.length <= MAX_DRAFT_OPTIONS) return list.map(make)
+  const head = list.slice(0, MAX_DRAFT_OPTIONS - 1).map(make)
+  // 候选里本来就有「其他」时再错开一个名字
+  let other = '其他'
+  let n = 2
+  while (used.has(other)) other = `其他${n++}`
+  head.push({ title: other, desc: `其余 ${list.length - head.length} 个候选` })
+  return head
 }
 
 /** 进入创建流程第二步：选项已带入 */
@@ -123,8 +175,7 @@ function goContent() {
     sourceSurveyId: surveyId.value,
     title: poll.value ? `${poll.value.title} · 汇总投票` : '',
     desc: `由 ${classifiedCount.value} 条问卷回答汇总而成，得票最高者即为最终方案。`,
-    // 创建页最多 12 个选项；这里不要截成 4，否则第 5 个以后的候选会被静默丢掉
-    options: candidates.value.slice(0, 12).map((c) => ({ title: c.title, desc: c.desc }))
+    options: draftOptions(candidates.value)
   })
   go(ROUTES.createContent)
 }
@@ -142,6 +193,16 @@ function goContent() {
       <AppSkeleton type="list" />
     </view>
 
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="汇总数据加载失败"
+      desc="网络不太稳定，或者你没有整理这份问卷的权限"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
+
     <template v-else>
       <scroll-view class="summary__scroll" scroll-y>
         <view class="summary__content">
@@ -150,7 +211,7 @@ function goContent() {
             <text class="source__label">来源问卷</text>
             <text class="source__title">{{ poll?.title }}</text>
             <text class="source__meta">
-              {{ classifiedCount + unclassified.length }} 条回答 ·
+              {{ poll?.answerCount ?? classifiedCount + unclassifiedTotal }} 条回答 ·
               {{ poll ? formatDateTime(poll.rules.endAt) : '' }} 截止
             </text>
           </view>
@@ -176,7 +237,7 @@ function goContent() {
             </view>
             <view class="count" @tap="goUnclassified">
               <text class="count__label">未归类</text>
-              <text class="count__num count__num--warn">{{ unclassified.length }} 条</text>
+              <text class="count__num count__num--warn">{{ unclassifiedTotal }} 条</text>
             </view>
           </view>
 
@@ -221,12 +282,12 @@ function goContent() {
           </view>
 
           <!-- 未归类提示 -->
-          <view v-if="unclassified.length" class="unclassified" @tap="goUnclassified">
+          <view v-if="unclassifiedTotal" class="unclassified" @tap="goUnclassified">
             <view class="unclassified__icon">
               <AppIcon name="triangle-alert" :size="15" color="#D97706" />
             </view>
             <view class="unclassified__text">
-              <text class="unclassified__title">{{ unclassified.length }} 条回答没有归类</text>
+              <text class="unclassified__title">{{ unclassifiedTotal }} 条回答没有归类</text>
               <text class="unclassified__desc">可新建选项或归入已有</text>
             </view>
             <AppIcon name="chevron-right" :size="14" color="#D97706" />
@@ -239,6 +300,15 @@ function goContent() {
         <AppButton size="cta" class="summary__action" @tap="goContent">回到内容填写</AppButton>
       </view>
     </template>
+
+    <AppConfirmSheet
+      :visible="remergeVisible"
+      title="重新归并？"
+      desc="会按回答原文重新分组，手动调整过的选项标题和归类会丢失。"
+      confirm-text="重新归并"
+      @close="remergeVisible = false"
+      @confirm="doRemerge"
+    />
   </view>
 </template>
 

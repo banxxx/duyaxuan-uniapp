@@ -17,15 +17,20 @@ import { cacheDrop, cacheKey } from '@/utils/cache'
 /**
  * 90 编辑投票 · 内容 / 93 编辑问卷 · 内容
  *
- * 和 29/62 创建页的区别只有三条：
- *   1. 导航是「关闭 / 编辑投票 | 编辑问卷 / 已发布」，没有草稿
- *   2. 顶部多一条「已发布 2 天 · 42 人已投票」的提示
- *   3. 已有票数的选项不能删，右侧显示票数；新增的选项标「新增」
+ * 这一页只管「内容和选项」，规则（匿名、参与方式、截止时间等）在 edit-rules，
+ * 通过底部的「规则设置」进入，两页分开保存。
  *
- * 底部是「取消 / 保存修改」，不是「上一步 / 下一步」——编辑没有第二步。
+ * 可编辑范围（和后端 updatePoll 的限制一一对应）：
+ *   主题 / 说明：随时可改
+ *   选项：已有票数的连文字都不能改；没票的可以改、可以删；进行中还能新增
+ *   已结束：选项全部锁定，只剩主题 / 说明
+ *
+ * 导航是「关闭 / 编辑投票 | 编辑问卷 / 已发布」，顶部带一条已发布/已截止的提示。
  */
 const poll = ref<Poll | null>(null)
 const loading = ref(true)
+/** 首屏加载失败：给错误页和重试，不要停在空白页 */
+const loadError = ref(false)
 const saving = ref(false)
 
 const title = ref('')
@@ -44,10 +49,13 @@ const DESC_MAX = 200
 const OPTION_MAX = 30
 
 const isSurvey = computed(() => poll.value?.type === 'survey')
+const isEnded = computed(() => !!poll.value && poll.value.rules.endAt <= Date.now())
 
 const responseCount = computed(() =>
   isSurvey.value ? poll.value?.answerCount ?? 0 : poll.value?.voterCount ?? 0
 )
+
+const hasResponses = computed(() => responseCount.value > 0)
 
 const publishedDays = computed(() => {
   if (!poll.value) return 0
@@ -56,22 +64,31 @@ const publishedDays = computed(() => {
 
 const publishedText = computed(() => {
   if (!poll.value) return ''
-  const ended = poll.value.rules.endAt <= Date.now()
+  const tail = isEnded.value ? ' · 已截止' : ''
   if (isSurvey.value) {
-    return `已收集 ${publishedDays.value} 天 · ${responseCount.value} 条回答${ended ? ' · 已截止' : ''}`
+    return `已收集 ${publishedDays.value} 天 · ${responseCount.value} 条回答${tail}`
   }
-  return `已发布 ${publishedDays.value} 天 · ${responseCount.value} 人已投票`
+  return `已发布 ${publishedDays.value} 天 · ${responseCount.value} 人已投票${tail}`
 })
 
-/** 锁定提示：哪些东西已经不能改 */
-const lockNote = computed(() =>
-  isSurvey.value
-    ? '主题和说明可随时修改，已提交的回答不受影响；回答框写法和字数上限已锁定。'
-    : '主题和说明可随时修改；已有票数的选项只能改文字，不能删除。'
-)
+/** 锁定提示：哪些东西已经不能改（和编辑规则页的分层锁定保持一致） */
+const lockNote = computed(() => {
+  if (isEnded.value) {
+    return `${isSurvey.value ? '问卷' : '投票'}已结束，选项和规则已全部锁定，现在只能修改主题和说明。`
+  }
+  if (!hasResponses.value) {
+    return isSurvey.value
+      ? '还没有人提交，主题和说明可以修改；回答方式创建后不可修改。'
+      : '还没有人投票，主题、说明和选项都可以修改；投票类型创建后不可修改。'
+  }
+  return isSurvey.value
+    ? '主题和说明可随时修改，已提交的回答不受影响；回答方式已锁定。'
+    : '主题和说明可随时修改；已有票数的选项已锁定，没人投过的选项还可以改或删除。'
+})
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     const p = await fetchPoll(pollId.value)
     poll.value = p
@@ -84,6 +101,8 @@ async function load() {
       votes: o.votes,
       locked: o.votes > 0
     }))
+  } catch {
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -95,6 +114,10 @@ onLoad((q) => {
 onMounted(load)
 
 function openAdd() {
+  if (isEnded.value) {
+    uni.showToast({ title: '已结束，不能再添加选项', icon: 'none' })
+    return
+  }
   if (options.value.length >= 12) {
     uni.showToast({ title: '最多 12 个选项', icon: 'none' })
     return
@@ -123,6 +146,10 @@ function confirmAdd() {
 
 function removeOption(i: number) {
   const opt = options.value[i]
+  if (isEnded.value) {
+    uni.showToast({ title: '已结束，不能再删除选项', icon: 'none' })
+    return
+  }
   if (opt.locked) {
     uni.showToast({ title: `已有 ${opt.votes} 票，不能删除`, icon: 'none' })
     return
@@ -143,18 +170,21 @@ async function save() {
 
   saving.value = true
   try {
-    const next = await updatePoll(poll.value.id, {
+    // 已结束：选项和规则都已锁定，只提交主题/说明，避免带上未改动的字段被后端判成越权修改
+    const body: Parameters<typeof updatePoll>[1] = {
       title: title.value.trim(),
-      desc: desc.value.trim(),
-      type: poll.value.type,
-      options: options.value.map((o) => ({
+      desc: desc.value.trim()
+    }
+    if (!isEnded.value) {
+      body.type = poll.value.type
+      body.options = options.value.map((o) => ({
         id: o.id,
         title: o.title.trim(),
         desc: o.desc,
         votes: o.votes
-      })),
-      rules: poll.value.rules
-    })
+      }))
+    }
+    const next = await updatePoll(poll.value.id, body)
     poll.value = next
     // 改过内容，这条投票的所有快照作废：标题、选项都变了，不能先显示旧的
     cacheDrop(cacheKey.pollAll(poll.value.id))
@@ -186,8 +216,10 @@ function goRules() {
         <text class="edit__nav-title">编辑{{ isSurvey ? '问卷' : '投票' }}</text>
       </template>
       <template #right>
-        <view class="edit__status">
-          <text class="edit__status-text">已发布</text>
+        <view class="edit__status" :class="{ 'edit__status--ended': isEnded }">
+          <text class="edit__status-text" :class="{ 'edit__status-text--ended': isEnded }">
+            {{ isEnded ? '已结束' : '已发布' }}
+          </text>
         </view>
       </template>
     </AppNavBar>
@@ -195,6 +227,16 @@ function goRules() {
     <view v-if="loading" class="edit__body">
       <AppSkeleton type="detail" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="加载失败"
+      desc="网络不太稳定，或者这条投票已经被删除"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <scroll-view v-else-if="poll" class="edit__scroll" scroll-y>
       <view class="edit__inner">
@@ -249,11 +291,18 @@ function goRules() {
         <view v-if="!isSurvey" class="field">
           <view class="field__head">
             <text class="field__label">选项</text>
-            <text class="field__optional">已有票数 · 不可删除</text>
+            <text class="field__optional">
+              {{ isEnded ? '已结束 · 全部锁定' : '有票数的选项已锁定' }}
+            </text>
           </view>
 
           <view class="options">
-            <view v-for="(opt, i) in options" :key="opt.id ?? `new-${i}`" class="opt">
+            <view
+              v-for="(opt, i) in options"
+              :key="opt.id ?? `new-${i}`"
+              class="opt"
+              :class="{ 'opt--locked': opt.locked || isEnded }"
+            >
               <view class="opt__index">
                 <text class="opt__index-text">{{ i + 1 }}</text>
               </view>
@@ -262,6 +311,8 @@ function goRules() {
                 <input
                   v-model="opt.title"
                   class="opt__title-input"
+                  :class="{ 'opt__input--locked': opt.locked || isEnded }"
+                  :disabled="opt.locked || isEnded"
                   :maxlength="OPTION_MAX"
                   placeholder="选项标题"
                   placeholder-class="field__ph"
@@ -269,13 +320,15 @@ function goRules() {
                 <input
                   v-model="opt.desc"
                   class="opt__desc-input"
+                  :class="{ 'opt__input--locked': opt.locked || isEnded }"
+                  :disabled="opt.locked || isEnded"
                   :maxlength="40"
                   placeholder="补充一句说明（选填）"
                   placeholder-class="field__ph"
                 />
               </view>
 
-              <view v-if="opt.locked" class="opt__votes">
+              <view v-if="opt.locked || isEnded" class="opt__votes">
                 <text class="opt__votes-text">{{ opt.votes }} 票</text>
               </view>
               <view v-else class="opt__remove" @tap="removeOption(i)">
@@ -284,7 +337,7 @@ function goRules() {
             </view>
           </view>
 
-          <view class="add" hover-class="add--active" @tap="openAdd">
+          <view v-if="!isEnded" class="add" hover-class="add--active" @tap="openAdd">
             <AppIcon name="plus" :size="16" color="#71717A" />
             <text class="add__text">添加选项（不计入已有票数）</text>
           </view>
@@ -312,8 +365,19 @@ function goRules() {
           </view>
 
           <text class="edit__lock-note">
-            回答框写法和字数上限已锁定，改了会让已提交的 {{ responseCount }} 条回答对不上。
+            回答框写法和字数上限创建后不可修改，已提交的回答不会受影响。
           </text>
+        </view>
+
+        <!-- 内容页只改文字和选项；匿名、参与方式、截止时间在规则页，分开保存 -->
+        <view class="rules-link" hover-class="rules-link--active" @tap="goRules">
+          <view class="rules-link__text">
+            <text class="rules-link__title">规则设置</text>
+            <text class="rules-link__desc">
+              {{ isEnded ? '已结束，规则不可再修改' : '匿名、参与方式、截止时间、结果可见性' }}
+            </text>
+          </view>
+          <AppIcon name="chevron-right" :size="16" color="#A1A1AA" />
         </view>
       </view>
     </scroll-view>
@@ -407,6 +471,15 @@ export default { name: 'EditContentPage' }
     font-size: 11px;
     font-weight: 600;
     color: $accent;
+  }
+
+  /* 已结束不再用「已发布」的紫标，改成中性灰 */
+  &__status--ended {
+    background: $subtle;
+  }
+
+  &__status-text--ended {
+    color: $faint;
   }
 
   &__body {
@@ -608,6 +681,13 @@ export default { name: 'EditContentPage' }
     color: $muted;
   }
 
+  /* 有票数 / 已结束：输入框只读，视觉上退成正文色，避免看起来还能点 */
+  &__input--locked {
+    color: $muted;
+    opacity: 1;
+    -webkit-text-fill-color: $muted;
+  }
+
   &__votes {
     height: 22px;
     padding: 0 8px;
@@ -650,6 +730,40 @@ export default { name: 'EditContentPage' }
   &__text {
     font-size: 13px;
     color: $muted;
+  }
+}
+
+/* 规则设置入口：和 33 的卡片同款描边，右侧箭头表示会进下一页 */
+.rules-link {
+  padding: 14px;
+  border-radius: 14px;
+  background: $surface;
+  border: 1px solid $line;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  &--active {
+    background: $subtle;
+  }
+
+  &__text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  &__title {
+    font-size: 14px;
+    font-weight: 500;
+    color: $ink;
+  }
+
+  &__desc {
+    font-size: 11px;
+    color: $faint;
   }
 }
 

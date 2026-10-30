@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppAvatar from '@/components/base/AppAvatar.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
+import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import MenuRow from '@/components/business/MenuRow.vue'
 import { useUserStore } from '@/stores/user'
@@ -47,6 +48,16 @@ const sheet = ref<'logout' | 'cache' | null>(null)
  * 这里再用 import.meta.env.DEV 挡一层 —— 生产包里连请求都不会发。
  * 配合 npm run seed 灌入的账号，可以在一台设备上来回切发起人/参与者。
  */
+const devVisible = ref(false)
+const devAccounts = ref<Array<{ id: string; nickname?: string }>>([])
+const devItems = computed(() =>
+  devAccounts.value.map((a) => ({
+    key: a.id,
+    label: a.nickname || a.id,
+    selected: a.id === user.profile?.id
+  }))
+)
+
 async function openDevAccounts() {
   if (!import.meta.env.DEV) return
   const accounts = await fetchDevAccounts().catch(() => [])
@@ -54,19 +65,18 @@ async function openDevAccounts() {
     uni.showToast({ title: '没有可切换的测试账号', icon: 'none' })
     return
   }
-  uni.showActionSheet({
-    itemList: accounts.map((a) => a.nickname || a.id),
-    success: async (r) => {
-      const target = accounts[r.tapIndex]
-      if (!target || target.id === user.profile?.id) return
-      try {
-        await user.loginAs(target.id)
-        reset(ROUTES.home)
-      } catch {
-        // 失败原因由请求层 toast
-      }
-    }
-  })
+  devAccounts.value = accounts
+  devVisible.value = true
+}
+
+async function onDevAccount(id: string) {
+  if (id === user.profile?.id) return
+  try {
+    await user.loginAs(id)
+    reset(ROUTES.home)
+  } catch {
+    // 失败原因由请求层 toast
+  }
 }
 
 onMounted(() => settings.restore())
@@ -209,6 +219,13 @@ const cacheDesc = computed(() =>
       </view>
     </AppSheet>
 
+    <AppActionSheet
+      :visible="devVisible"
+      title="切换测试账号"
+      :items="devItems"
+      @close="devVisible = false"
+      @select="onDevAccount"
+    />
   </view>
 </template>
 

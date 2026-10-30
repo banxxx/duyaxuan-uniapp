@@ -130,13 +130,16 @@ function toPoll(
 
   if (row.source_survey_id) poll.sourceSurveyId = row.source_survey_id
   if (row.deleted_at) poll.deletedAt = row.deleted_at
+  // 只有真的改过内容才写 updated_at；发布后从未编辑过时为 null，前端不显示「已编辑」
+  if (row.updated_at) poll.updatedAt = row.updated_at
 
   // 选项随机只对查看者生效，发起人看的是创建时的顺序
   if (!isSurvey && row.shuffle_options && !isCreator) {
     poll.options = shuffleOptions(poll.options, `${row.id}:${viewerId ?? 'anon'}`)
   }
 
-  // 邀请码只给发起人，分享链接/海报要带上它（老的 private / group 也算邀请制）
+  // 邀请码只给发起人：它不随分享链接/海报传播，由发起人单独告知参与者
+  // （老的 private / group 也算邀请制）
   if (isCreator && isInviteOnly(row) && row.invite_code) {
     poll.inviteCode = row.invite_code
   }
@@ -326,14 +329,62 @@ export async function listDiscover(
 /**
  * 02 首页 · 待我投票
  *
- * 只看「别人分享给我、我还没投」的：邀请记录由 share/join 落地页写入，
+ * 只看「别人分享给我、我还没参与」的：邀请记录由 share/join 落地页写入，
  * 比「进行中 + 我没投」精确得多 —— 后者会把全站没人邀请过我的投票都算进来。
+ *
+ * 问卷也算「待我投票」：受邀后还没提交过回答，就应该出现在首页。
+ * 列表按截止时间由近到远排，用 end_at + id 做游标分页：待办随时可能有新邀请进来，
+ * offset 会把后面的条目往后挤，游标则从「上次看到的位置」继续。
  */
-export async function listPending(db: D1Database, userId: string, limit = 5) {
+export async function listPending(
+  db: D1Database,
+  userId: string,
+  limit = 5,
+  cursor?: string | null
+) {
   const now = Date.now()
+
+  // 总数单独查：首页角标要显示真实待办数，不能把「第一页的条数」当成总数
+  const totalRow = await db
+    .prepare(
+      `SELECT COUNT(*) AS n
+       FROM invites i
+       JOIN polls p ON p.id = i.poll_id
+       WHERE i.invitee_id = ?
+         AND p.deleted_at IS NULL
+         AND p.status = 0 AND p.end_at > ?
+         AND p.creator_id != ?
+         AND (
+           (p.type != 'survey' AND NOT EXISTS (
+             SELECT 1 FROM votes v WHERE v.poll_id = p.id AND v.user_id = ?
+           ))
+           OR (p.type = 'survey' AND NOT EXISTS (
+             SELECT 1 FROM answers a WHERE a.poll_id = p.id AND a.user_id = ?
+           ))
+         )`
+    )
+    .bind(userId, now, userId, userId, userId)
+    .first<{ n: number }>()
+  const total = totalRow?.n ?? 0
+
+  // 游标是上一页最后一条的 `end_at:id`，升序排：下一页取 end_at 更大、或同截止但 id 更大的
+  let after: { at: number; id: string } | null = null
+  if (cursor) {
+    const i = cursor.indexOf(':')
+    if (i > 0) {
+      const at = Number(cursor.slice(0, i))
+      if (Number.isFinite(at)) after = { at, id: cursor.slice(i + 1) }
+    }
+  }
+  const where = after ? 'AND (p.end_at > ? OR (p.end_at = ? AND p.id > ?))' : ''
+  const binds: Array<string | number> = after
+    ? [userId, now, userId, userId, userId, after.at, after.at, after.id, limit + 1]
+    : [userId, now, userId, userId, userId, limit + 1]
+
   const { results } = await db
     .prepare(
-      `SELECT p.id, p.title, p.type, p.voter_count, p.max_choice, p.anonymous,
+      `SELECT p.id, p.title, p.type, p.voter_count, p.answer_count,
+              p.max_choice, p.anonymous,
               p.end_at, p.hide_voter_count,
               COALESCE(inv.nickname, u.nickname) AS inviter_name
        FROM invites i
@@ -343,18 +394,26 @@ export async function listPending(db: D1Database, userId: string, limit = 5) {
        WHERE i.invitee_id = ?
          AND p.deleted_at IS NULL
          AND p.status = 0 AND p.end_at > ?
-         AND p.type != 'survey'
          AND p.creator_id != ?
-         AND NOT EXISTS (SELECT 1 FROM votes v WHERE v.poll_id = p.id AND v.user_id = ?)
-       ORDER BY p.end_at ASC
+         AND (
+           (p.type != 'survey' AND NOT EXISTS (
+             SELECT 1 FROM votes v WHERE v.poll_id = p.id AND v.user_id = ?
+           ))
+           OR (p.type = 'survey' AND NOT EXISTS (
+             SELECT 1 FROM answers a WHERE a.poll_id = p.id AND a.user_id = ?
+           ))
+         )
+         ${where}
+       ORDER BY p.end_at ASC, p.id ASC
        LIMIT ?`
     )
-    .bind(userId, now, userId, userId, limit)
+    .bind(...binds)
     .all<{
       id: string
       title: string
       type: string
       voter_count: number
+      answer_count: number
       max_choice: number
       anonymous: number
       end_at: number
@@ -362,16 +421,25 @@ export async function listPending(db: D1Database, userId: string, limit = 5) {
       inviter_name: string | null
     }>()
 
-  return results.map((r) => ({
-    id: r.id,
-    title: r.title,
-    type: r.type as 'single' | 'multiple',
-    inviterName: r.inviter_name ?? '朋友',
-    voterCount: r.hide_voter_count ? 0 : r.voter_count,
-    anonymous: !!r.anonymous,
-    maxChoice: r.max_choice,
-    endAt: r.end_at
-  }))
+  const hasMore = results.length > limit
+  const page = hasMore ? results.slice(0, limit) : results
+  const last = page[page.length - 1]
+  return {
+    list: page.map((r) => ({
+      id: r.id,
+      title: r.title,
+      type: r.type as 'single' | 'multiple' | 'survey',
+      inviterName: r.inviter_name ?? '朋友',
+      voterCount: r.hide_voter_count ? 0 : r.voter_count,
+      answerCount: r.answer_count,
+      anonymous: !!r.anonymous,
+      maxChoice: r.max_choice,
+      endAt: r.end_at
+    })),
+    cursor: hasMore && last ? `${last.end_at}:${last.id}` : null,
+    hasMore,
+    total
+  }
 }
 
 function escapeLike(text: string): string {
@@ -437,7 +505,11 @@ export async function getPoll(
 ): Promise<PollOut> {
   const row = await findPollRow(db, id)
   if (!row) throw new HttpError(404, '投票不存在')
-  if (row.deleted_at && row.creator_id !== viewerId) throw new HttpError(404, '投票不存在')
+  // 已删除的投票对其他人返回 410，前端可以显示「已被发起人删除」而不是通用错误页。
+  // 发起人自己仍能读到（软删除后的恢复流程要用）。
+  if (row.deleted_at && row.creator_id !== viewerId) {
+    throw new HttpError(410, '发起人已删除该投票')
+  }
 
   const [poll] = await hydrate(db, [row], viewerId)
 
@@ -547,25 +619,6 @@ function rulesInputFromRow(row: PollRowJoined): RulesInput {
     resultVisibility: row.result_visibility,
     shuffleOptions: !!row.shuffle_options,
     hideVoterCount: !!row.hide_voter_count,
-    joinMethod: normalizeJoinMethod(row.join_method),
-    profileField: row.profile_field,
-    endAt: row.end_at
-  }
-}
-
-/** 把数据库里现有的规则原样取出来，供「只改标题 / 选项」的调用方使用 */
-function rulesFromRow(row: PollRowJoined) {
-  return {
-    anonymous: row.anonymous,
-    allowEdit: row.allow_edit,
-    allowShare: row.allow_share,
-    allowComment: row.allow_comment,
-    allowRepeat: row.allow_repeat,
-    limitIp: row.limit_ip,
-    maxChoice: row.max_choice,
-    resultVisibility: row.result_visibility,
-    shuffleOptions: row.shuffle_options,
-    hideVoterCount: row.hide_voter_count,
     joinMethod: normalizeJoinMethod(row.join_method),
     profileField: row.profile_field,
     endAt: row.end_at
@@ -687,16 +740,54 @@ export async function updatePoll(
   // PUT 允许只传要改的字段：没传 title / desc / rules 时保留原值，
   // 不能拿默认规则覆盖已有配置（比如把匿名、邀请制悄悄改回默认）。
   const title = body.title === undefined ? row.title : normalizeTitle(body.title)
-  // 传了 rules 就只覆盖传进来的字段，没传的沿用原值；
-  // 完全没传 rules 时直接保留整份规则。
-  const rules = body.rules
-    ? normalizeRules({ ...rulesInputFromRow(row), ...body.rules }, type, row.end_at)
-    : rulesFromRow(row)
   const nextDesc =
     body.desc === undefined
       ? row.desc
       : String(body.desc ?? '').trim().slice(0, 500) || null
   const now = Date.now()
+  const ended = row.status === 1 || row.end_at <= now
+  const hasResponses = row.voter_count > 0 || row.answer_count > 0
+  /** 当前规则按写入时的归一化结果，和入参规则用同一套口径比较 */
+  const currentRules = normalizeRules(rulesInputFromRow(row), type, row.end_at)
+  // 传了 rules 就只覆盖传进来的字段，没传的沿用原值；
+  // 完全没传 rules 时直接用归一化后的当前值，避免和数据库原始 0/1 比较出假改动。
+  const rules = body.rules
+    ? normalizeRules({ ...rulesInputFromRow(row), ...body.rules }, type, row.end_at)
+    : currentRules
+
+  // 已结束：只允许改主题和说明。选项和规则全部锁定 ——
+  // 结果已经公示，再改规则或选项会让已入库的数据对不上。
+  if (ended) {
+    const nowRules = rules as Record<string, unknown>
+    const dbRules = currentRules as Record<string, unknown>
+    const rulesTouched = Object.keys(currentRules).some((k) => nowRules[k] !== dbRules[k])
+    if (rulesTouched) throw new HttpError(400, '已结束，只能修改主题和说明')
+  }
+
+  // 进行中且已有参与记录：只锁会影响「已入库数据含义」的规则。
+  if (hasResponses && !ended) {
+    // 截止时间只能延后：参与者是按原来的截止时间决定要不要现在投的
+    if (rules.endAt < row.end_at) {
+      throw new HttpError(400, '已有参与记录，截止时间只能延后')
+    }
+    // 匿名改公开会翻出投票人身份，公开改匿名又会让已公开的记录失去解释，两个方向都锁
+    if (rules.anonymous !== row.anonymous) {
+      throw new HttpError(400, '已有参与记录，匿名设置不能再改')
+    }
+    // 多选上限决定「最多可选几项」，中途收紧会让已有选择变得不合规
+    if (type === 'multiple' && rules.maxChoice !== row.max_choice) {
+      throw new HttpError(400, '已有投票，选择上限不能再改')
+    }
+    // 链接 / 邀请码决定谁能进来，已有参与后切换会打乱准入关系
+    if (rules.joinMethod !== normalizeJoinMethod(row.join_method)) {
+      throw new HttpError(400, '已有参与记录，参与方式不能再改')
+    }
+    // 问卷能不能重复提交会改变「一个人算几条」的统计口径
+    if (type === 'survey' && rules.allowRepeat !== row.allow_repeat) {
+      throw new HttpError(400, '已有回答，重复提交设置不能再改')
+    }
+  }
+
   // 进行中的投票不能被改成一个已经过去的时间点，否则保存完就直接结束
   if (row.end_at > now && rules.endAt <= now) {
     throw new HttpError(400, '截止时间必须晚于现在')
@@ -705,11 +796,6 @@ export async function updatePoll(
   // 否则前端按 endAt 显示「进行中」，后端却继续按 status=1 拒绝参与。
   if (row.status === 1 && rules.endAt > now) {
     throw new HttpError(400, '已结束，不能再延长截止时间')
-  }
-  // 匿名是参与者投票时的预期，已经有参与记录后不能再改成公开，
-  // 否则发起人一改规则，所有人的身份就被翻出来了。
-  if (row.anonymous && !rules.anonymous && (row.voter_count > 0 || row.answer_count > 0)) {
-    throw new HttpError(400, '已有参与记录，不能再关闭匿名')
   }
   /** 选项有没有增删改；问卷没有选项，保持 false */
   let optionsChanged = false
@@ -768,6 +854,11 @@ export async function updatePoll(
       .join('\u0001')
     optionsChanged = beforeOptions !== afterOptions
 
+    // 已结束：选项一律不能再动（排序除外，排序不影响内容）
+    if (ended && optionsChanged) {
+      throw new HttpError(400, '已结束，选项不能再修改')
+    }
+
     const incoming = (body.options ?? []).filter((o) => String(o?.title ?? '').trim())
     const keptIds = new Set(incoming.map((o) => o.id).filter((id): id is string => !!id && byId.has(id)))
 
@@ -775,6 +866,20 @@ export async function updatePoll(
     const votedDropped = existing.results.filter((o) => !keptIds.has(o.id) && o.votes_count > 0)
     if (votedDropped.length) {
       throw new HttpError(400, `「${votedDropped[0].title}」已有票数，不能删除`)
+    }
+
+    // 已有票的选项连文字也不能改：改标题等于偷换大家投过的东西
+    const cleanedById = new Map<string, { title: string; desc: string | null }>()
+    incoming.forEach((item, i) => {
+      if (item.id && byId.has(item.id) && next[i]) cleanedById.set(item.id, next[i])
+    })
+    for (const o of existing.results) {
+      if (o.votes_count <= 0) continue
+      const clean = cleanedById.get(o.id)
+      if (!clean) continue // 上面已按「不能删除」拦过
+      if (clean.title !== o.title || (clean.desc ?? null) !== (o.desc ?? null)) {
+        throw new HttpError(400, `「${o.title}」已有票数，不能修改`)
+      }
     }
 
     let sort = 0
@@ -805,8 +910,6 @@ export async function updatePoll(
     }
   }
 
-  await db.batch(stmts)
-
   // 只把「真的改了内容」的通知给参与过的人；只是点保存没改动就不打扰
   const changed =
     title !== row.title ||
@@ -825,6 +928,14 @@ export async function updatePoll(
     rules.joinMethod !== normalizeJoinMethod(row.join_method) ||
     rules.profileField !== row.profile_field ||
     optionsChanged
+
+  // 真的改了内容才写「已编辑」时间，和通知共用同一个判断：
+  // 打开编辑页点一下保存、什么都没改，不应该留下编辑痕迹。
+  if (changed) {
+    stmts.push(db.prepare('UPDATE polls SET updated_at = ? WHERE id = ?').bind(now, pollId))
+  }
+
+  await db.batch(stmts)
 
   if (changed && env) {
     // 修改已经保存，通知失败只记日志，不能让用户以为保存失败

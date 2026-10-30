@@ -52,11 +52,11 @@
           <view class="home__head">
             <view class="home__head-left">
               <text class="home__section-title">待我投票</text>
-              <view v-if="pending.length" class="home__count">
-                <text class="home__count-text">{{ pending.length }}</text>
+              <view v-if="pendingTotal" class="home__count">
+                <text class="home__count-text">{{ pendingTotal }}</text>
               </view>
             </view>
-            <text class="home__all" @tap="openMine">全部</text>
+            <text class="home__all" @tap="openPending">全部</text>
           </view>
 
           <!-- 60 加载：骨架屏替代转圈 -->
@@ -181,6 +181,8 @@ const user = useUserStore()
 const { contentTop, safeBottom } = getSafeArea()
 
 const pending = ref<PendingPoll[]>([])
+/** 待办总数：列表只取前 5 条，角标要显示真实总数 */
+const pendingTotal = ref(0)
 const mine = ref<Poll[]>([])
 /** 设计稿「全部 13 个」是总数，不是当前显示条数 */
 const mineTotal = ref(0)
@@ -201,23 +203,34 @@ function isOngoing(poll: Poll) {
   return poll.rules.endAt > Date.now()
 }
 
-async function load() {
-  loading.value = true
-  error.value = false
+/**
+ * silent：从详情页返回时静默刷新，保留已有内容，
+ * 不把整页切回骨架屏，也不因为一次失败把页面换成错误态。
+ */
+async function load(silent = false) {
+  if (!silent) {
+    loading.value = true
+    error.value = false
+  }
   try {
     const [p, m] = await Promise.all([fetchPendingPolls(), fetchMyPolls('all')])
     refreshUnread()
-    pending.value = p
+    pending.value = p.list
+    pendingTotal.value = p.total
     mine.value = m.list.slice(0, 4)
     mineTotal.value = m.total ?? m.list.length
+    error.value = false
   } catch {
-    error.value = true
+    if (!silent) error.value = true
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
-onMounted(load)
+onMounted(() => load())
+
+/** onShow 首次触发和 onMounted 重叠，跳过一次，之后每次回来都刷新待办 */
+let firstShow = true
 
 /** 红点取服务端未读数；失败不打扰用户，红点就不显示 */
 async function refreshUnread() {
@@ -231,9 +244,14 @@ async function refreshUnread() {
 onShow(() => {
   // H5 端会渲染原生 tabBar，进来就藏掉（微信端 custom=true，没有原生栏，静默失败）
   hideNativeTabBar()
-  refreshUnread()
   // 首页右上角也有头像，回首页时同步一次最新资料
   user.refreshProfile()
+  if (firstShow) {
+    firstShow = false
+  } else {
+    // 投票 / 填写完回到首页，「待我投票」应该立刻少一条
+    load(true)
+  }
 })
 
 onPullDownRefresh(async () => {
@@ -255,6 +273,10 @@ function openNotifications() {
 
 function openMine() {
   go(ROUTES.meCreated)
+}
+
+function openPending() {
+  go(ROUTES.mePending)
 }
 
 /** 头像 → 40 我的（switchTab 复用页面实例，不重建、不闪） */
@@ -431,7 +453,7 @@ export default { name: 'HomePage' }
   &__count-text {
     font-size: 11px;
     font-weight: 700;
-    color: #fff;
+    color: $white;
     line-height: 1;
     font-family: $font-num;
   }
@@ -498,7 +520,7 @@ export default { name: 'HomePage' }
   &__blank-btn-text {
     font-size: 13px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 
   &__cards {

@@ -43,7 +43,17 @@ export async function fetchNotifications(cursor?: string | null): Promise<Paged<
       total: mockNotifications.length
     }
   }
-  return http.get<Paged<Notification>>('/notifications', { cursor })
+  // 兼容旧后端：列表接口以前直接返回数组
+  const res = await http.get<Paged<Notification> | Notification[]>('/notifications', { cursor })
+  if (Array.isArray(res)) {
+    return { list: res, cursor: null, hasMore: false, total: res.length }
+  }
+  return {
+    list: Array.isArray(res.list) ? res.list : [],
+    cursor: res.cursor ?? null,
+    hasMore: !!res.hasMore,
+    total: typeof res.total === 'number' ? res.total : (res.list?.length ?? 0)
+  }
 }
 
 export async function fetchUnreadCount(): Promise<number> {
@@ -98,11 +108,22 @@ export async function savePushPrefs(prefs: PushPrefs): Promise<void> {
   await http.post<void>('/notifications/prefs', { prefs }, { toast: false })
 }
 
-/** 58 帮助与反馈 */
-export async function submitFeedback(content: string): Promise<void> {
-  if (USE_MOCK) {
-    await delay(320)
-    return
+/** 读服务端推送偏好：设置页进来时同步到本地开关 */
+export async function fetchPushPrefs(): Promise<PushPrefs> {
+  const defaults: PushPrefs = {
+    enabled: true,
+    joined: true,
+    comment: true,
+    deadline: true,
+    result: true,
+    updated: false
   }
-  return http.post<void>('/feedback', { content })
+  if (USE_MOCK) return defaults
+  try {
+    return await http.get<PushPrefs>('/notifications/prefs', undefined, { toast: false })
+  } catch {
+    // 旧后端还没有这个接口（404）：按默认全开处理，设置页照常可用
+    return defaults
+  }
 }
+

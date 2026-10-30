@@ -76,6 +76,8 @@ export interface PollRow {
   desc: string | null
   status: number
   deleted_at: number | null
+  /** 最近一次内容编辑时间；null 表示发布后从未编辑过 */
+  updated_at: number | null
   created_at: number
   end_at: number
   anonymous: number
@@ -182,9 +184,11 @@ export interface PollOut {
   myChoiceCount?: number
   myAnswered?: boolean
   deletedAt?: number | null
+  /** 最近一次内容编辑时间；有值才显示「已编辑」 */
+  updatedAt?: number
   /** 最近一次投票/提交的时间戳，详情页用来显示「最近投票」 */
   latestAt?: number
-  /** 邀请码：只有发起人拿得到，分享链接/海报会带上它 */
+  /** 邀请码：只有发起人拿得到，由发起人单独告知参与者，不随链接/海报传播 */
   inviteCode?: string
 }
 

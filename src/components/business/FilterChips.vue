@@ -64,7 +64,7 @@ export default { name: 'FilterChips' }
     transition: color $dur-fast $ease-both;
 
     &--on {
-      color: #fff;
+      color: $white;
       font-weight: 600;
     }
   }

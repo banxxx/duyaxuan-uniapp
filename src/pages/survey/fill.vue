@@ -25,6 +25,8 @@ import { ROUTES, replace } from '@/utils/router'
  */
 const poll = ref<Poll | null>(null)
 const loading = ref(true)
+/** 首屏加载失败：给错误页和重试，不要停在空白页 */
+const loadError = ref(false)
 const submitting = ref(false)
 const content = ref('')
 const pollId = ref('')
@@ -41,8 +43,11 @@ const count = computed(() => charCount(content.value))
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     poll.value = await fetchPoll(pollId.value)
+  } catch {
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -111,6 +116,16 @@ onShareAppMessage(() =>
     <view v-if="loading" class="fill__body">
       <AppSkeleton type="detail" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="加载失败"
+      desc="网络不太稳定，或者这份问卷已经被删除"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <template v-else-if="poll">
       <scroll-view class="fill__scroll" scroll-y>

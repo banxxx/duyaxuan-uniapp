@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { onLoad, onShow, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
-import type { Poll, Comment, Paged, SurveyAnswer } from '@/types/api'
+import type { Poll, Comment, Paged, SurveyAnswer, VoterRecord } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppAvatar from '@/components/base/AppAvatar.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
+import AppActionSheet from '@/components/base/AppActionSheet.vue'
+import AppConfirmSheet from '@/components/base/AppConfirmSheet.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import OptionBar from '@/components/business/OptionBar.vue'
@@ -19,16 +21,20 @@ import {
   fetchMyAnswers,
   fetchAnswers,
   fetchVoters,
-  joinPoll
+  joinPoll,
+  deletePoll,
+  endPoll
 } from '@/api/poll'
 import { useUserStore } from '@/stores/user'
 import { ApiError } from '@/utils/request'
 import { formatCreatedAt, formatRemaining, formatRelative, charCount, percent } from '@/utils/format'
 import { buildShareMessage, buildTimelineMessage, syncShareMenu } from '@/utils/share'
+import { canSeePollResult } from '@/utils/result-visibility'
 import { askInviteCode } from '@/utils/invite'
 import { bottomInset } from '@/utils/platform'
-import { backTo, go, replace, ROUTES } from '@/utils/router'
+import { backTo, go, replace, switchTab, ROUTES } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import { setPendingUndo } from '@/utils/delete-undo'
 
 /**
  * 详情页 —— 05~12、16~20、22~23、67~70、75~76 全部合成这一页
@@ -65,12 +71,37 @@ const latestAnswers = ref<SurveyAnswer[]>([])
 const comments = ref<Comment[]>([])
 const loading = ref(true)
 const loadError = ref(false)
+/** 404：链接里的 id 不存在，和「已删除」分开提示 */
+const notFound = ref(false)
+/** 路由参数缺失，页面没东西可加载，不能一直停在骨架屏 */
+const invalid = ref(false)
+/** 410：投票已被发起人删除，展示专门的空状态而不是「加载失败」 */
+const deleted = ref(false)
 const submitting = ref(false)
 const selection = ref<string[]>([])
 
 /** 16 / 65：需填信息弹层 */
 const infoVisible = ref(false)
 const infoValue = ref('')
+
+/** 撤回 / 提前结束 / 删除的二次确认 */
+const revokeVisible = ref(false)
+const endVisible = ref(false)
+const deleteVisible = ref(false)
+const revoking = ref(false)
+const ending = ref(false)
+const deleting = ref(false)
+
+/** 发起人「···」管理菜单 */
+const manageVisible = ref(false)
+const manageItems = computed(() => {
+  const noun = isSurvey.value ? '问卷' : '投票'
+  return [
+    { key: 'edit', label: `编辑${noun}`, icon: 'square-pen' },
+    ...(isEnded.value ? [] : [{ key: 'end', label: '提前结束', icon: 'circle-check' }]),
+    { key: 'delete', label: `删除${noun}`, icon: 'trash-2', danger: true }
+  ]
+})
 
 const pollId = ref('')
 
@@ -83,12 +114,7 @@ const hasVoted = computed(() => (isSurvey.value ? myAnswers.value.length > 0 : m
 const canSeeResult = computed(() => {
   const p = poll.value
   if (!p) return false
-  if (isOwner.value) return true
-  const v = p.rules.resultVisibility ?? 'after_vote'
-  if (v === 'hidden') return false
-  if (v === 'always') return true
-  if (v === 'after_end') return isEnded.value
-  return hasVoted.value
+  return canSeePollResult(p, { isOwner: isOwner.value, hasVoted: hasVoted.value, isEnded: isEnded.value })
 })
 
 /** 发起人关掉「查看投票人数」后，其他人看不到任何人数（后端也会把 voterCount 置 0） */
@@ -249,6 +275,8 @@ async function load() {
   }
   loading.value = !poll.value
   loadError.value = false
+  notFound.value = false
+  deleted.value = false
   try {
     const p = await fetchPoll(pollId.value)
     poll.value = p
@@ -288,28 +316,38 @@ async function load() {
     }
 
     if (p.rules.allowComment) {
-      comments.value = await ignoreForbidden<Comment[]>(
+      const page = await ignoreForbidden<Paged<Comment>>(
         fetchComments(p.id, { toast: false }),
-        []
+        { list: [], cursor: null, hasMore: false, total: 0 }
       )
+      comments.value = page.list
     }
 
-    // 参与入口的头像叠层：投票取投票人；问卷在上面已经按回答人取过了
-    if (p.type !== 'survey' && (hasVoted.value || isOwner.value)) {
-      const voters = await fetchVoters(p.id)
+    // 参与入口的头像叠层：投票取投票人；问卷在上面已经按回答人取过了。
+    // 结果不可见时服务端会 403，没必要为了几个头像打断整页加载。
+    if (p.type !== 'survey' && canSeeResult.value) {
+      const voters = await ignoreForbidden<Paged<VoterRecord>>(
+        fetchVoters(p.id, null, { toast: false }),
+        { list: [], cursor: null, hasMore: false, total: 0 }
+      )
       voterAvatars.value = voters.list.slice(0, 4).map((v, i) => v.user ?? { id: `anon${i}`, name: '匿' })
     }
 
     // 字段都齐了再存：下次进来才能一次恢复完整状态
     saveSnapshot(p)
   } catch (err) {
-    // 投票被删了（404）：缓存里的那份也不能再显示，否则页面看起来「还活着」
-    if (err instanceof ApiError && err.code === 404) {
+    // 410：发起人删除了投票；404：链接里的 id 根本不存在。
+    // 两种情况都不能再显示缓存里的那份，否则页面看起来「还活着」。
+    if (err instanceof ApiError && (err.code === 404 || err.code === 410)) {
       cacheDrop(cacheKey.pollAll(pollId.value))
+      cacheDrop('list:mine')
       poll.value = null
+      if (err.code === 404) notFound.value = true
+      else deleted.value = true
+    } else if (!poll.value) {
+      // 其余失败（比如断网）静默处理：有快照就保持上一次的内容，比换成错误页好
+      loadError.value = true
     }
-    // 其余失败（比如断网）静默处理：有快照就保持上一次的内容，比换成错误页好
-    if (!poll.value) loadError.value = true
   } finally {
     loading.value = false
   }
@@ -321,7 +359,8 @@ onLoad((query) => {
 
 onMounted(() => {
   if (!pollId.value) {
-    uni.showToast({ title: '参数错误', icon: 'none' })
+    invalid.value = true
+    loading.value = false
     return
   }
   load()
@@ -411,18 +450,14 @@ async function doVote() {
 }
 
 /** 09/11 的「撤回」：仅「允许修改选择」且未截止时出现 */
-async function onRevoke() {
-  if (!poll.value) return
-  const res = await new Promise<boolean>((resolve) => {
-    uni.showModal({
-      title: '撤回这一票？',
-      content: '撤回后可以重新选择，之前的一票会从统计里移除。',
-      confirmText: '撤回',
-      success: (r) => resolve(r.confirm)
-    })
-  })
-  if (!res || !poll.value) return
+function onRevoke() {
+  revokeVisible.value = true
+}
 
+async function doRevoke() {
+  if (!poll.value) return
+  revokeVisible.value = false
+  revoking.value = true
   try {
     const next = await revokeVote(poll.value.id)
     poll.value = next
@@ -431,6 +466,8 @@ async function onRevoke() {
     saveSnapshot(next)
   } catch {
     uni.showToast({ title: '撤回失败', icon: 'none' })
+  } finally {
+    revoking.value = false
   }
 }
 
@@ -476,32 +513,71 @@ function goShare() {
 
 /** 发起人右上角「···」：和 41 列表里的面板同一套动作 */
 function openManage() {
-  uni.showActionSheet({
-    itemList: ['编辑', '删除'],
-    success: (r) => {
-      if (r.tapIndex === 0) {
-        go(ROUTES.creatorEditContent, { id: pollId.value })
-      } else {
-        uni.showModal({
-          title: `删除这${isSurvey.value ? '份问卷' : '场投票'}？`,
-          content: '删除后立即从列表和分享链接下线，可在「我发起的」列表里 5 秒内撤销。',
-          confirmText: '删除',
-          confirmColor: '#DC2626',
-          success: async (res) => {
-            if (!res.confirm) return
-            const { deletePoll } = await import('@/api/poll')
-            await deletePoll(pollId.value)
-            // 删掉的投票不该再出现在任何缓存里
-            cacheDrop(cacheKey.pollAll(pollId.value))
-            cacheDrop('list:mine')
-            // 详情页可能是从首页、我发起的、我参与的、搜索结果任意一处进来的，
-            // 删除后统一退回「我发起的」——那里才有撤销入口
-            backTo(ROUTES.meCreated)
-          }
-        })
-      }
-    }
-  })
+  manageVisible.value = true
+}
+
+function onManage(key: string) {
+  if (key === 'edit') go(ROUTES.creatorEditContent, { id: pollId.value })
+  else if (key === 'end') confirmEnd()
+  else confirmDelete()
+}
+
+function confirmEnd() {
+  endVisible.value = true
+}
+
+async function doEnd() {
+  endVisible.value = false
+  ending.value = true
+  try {
+    await endPoll(pollId.value)
+    cacheDrop(cacheKey.pollAll(pollId.value))
+    cacheDrop('list:mine')
+    // 结束会改状态、票数可见性和通知，直接重拉一次让页面进入只读态
+    await load()
+  } catch {
+    // 接口层已经弹过提示，这里只负责别让 async 回调抛出未处理的 rejection
+  } finally {
+    ending.value = false
+  }
+}
+
+const deleteDesc = computed(() => {
+  const p = poll.value
+  if (!p) return ''
+  const participants = isSurvey.value ? (p.answerCount ?? 0) : (p.voterCount ?? 0)
+  const unit = isSurvey.value ? '条回答' : '人参与'
+  const base = '删除后立即从列表和分享链接下线，参与者再打开会看到「已被删除」；可在「我发起的」列表里 5 秒内撤销。'
+  return participants > 0 ? `已有 ${participants} ${unit}，${base}` : base
+})
+
+function confirmDelete() {
+  deleteVisible.value = true
+}
+
+async function doDelete() {
+  const p = poll.value
+  deleteVisible.value = false
+  deleting.value = true
+  try {
+    await deletePoll(pollId.value)
+    // 删掉的投票不该再出现在任何缓存里
+    cacheDrop(cacheKey.pollAll(pollId.value))
+    cacheDrop('list:mine')
+    // 撤销条长在「我发起的」页面里，跨页把刚删掉的投票交过去
+    if (p) setPendingUndo(p)
+    // 详情页可能是从首页、我发起的、我参与的、搜索结果任意一处进来的，
+    // 删除后统一退回「我发起的」——那里才有撤销入口
+    backTo(ROUTES.meCreated)
+  } catch {
+    // 接口层已经弹过提示
+  } finally {
+    deleting.value = false
+  }
+}
+
+function goHome() {
+  switchTab(ROUTES.home)
 }
 
 onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '杜雅轩', path: '/pages/index/index' }))
@@ -527,6 +603,26 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
     </view>
 
     <AppEmpty
+      v-else-if="invalid"
+      icon="triangle-alert"
+      title="打开方式不对"
+      desc="链接里缺少投票编号，请从分享卡片或消息里重新打开"
+      action="返回首页"
+      action-icon="arrow-left"
+      @action="goHome"
+    />
+
+    <AppEmpty
+      v-else-if="notFound"
+      icon="search"
+      title="没有找到这个投票"
+      desc="链接可能有误，或者投票已经不存在了"
+      action="返回首页"
+      action-icon="arrow-left"
+      @action="goHome"
+    />
+
+    <AppEmpty
       v-else-if="loadError"
       icon="wifi-off"
       title="加载失败"
@@ -534,6 +630,17 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
       action="重新加载"
       action-icon="refresh-cw"
       @action="load"
+    />
+
+    <!-- 发起人删除后，别人手里的链接仍然打得开，但只剩这个墓碑 -->
+    <AppEmpty
+      v-else-if="deleted"
+      icon="trash-2"
+      title="该投票已被发起人删除"
+      desc="链接已经失效，去首页看看别的投票吧"
+      action="返回首页"
+      action-icon="arrow-left"
+      @action="goHome"
     />
 
     <template v-else-if="poll">
@@ -563,6 +670,9 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
               </view>
               <view v-if="poll.rules.profileField" class="meta__chip meta__chip--warn">
                 <text class="meta__chip-text meta__chip-text--warn">需填信息</text>
+              </view>
+              <view v-if="poll.updatedAt" class="meta__chip meta__chip--edit">
+                <text class="meta__chip-text meta__chip-text--edit">已编辑</text>
               </view>
             </view>
 
@@ -718,7 +828,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             </view>
 
             <!-- 09/11 参与入口：头像叠层 + 人数 / 查看记录；17/18 评论关闭时它是唯一入口 -->
-            <view v-if="hasVoted" class="participants" @tap="goVoters">
+            <view v-if="hasVoted && canSeeResult" class="participants" @tap="goVoters">
               <view class="participants__stack">
                 <view
                   v-for="(v, i) in voterAvatars"
@@ -752,7 +862,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             </view>
 
             <!-- 75 发起人还没填：先看最新回答，而不是一张空的「我的回答」 -->
-            <view v-if="!hasVoted" class="latest">
+            <view v-if="isOwner && !hasVoted" class="latest">
               <view class="latest__head">
                 <text class="latest__title">最新回答</text>
                 <text class="latest__sub">共 {{ poll.answerCount ?? 0 }} 条</text>
@@ -826,7 +936,8 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
               <AppIcon name="chevron-right" :size="15" color="#A1A1AA" />
             </view>
 
-            <view class="participants" @tap="goAnswers">
+            <!-- 回答记录只对发起人和已提交过的人开放，没参与的人不摆这个入口 -->
+            <view v-if="isOwner || hasVoted" class="participants" @tap="goAnswers">
               <view class="participants__stack">
                 <view
                   v-for="(v, i) in voterAvatars"
@@ -968,6 +1079,46 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
         </view>
       </template>
     </AppSheet>
+
+    <!-- 发起人管理菜单：和 89 同一套自定义底部弹层，不再用系统 ActionSheet -->
+    <AppActionSheet
+      :visible="manageVisible"
+      :title="`管理${isSurvey ? '问卷' : '投票'}`"
+      :items="manageItems"
+      @close="manageVisible = false"
+      @select="onManage"
+    />
+
+    <AppConfirmSheet
+      :visible="revokeVisible"
+      title="撤回这一票？"
+      desc="撤回后可以重新选择，之前的一票会从统计里移除。"
+      confirm-text="撤回"
+      :loading="revoking"
+      @close="revokeVisible = false"
+      @confirm="doRevoke"
+    />
+
+    <AppConfirmSheet
+      :visible="endVisible"
+      :title="`提前结束这${isSurvey ? '份' : '场'}${isSurvey ? '问卷' : '投票'}？`"
+      desc="结束后不能再提交，结果会立即公布；规则和选项也会锁定，只能修改主题和说明。此操作不可撤销。"
+      confirm-text="结束"
+      :loading="ending"
+      @close="endVisible = false"
+      @confirm="doEnd"
+    />
+
+    <AppConfirmSheet
+      :visible="deleteVisible"
+      :title="`删除这${isSurvey ? '份问卷' : '场投票'}？`"
+      :desc="deleteDesc"
+      confirm-text="删除"
+      danger
+      :loading="deleting"
+      @close="deleteVisible = false"
+      @confirm="doDelete"
+    />
   </view>
 </template>
 
@@ -1105,6 +1256,11 @@ export default { name: 'PollDetailPage' }
     &--warn {
       background: $warning-soft;
     }
+
+    /* 「已编辑」：紫底紫字，和匿名/类型这些中性 chip 区分开 */
+    &--edit {
+      background: $accent-soft;
+    }
   }
 
   &__chip-text {
@@ -1113,6 +1269,11 @@ export default { name: 'PollDetailPage' }
 
     &--warn {
       color: $warning;
+      font-weight: 600;
+    }
+
+    &--edit {
+      color: $accent;
       font-weight: 600;
     }
   }

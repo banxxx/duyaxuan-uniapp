@@ -47,6 +47,7 @@ export const ROUTES = {
   me: '/pages/me/index',
   meCreated: '/pages/me/created',
   meJoined: '/pages/me/joined',
+  mePending: '/pages/me/pending',
 
   settings: '/pages/settings/index',
   settingsNotifications: '/pages/settings/notifications',

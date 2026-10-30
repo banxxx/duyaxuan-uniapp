@@ -137,7 +137,20 @@ export default { name: 'AppSkeleton' }
     bottom: 0;
     left: 0;
     width: 55%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+    /*
+     * 两端必须写 rgba(255,255,255,0)，不能写 transparent。
+     *
+     * transparent 等价于 rgba(0,0,0,0)：开发者工具（Chromium）按预乘 alpha 插值，
+     * 看起来是「白 → 透明」；但真机的 iOS/Android WebView（尤其中低端机和较老的
+     * WebKit）按非预乘插值，中间的 RGB 会被拉向黑色，扫光就变成一条发黑的带子。
+     * 显式写白色透明，两端才是「白色淡出」，和设计稿一致。
+     */
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.75) 50%,
+      rgba(255, 255, 255, 0) 100%
+    );
     transform: translateX(-100%);
     animation: sk-shimmer $dur-shimmer $ease-both infinite;
   }

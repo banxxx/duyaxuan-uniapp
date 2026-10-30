@@ -7,6 +7,7 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppAvatar from '@/components/base/AppAvatar.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import {
   fetchPoll,
   fetchComments,
@@ -36,6 +37,10 @@ const poll = ref<Poll | null>(null)
 const comments = ref<Comment[]>([])
 const loading = ref(true)
 const loadError = ref(false)
+/** 评论分页：滚动到底继续取下一页 */
+const cursor = ref<string | null>(null)
+const hasMore = ref(false)
+const loadingMore = ref(false)
 const tab = ref<'latest' | 'hot' | 'mine'>('latest')
 const draft = ref('')
 const sending = ref(false)
@@ -46,6 +51,10 @@ const pollId = ref('')
  * 提交时带 replyToId，列表里会显示成「回复 @xx」。
  */
 const replyTo = ref<{ id: string; name: string } | null>(null)
+
+/** 长按评论弹出的操作菜单 */
+const actionVisible = ref(false)
+const actionComment = ref<Comment | null>(null)
 
 /** 输入框焦点：点「回复」后把光标送回输入框 */
 const composerFocus = ref(false)
@@ -259,8 +268,8 @@ const threads = computed<Thread[]>(() => {
   }
 
   let list = roots
-  // 最新：接口本来就是 created_at DESC，保持原顺序
-  if (tab.value === 'hot') list = [...list].sort((a, b) => b.likeCount - a.likeCount)
+  // 最新 / 最热：服务端已经按对应顺序返回，这里保持原顺序；
+  // 我参与的：只在已加载的评论里过滤（往下翻会继续套用这个过滤）
   if (tab.value === 'mine') {
     // 我发起的楼层 + 我在别人楼层下的回复，都算「我参与的」
     list = list.filter((r) => isMineComment(r) || (children.get(r.id) ?? []).some(isMineComment))
@@ -423,7 +432,7 @@ async function load() {
   loadError.value = false
   try {
     poll.value = await fetchPoll(pollId.value)
-    comments.value = await fetchComments(pollId.value)
+    await loadComments(true)
     saveSnapshot()
   } catch {
     // 加载失败时 poll 是空的，不能让它掉进「发起人已关闭评论」的分支
@@ -431,6 +440,42 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+/** 按当前 tab 取评论；latest/hot 由服务端排序并分页，mine 只在已加载里过滤 */
+async function loadComments(reset: boolean) {
+  if (loadingMore.value) return
+  loadingMore.value = true
+  try {
+    const sort = tab.value === 'hot' ? 'hot' : 'latest'
+    const page = await fetchComments(pollId.value, { cursor: reset ? null : cursor.value, sort })
+    const seen = new Set(comments.value.map((c) => c.id))
+    comments.value = reset
+      ? page.list
+      : [...comments.value, ...page.list.filter((c) => !seen.has(c.id))]
+    cursor.value = page.cursor
+    hasMore.value = page.hasMore
+  } catch {
+    uni.showToast({ title: '加载失败，请重试', icon: 'none' })
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+/** 滚到底加载下一页，按 id 去重，避免翻页间隙新评论挤进来造成重复 */
+function loadMore() {
+  if (hasMore.value) loadComments(false)
+}
+
+/** 切换 tab：latest/hot 重新从第一页按服务端排序拉，mine 只做本地过滤 */
+function setTab(key: 'latest' | 'hot' | 'mine') {
+  if (tab.value === key) return
+  tab.value = key
+  shownReplies.value = new Map()
+  comments.value = []
+  cursor.value = null
+  hasMore.value = false
+  loadComments(true)
 }
 
 onLoad((q) => {
@@ -512,22 +557,23 @@ function onLongPress(c: Comment) {
   const me = userStore.profile?.id
   const canDelete = c.isMine || (!!me && poll.value?.creatorId === me)
   if (!canDelete) return
-  uni.showActionSheet({
-    itemList: ['删除评论'],
-    success: async (res) => {
-      if (res.tapIndex !== 0) return
-      try {
-        await deleteComment(pollId.value, c.id)
-      } catch {
-        return
-      }
-      // 只删这一条：下面的回复是别人的话，不跟着一起没了，
-      // 它们会在下次分组时自己升成楼层（带「回复 xx」前缀）
-      comments.value = comments.value.filter((x) => x.id !== c.id)
-      if (poll.value) poll.value.commentCount = Math.max(0, (poll.value.commentCount ?? 0) - 1)
-      saveSnapshot()
-    }
-  })
+  actionComment.value = c
+  actionVisible.value = true
+}
+
+async function onCommentAction(key: string) {
+  const c = actionComment.value
+  if (!c || key !== 'delete') return
+  try {
+    await deleteComment(pollId.value, c.id)
+  } catch {
+    return
+  }
+  // 只删这一条：下面的回复是别人的话，不跟着一起没了，
+  // 它们会在下次分组时自己升成楼层（带「回复 xx」前缀）
+  comments.value = comments.value.filter((x) => x.id !== c.id)
+  if (poll.value) poll.value.commentCount = Math.max(0, (poll.value.commentCount ?? 0) - 1)
+  saveSnapshot()
 }
 </script>
 
@@ -550,7 +596,7 @@ function onLongPress(c: Comment) {
     />
 
     <template v-else>
-      <scroll-view class="comments__scroll" scroll-y>
+      <scroll-view class="comments__scroll" scroll-y @scrolltolower="loadMore">
         <view class="comments__list">
           <!-- 筛选：设计稿 26 用同一套分段控件（$subtle 轨道 + 白色选中块） -->
           <view class="tabs">
@@ -563,11 +609,15 @@ function onLongPress(c: Comment) {
               :key="t.key"
               class="tabs__item"
               :class="{ 'tabs__item--on': tab === t.key }"
-              @tap="tab = t.key as any"
+              @tap="setTab(t.key as any)"
             >
               <text class="tabs__text" :class="{ 'tabs__text--on': tab === t.key }">{{ t.label }}</text>
             </view>
           </view>
+
+          <text v-if="tab === 'mine'" class="tabs__hint">
+            只在已加载的评论里筛选，向下滚动可加载更多
+          </text>
 
           <!-- 发起人置顶 -->
           <view class="pinned">
@@ -685,6 +735,9 @@ function onLongPress(c: Comment) {
             :title="tab === 'mine' ? '你还没有发言' : '还没有人评论'"
             desc="说说你的想法，让发起人看到"
           />
+
+          <text v-if="threads.length && loadingMore" class="comments__more">加载更多…</text>
+          <text v-else-if="threads.length && !hasMore" class="comments__more">没有更多了</text>
         </view>
       </scroll-view>
 
@@ -781,6 +834,15 @@ function onLongPress(c: Comment) {
         </view>
       </view>
     </template>
+
+    <!-- 长按评论：删除 -->
+    <AppActionSheet
+      :visible="actionVisible"
+      title="评论操作"
+      :items="[{ key: 'delete', label: '删除评论', icon: 'trash-2', danger: true }]"
+      @close="actionVisible = false"
+      @select="onCommentAction"
+    />
   </view>
 </template>
 
@@ -812,6 +874,13 @@ export default { name: 'PollCommentsPage' }
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  &__more {
+    padding: 6px 0 2px;
+    font-size: 11px;
+    color: $faint;
+    text-align: center;
   }
 }
 
@@ -845,6 +914,12 @@ export default { name: 'PollCommentsPage' }
       color: $ink;
       font-weight: 600;
     }
+  }
+
+  &__hint {
+    font-size: 10px;
+    color: $faint;
+    line-height: 1.5;
   }
 }
 
@@ -1157,7 +1232,7 @@ export default { name: 'PollCommentsPage' }
     color: $muted;
 
     &--on {
-      color: #ffffff;
+      color: $white;
     }
   }
 }
@@ -1257,7 +1332,7 @@ export default { name: 'PollCommentsPage' }
     color: $muted;
 
     &--on {
-      color: #ffffff;
+      color: $white;
     }
   }
 }

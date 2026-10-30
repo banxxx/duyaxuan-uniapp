@@ -7,6 +7,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import { fetchPoll, fetchMyVote } from '@/api/poll'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
+import { canSeePollResult } from '@/utils/result-visibility'
 import { bottomInset } from '@/utils/platform'
 import { backTo, go, ROUTES } from '@/utils/router'
 
@@ -43,8 +44,11 @@ async function load() {
     myVote.value = mine
     choices.value = p.options.filter((o) => mine.includes(o.id)).map((o) => o.title)
 
-    const v = p.rules.resultVisibility ?? 'after_vote'
-    canSeeResult.value = v === 'always' || v === 'after_vote'
+    // 刚到这一页时已经投过票，hasVoted 恒为 true；结果可见性交给统一规则判断
+    canSeeResult.value = canSeePollResult(p, {
+      hasVoted: true,
+      isEnded: p.rules.endAt <= Date.now()
+    })
 
     timer = setTimeout(() => {
       backTo(ROUTES.detail, { id: pollId.value })
@@ -114,7 +118,12 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
         <view class="success__primary" hover-class="success__primary--active" @tap="viewStatus">
           <text class="success__primary-text">{{ canSeeResult ? '查看投票结果' : '查看投票状态' }}</text>
         </view>
-        <view class="success__secondary" hover-class="success__secondary--active" @tap="goShare">
+        <view
+          v-if="poll?.rules.allowShare"
+          class="success__secondary"
+          hover-class="success__secondary--active"
+          @tap="goShare"
+        >
           <AppIcon name="share-2" :size="17" color="#09090B" />
           <text class="success__secondary-text">邀请同事一起投</text>
         </view>
@@ -192,7 +201,7 @@ export default { name: 'VoteSuccessPage' }
   &__primary-text {
     font-size: 15px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 
   &__secondary {

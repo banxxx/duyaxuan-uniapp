@@ -53,16 +53,21 @@ npm run db:local     # 建本地库（wrangler dev 用）
 ```
 
 > **从旧版本升级**：`schema.sql` 只有 `CREATE TABLE IF NOT EXISTS`，不会给已存在的表
-> 补列。之前已经建过库的，重跑 `db:remote` 后还要补这两句：
+> 补列。之前已经建过库的，重跑 `db:remote` 后还要补这几句：
 >
 > ```bash
 > npx wrangler d1 execute duyaxuan-db --remote \
 >   --command "ALTER TABLE wx_push_prefs ADD COLUMN updated INTEGER NOT NULL DEFAULT 0"
 > npx wrangler d1 execute duyaxuan-db --remote \
 >   --command "ALTER TABLE answers ADD COLUMN ip TEXT"
+> # 详情页「已编辑」标记：已编辑过的投票才会有值
+> npx wrangler d1 execute duyaxuan-db --remote \
+>   --command "ALTER TABLE polls ADD COLUMN updated_at INTEGER"
 > ```
 >
-> 新表 `wx_push_log` 由 `db:remote` 直接建好，不用单独处理。
+> 本地开发如果 `.wrangler` 里已经有旧库，把上面命令里的 `--remote` 换成 `--local` 再执行。
+>
+> 新表 `wx_push_log`、`rate_limits` 由 `db:remote` / `db:local` 直接建好，不用单独处理。
 >
 > 结果通知的唯一索引 `ux_notifications_result` 也会在重跑 `db:remote` 时创建；
 > `schema.sql` 会先按 `(user_id, poll_id)` 清掉历史重复的 `result` 通知再建索引，
@@ -443,7 +448,7 @@ curl http://127.0.0.1:8787/cdn-cgi/local/scheduled
 
 > 汇总读写都要求「登录 + 是这份问卷的发起人」，回答里是参与者写的内容，不公开。
 
-### 通知 / 反馈
+### 通知
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -453,7 +458,6 @@ curl http://127.0.0.1:8787/cdn-cgi/local/scheduled
 | GET | `/notifications/templates` | 已配置的订阅消息模板（kind → template_id），没配就是 `{}` |
 | POST | `/notifications/subscribe` | `{templateIds, prefs?}`，同意的模板各 +1 次发送额度 |
 | POST | `/notifications/prefs` | `{prefs}`，同步推送开关（服务端据此决定发不发） |
-| POST | `/feedback` | `{content, contact?}`，允许未登录提交 |
 
 通知分两层：站内消息（`notifications` 表）在参与、回答、评论、回复、截止提醒时
 始终写一条；订阅消息在「配了模板 + 用户授权过 + 还有额度」时才额外推一条。
@@ -467,6 +471,9 @@ curl http://127.0.0.1:8787/cdn-cgi/local/scheduled
 ```
 
 失败时 HTTP 状态码是真的（不是 200 + code:500）—— 前端的 401 自动重登依赖这一点。
+
+写接口超限时返回 `429`，`msg` 带建议等待时间（如「操作太频繁，请 2 分钟后再试」），
+前端现有的非 2xx toast 会直接展示，不需要额外处理。
 
 ---
 
@@ -495,15 +502,23 @@ curl http://127.0.0.1:8787/cdn-cgi/local/scheduled
 匿名投票的站内通知也不带昵称（统一写「有人」），否则发起人从消息列表就能
 把匿名投票人认出来，和投票记录页的规则自相矛盾。
 
+**写接口限流**：用 D1 做固定窗口计数（`rate_limits` 表），登录按 IP、其他写接口按
+userId 分桶。`enforceRateLimit()` 是一条原子 UPSERT + `RETURNING`，并发下不会把次数
+刷少；超限抛 429。各接口的次数和窗口集中在 `src/lib/rate-limit.ts` 的 `RATE_LIMITS`，
+要调阈值改那一处。限流表本身写失败时只记日志并放行 —— 迁移问题不该让全站写接口瘫痪；
+过期行由 Cron 每 5 分钟顺手清理。前端已经有点击态防连点，这里的限流主要挡脚本和
+绕过 UI 的请求。
+
 **匿名不能事后关闭**：已经有人投票 / 回答后，把 `anonymous` 从开改成关会直接
 返回 400。参与者当初是按匿名投的，不能因为发起人改规则就把身份翻出来。
 
-**邀请码不是凭证，是门槛**：`join_method=invite` 的投票，投票/回答时后端会查
-`invites` 里有没有这个人；邀请码只是让用户能写进 `invites` 的钥匙。
+**邀请码是二次验证，不随链接传播**：`join_method=invite` 的投票，投票/回答时
+后端会查 `invites` 里有没有这个人；邀请码只是让用户能写进 `invites` 的钥匙。
 邀请码存在 `polls.invite_code`，一个投票一个码，发起人可分享给多人。
-参与记录（`/voters`）和问卷回答（`/answers`）也只对发起人和受邀者开放，
-不能靠知道 poll id 绕过邀请码读取。已经投过票 / 答过卷的人视为已受邀，
-发起人中途改成邀请制不会把老参与者锁在外面。
+**分享链接和二维码里不含邀请码**，转发链接的人仍然需要发起人单独告知的 6 位码，
+所以「转发即准入」不成立。参与记录（`/voters`）和问卷回答（`/answers`）也只对
+发起人和受邀者开放，不能靠知道 poll id 绕过邀请码读取。已经投过票 / 答过卷的人
+视为已受邀，发起人中途改成邀请制不会把老参与者锁在外面。
 
 **关掉分享的投票不进公开列表**：`allow_share=0` 时不出现在 `/polls/discover`
 和搜索结果里（发起人自己仍能搜到）。关的是公开曝光，不是访问控制 ——
@@ -531,8 +546,8 @@ curl http://127.0.0.1:8787/cdn-cgi/local/scheduled
 
 1. **参与方式只有两档**：`link`（持链接可投）和 `invite`（需要 6 位邀请码）。
    老数据里的 `group` / `private` 在读取时都按 `invite` 处理。
-   邀请码存在 `polls.invite_code`，分享链接和小程序码里会带上；`invites` 表记录
-   「谁把这条投票带给了谁」，首页「待我投票」直接读它。
+   邀请码存在 `polls.invite_code`，由发起人单独告知参与者，不随分享链接和
+   小程序码传播；`invites` 表记录「谁把这条投票带给了谁」，首页「待我投票」直接读它。
 2. **问卷汇总归类** 需要语义归类（大模型或聚类），现在只做了「内容完全相同」的
    最简分组：重复出现 2 次以上的回答成为候选，其余进未归类。
    接模型只需要替换 `db/polls.ts` 里的 `summaryGroups()`。

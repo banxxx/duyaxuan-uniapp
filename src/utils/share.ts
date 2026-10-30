@@ -16,15 +16,14 @@ import type { Poll } from '@/types/api'
  * 小程序码的 scene 也落到同一页，两条入口行为一致。
  */
 export function sharePath(poll: Poll): string {
-  // 邀请码模式的投票，码直接拼在链接里，对方点开就不用再手输
-  const code = poll.inviteCode ? `&code=${encodeURIComponent(poll.inviteCode)}` : ''
-  return `/pages/share/join?id=${poll.id}${code}&from=${getPlatform()}`
+  // 邀请码不拼进链接：它必须由发起人单独告知。
+  // 拼进去等于「转发即准入」，邀请码就失去了二次验证的意义。
+  return `/pages/share/join?id=${poll.id}&from=${getPlatform()}`
 }
 
 /** 朋友圈 query 用同一份参数，只是不带 from（打开的是当前页） */
 export function shareQuery(poll: Poll): string {
-  const code = poll.inviteCode ? `&code=${encodeURIComponent(poll.inviteCode)}` : ''
-  return `id=${poll.id}${code}`
+  return `id=${poll.id}`
 }
 
 /**

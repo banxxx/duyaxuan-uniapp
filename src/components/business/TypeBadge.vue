@@ -90,7 +90,7 @@ export default { name: 'TypeBadge' }
     background: $ink;
 
     .type-badge__text {
-      color: #fff;
+      color: $white;
     }
   }
 }

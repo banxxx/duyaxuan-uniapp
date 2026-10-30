@@ -7,11 +7,14 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
-import { fetchPoll, fetchPollQrcode } from '@/api/poll'
+import AppConfirmSheet from '@/components/base/AppConfirmSheet.vue'
+import { fetchPoll, fetchPollQrcode, fetchInviteCode } from '@/api/poll'
 import { formatDateTime } from '@/utils/format'
 import { getPlatform } from '@/utils/platform'
+import { ROUTES, reset } from '@/utils/router'
 import { buildShareMessage, buildTimelineMessage, syncShareMenu } from '@/utils/share'
-import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
+import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import { ApiError } from '@/utils/request'
 
 /**
  * 27 分享投票 / 80 分享问卷
@@ -28,6 +31,8 @@ import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
 const poll = ref<Poll | null>(null)
 const loading = ref(true)
 const failed = ref(false)
+/** 410：发起人删除了投票，链接/海报已经失效 */
+const deleted = ref(false)
 const pollId = ref('')
 /** 后端生成的小程序码；拿不到时退回设计稿的占位点阵 */
 const qrUrl = ref('')
@@ -39,6 +44,13 @@ const qrUrl = ref('')
 const qrLoading = ref(true)
 const qrFailed = ref(false)
 const saving = ref(false)
+/** 保存海报时没有相册权限 */
+const permissionVisible = ref(false)
+
+function openAlbumSetting() {
+  permissionVisible.value = false
+  uni.openSetting({})
+}
 
 const isSurvey = computed(() => poll.value?.type === 'survey')
 const navTitle = computed(() => (isSurvey.value ? '分享问卷' : '分享投票'))
@@ -79,26 +91,51 @@ interface ShareSnapshot {
   qrUrl: string
 }
 
+/**
+ * 老数据可能还没生成邀请码：补一次，保证发起人能看到并单独发给参与者。
+ * 非发起人调用会 403，静默失败即可，不影响海报和分享。
+ */
+async function loadInviteCode() {
+  const p = poll.value
+  if (!p || p.rules.joinMethod !== 'invite' || p.inviteCode) return
+  try {
+    const code = await fetchInviteCode(p.id)
+    if (poll.value && code) poll.value.inviteCode = code
+  } catch {
+    // 忽略：没有码时页面只是不展示邀请码区块
+  }
+}
+
 async function load() {
   const cached = cacheGet<ShareSnapshot>(cacheKey.pollShare(pollId.value))
   if (cached) {
     poll.value = cached.poll
     qrUrl.value = cached.qrUrl
     qrLoading.value = false
+    loadInviteCode()
   }
   // 有快照就先渲染海报，骨架屏只在冷启动时出现
   loading.value = !cached
   failed.value = false
+  deleted.value = false
   try {
     poll.value = await fetchPoll(pollId.value)
+    loadInviteCode()
     // 发起人关掉「允许分享」后，右上角菜单里的转发也一起收掉
     syncShareMenu(poll.value.rules.allowShare)
     // 码地址在 R2 里是稳定的，上次拿到过就不用再问一次
     if (cached?.qrUrl) cacheSet(cacheKey.pollShare(pollId.value), { poll: poll.value, qrUrl: qrUrl.value })
     else loadQrcode()
-  } catch {
-    // 有快照时静默失败，页面保持可看
-    if (!poll.value) failed.value = true
+  } catch (err) {
+    // 已删除：海报和码都不能再展示
+    if (err instanceof ApiError && (err.code === 404 || err.code === 410)) {
+      cacheDrop(cacheKey.pollShare(pollId.value))
+      poll.value = null
+      deleted.value = true
+    } else if (!poll.value) {
+      // 有快照时静默失败，页面保持可看
+      failed.value = true
+    }
   } finally {
     loading.value = false
   }
@@ -261,14 +298,7 @@ async function savePoster() {
   } catch (err) {
     const msg = String((err as { errMsg?: string })?.errMsg ?? '')
     if (msg.includes('auth') || msg.includes('deny') || msg.includes('authorize')) {
-      uni.showModal({
-        title: '需要相册权限',
-        content: '请在设置里允许「保存到相册」后再试',
-        confirmText: '去设置',
-        success: (r) => {
-          if (r.confirm) uni.openSetting({})
-        }
-      })
+      permissionVisible.value = true
     } else {
       uni.showToast({ title: '保存失败，请重试', icon: 'none' })
     }
@@ -297,6 +327,16 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
 
     <view v-if="loading" class="share__body">
       <AppSkeleton type="detail" />
+    </view>
+
+    <view v-else-if="deleted" class="share__body">
+      <AppEmpty
+        icon="trash-2"
+        title="该投票已被发起人删除"
+        desc="分享链接和海报都已经失效"
+        action="返回首页"
+        @action="reset(ROUTES.home)"
+      />
     </view>
 
     <view v-else-if="failed" class="share__body">
@@ -366,7 +406,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
           </view>
         </view>
 
-        <!-- 邀请码模式：把码摆在明面上，转发文字/口头通知都能用 -->
+        <!-- 邀请码模式：码不随链接/海报发出，由发起人单独告知参与者 -->
         <view v-if="poll.inviteCode" class="invite">
           <view class="invite__left">
             <text class="invite__label">邀请码</text>
@@ -402,6 +442,15 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
         <text v-else class="share__closed">发起人已关闭这份{{ isSurvey ? '问卷' : '投票' }}的分享</text>
       </view>
     </scroll-view>
+
+    <AppConfirmSheet
+      :visible="permissionVisible"
+      title="需要相册权限"
+      desc="请在设置里允许「保存到相册」后再试"
+      confirm-text="去设置"
+      @close="permissionVisible = false"
+      @confirm="openAlbumSetting"
+    />
   </view>
 </template>
 
@@ -476,7 +525,7 @@ export default { name: 'SharePage' }
   &__title {
     font-size: 20px;
     font-weight: 700;
-    color: #fff;
+    color: $white;
     line-height: 1.35;
   }
 
@@ -523,7 +572,7 @@ export default { name: 'SharePage' }
     width: 140px;
     height: 140px;
     padding: 6px;
-    background: #fff;
+    background: $white;
     box-sizing: border-box;
   }
 
@@ -531,7 +580,7 @@ export default { name: 'SharePage' }
   &__qr-loading {
     width: 140px;
     height: 140px;
-    background: #fff;
+    background: $white;
     border: 1px solid $line;
     box-sizing: border-box;
     display: flex;

@@ -48,7 +48,7 @@ export default { name: 'AppSwitch' }
   width: 44px;
   height: 26px;
   border-radius: 13px;
-  background: #d4d4d8;
+  background: $track;
   padding: 3px;
   display: flex;
   align-items: center;
@@ -81,7 +81,7 @@ export default { name: 'AppSwitch' }
     width: 20px;
     height: 20px;
     border-radius: 10px;
-    background: #fff;
+    background: $white;
     box-shadow: 0 1px 3px rgba(9, 9, 11, 0.16);
     transition:
       transform $dur-fast $ease-both,

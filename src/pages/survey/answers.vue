@@ -7,6 +7,7 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppEmpty from '@/components/base/AppEmpty.vue'
 import {
   fetchPoll,
   fetchAnswers,
@@ -34,12 +35,14 @@ import { ROUTES, go } from '@/utils/router'
 const poll = ref<Poll | null>(null)
 const answers = ref<SurveyAnswer[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 const pollId = ref('')
 const endSheet = ref(false)
 
 /** 78 汇总入口的三块统计：候选数、已归类、未归类，全部按真实汇总结果算 */
 const summaryCandidates = ref<Array<{ answerCount: number }>>([])
 const summaryUnclassified = ref<Array<unknown>>([])
+const summaryUnclassifiedTotal = ref(0)
 
 const isEnded = computed(() => !!poll.value && poll.value.rules.endAt <= Date.now())
 const canSummarize = computed(() => isEnded.value && answers.value.length > 0)
@@ -59,7 +62,7 @@ const skipped = computed(() => answers.value.filter((a) => !a.content.trim()).le
 const summaryMeta = computed(() => ({
   candidates: summaryCandidates.value.length,
   classified: summaryCandidates.value.reduce((s, c) => s + c.answerCount, 0),
-  unclassified: summaryUnclassified.value.length
+  unclassified: summaryUnclassifiedTotal.value
 }))
 
 /** 进行中的进度按「已过去的时间 / 总时长」算，截止后固定 100 */
@@ -99,7 +102,13 @@ async function loadAllAnswers(id: string): Promise<SurveyAnswer[]> {
 }
 
 async function load() {
+  if (!pollId.value) {
+    loading.value = false
+    loadError.value = true
+    return
+  }
   loading.value = true
+  loadError.value = false
   try {
     const p = await fetchPoll(pollId.value)
     poll.value = p
@@ -107,11 +116,15 @@ async function load() {
     const [list, candidates, unclassified] = await Promise.all([
       loadAllAnswers(p.id),
       ended ? fetchSummaryCandidates(p.id) : Promise.resolve([]),
-      ended ? fetchUnclassified(p.id) : Promise.resolve([])
+      ended ? fetchUnclassified(p.id) : Promise.resolve({ list: [], cursor: null, hasMore: false, total: 0 })
     ])
     answers.value = list
     summaryCandidates.value = candidates
-    summaryUnclassified.value = unclassified
+    summaryUnclassified.value = unclassified.list
+    summaryUnclassifiedTotal.value = unclassified.total
+  } catch {
+    // 403（不是发起人）或断网：不能停在骨架屏，也不能白屏
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -169,6 +182,16 @@ async function doEnd() {
     <view v-if="loading" class="answers__body">
       <AppSkeleton type="stats" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="数据加载失败"
+      desc="网络不太稳定，或者你没有查看这份问卷数据的权限"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <template v-else-if="poll">
       <scroll-view class="answers__scroll" scroll-y>
@@ -418,7 +441,7 @@ export default { name: 'SurveyAnswersPage' }
   &__badge-text {
     font-size: 11px;
     font-weight: 500;
-    color: #fff;
+    color: $white;
   }
 
   &__right {
@@ -429,7 +452,7 @@ export default { name: 'SurveyAnswersPage' }
   &__title {
     font-size: 15px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
     line-height: 1.4;
   }
 
@@ -480,7 +503,7 @@ export default { name: 'SurveyAnswersPage' }
   &__stat-total {
     font-size: 13px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 
   &__stat-note {

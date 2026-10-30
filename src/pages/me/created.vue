@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
+import { ref, computed, onMounted } from 'vue'
+import { onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app'
 import type { Poll } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
@@ -14,6 +14,7 @@ import SwipeRow from '@/components/business/SwipeRow.vue'
 import { fetchMyPolls, fetchStats, deletePoll, restorePoll } from '@/api/poll'
 import { formatRemaining } from '@/utils/format'
 import { getSafeArea, bottomInset } from '@/utils/platform'
+import { takePendingUndo } from '@/utils/delete-undo'
 import { ROUTES, go } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 
@@ -36,6 +37,8 @@ const status = ref<'all' | 'ongoing' | 'ended'>('all')
 const list = ref<Poll[]>([])
 const stats = ref<Array<{ value: string | number; label: string }>>([])
 const loading = ref(false)
+/** 首屏加载失败：没有缓存内容时换成错误页，不能让用户对着空列表以为「真没有」 */
+const loadError = ref(false)
 const cursor = ref<string | null>(null)
 const hasMore = ref(true)
 
@@ -48,6 +51,27 @@ const activePoll = ref<Poll | null>(null)
 
 // 删除确认（92/95）
 const confirmVisible = ref(false)
+
+/**
+ * 删除确认的正文：进行中 / 已结束 / 还没人参与，三种情况说清楚后果。
+ * 入口在列表和详情页两处，文案保持一致的政策：随时可删、立刻下线、5 秒内可撤销。
+ */
+const deleteDesc = computed(() => {
+  const p = activePoll.value
+  if (!p) return ''
+  const isSurvey = p.type === 'survey'
+  const ongoing = p.rules.endAt > Date.now()
+  const people = isSurvey ? `${p.answerCount ?? 0} 条回答` : `${p.voterCount ?? 0} 人投票`
+  const comments = `${p.commentCount ?? 0} 条评论`
+  const undo = '5 秒内可在底部提示里撤销，之后无法恢复。'
+  if (!(isSurvey ? p.answerCount : p.voterCount)) {
+    return `还没有人参与。删除后立即从列表和分享链接下线，${undo}`
+  }
+  if (ongoing) {
+    return `「${p.title}」还在进行中，已有 ${people}、${comments}。删除后立即从列表和分享链接下线，参与者再打开会看到「已被删除」；${undo}`
+  }
+  return `「${p.title}」已结束，已有 ${people}、${comments}。删除后结果页和分享链接都会失效；${undo}`
+})
 
 // 撤销提示条（96）
 const toastVisible = ref(false)
@@ -81,9 +105,16 @@ function seed(v: string) {
   if (cached) stats.value = cached.stats
 }
 
+/** 正在请求时又要求刷新（比如撤销删除），等当前请求结束再补一次，不能直接吞掉 */
+let reloadQueued = false
+
 async function load(reset = false) {
-  if (loading.value) return
+  if (loading.value) {
+    if (reset) reloadQueued = true
+    return
+  }
   loading.value = true
+  loadError.value = false
   try {
     if (reset) {
       cursor.value = null
@@ -93,18 +124,49 @@ async function load(reset = false) {
     list.value = reset ? res.list : [...list.value, ...res.list]
     cursor.value = res.cursor
     hasMore.value = res.hasMore
+  } catch {
+    // 已有内容（翻页失败）就保留旧列表，只有首屏空白时才整页报错
+    if (!list.value.length) loadError.value = true
   } finally {
     loading.value = false
+    if (reloadQueued) {
+      reloadQueued = false
+      load(true).then(saveSnapshot).catch(() => {})
+    }
   }
 }
 
 async function loadStats() {
-  stats.value = await fetchStats()
+  // 顶部统计失败不影响列表：保留旧值（首次就是空），不把整个页面拖成错误态
+  try {
+    stats.value = await fetchStats()
+  } catch {
+    /* 静默 */
+  }
 }
 
 onMounted(async () => {
   seed(status.value)
   await Promise.all([load(true), loadStats()])
+  saveSnapshot()
+})
+
+/**
+ * 从详情页删除后退回来：详情页把刚删掉的投票放在 delete-undo 里交接，
+ * 在这里显示同一条撤销条；否则用户只有列表删除才有 5 秒反悔机会。
+ *
+ * 首次 show 紧跟 onMounted，不重复拉；从详情/编辑页回来则要重拉，
+ * 否则删除、改名、提前结束都还停在旧数据上。
+ */
+let firstShow = true
+onShow(async () => {
+  const pending = takePendingUndo()
+  if (pending) showUndo(pending)
+  if (firstShow) {
+    firstShow = false
+    return
+  }
+  await load(true)
   saveSnapshot()
 })
 
@@ -150,6 +212,18 @@ function askDelete(poll: Poll) {
   confirmVisible.value = true
 }
 
+/** 96：显示撤销条，5 秒后自动收起 */
+function showUndo(poll: Poll) {
+  undoPoll = poll
+  toastText.value = `已删除「${poll.title}」`
+  toastVisible.value = true
+  if (undoTimer) clearTimeout(undoTimer)
+  undoTimer = setTimeout(() => {
+    toastVisible.value = false
+    undoPoll = null
+  }, 5000)
+}
+
 async function confirmDelete() {
   const poll = activePoll.value
   if (!poll) return
@@ -163,14 +237,7 @@ async function confirmDelete() {
     await deletePoll(poll.id)
     // 三个筛选条件下的列表缓存都失效了，下次进来重新拉
     cacheDrop('list:mine')
-    undoPoll = poll
-    toastText.value = `已删除「${poll.title}」`
-    toastVisible.value = true
-    if (undoTimer) clearTimeout(undoTimer)
-    undoTimer = setTimeout(() => {
-      toastVisible.value = false
-      undoPoll = null
-    }, 5000)
+    showUndo(poll)
   } catch {
     if (index >= 0) list.value.splice(index, 0, poll)
     uni.showToast({ title: '删除失败，请重试', icon: 'none' })
@@ -224,7 +291,17 @@ function onSwipeDelete(poll: Poll) {
         </SwipeRow>
 
         <AppEmpty
-          v-if="!loading && !list.length"
+          v-if="!loading && loadError && !list.length"
+          icon="wifi-off"
+          title="加载失败"
+          desc="网络不太稳定，或者服务暂时不可用，稍后再试"
+          action="重新加载"
+          action-icon="refresh-cw"
+          @action="load(true)"
+        />
+
+        <AppEmpty
+          v-else-if="!loading && !list.length"
           icon="inbox"
           title="还没有发起过投票"
           desc="点底部的「+」发起第一场，三步就能完成"
@@ -282,13 +359,7 @@ function onSwipeDelete(poll: Poll) {
           <text class="confirm__title">
             删除这{{ activePoll?.type === 'survey' ? '份问卷' : '场投票' }}？
           </text>
-          <text class="confirm__desc">
-            「{{ activePoll?.title }}」有
-            {{ activePoll?.type === 'survey' ? `${activePoll?.answerCount ?? 0} 条回答` : `${activePoll?.voterCount ?? 0} 人投票` }}、{{
-              activePoll?.commentCount ?? 0
-            }}
-            条评论。确认后立即从列表和分享链接下线，5 秒内可在底部提示里撤销，之后无法恢复。
-          </text>
+          <text class="confirm__desc">{{ deleteDesc }}</text>
         </view>
         <view class="confirm__buttons">
           <view class="confirm__btn confirm__btn--cancel" @tap="confirmVisible = false">
@@ -531,7 +602,7 @@ export default { name: 'CreatedPollsPage' }
     color: $ink;
 
     &--light {
-      color: #fff;
+      color: $white;
     }
   }
 }
@@ -556,7 +627,7 @@ export default { name: 'CreatedPollsPage' }
   &__text {
     font-size: 13px;
     font-weight: 500;
-    color: #fff;
+    color: $white;
     flex: 1;
     overflow: hidden;
     white-space: nowrap;
@@ -566,7 +637,7 @@ export default { name: 'CreatedPollsPage' }
   &__undo {
     font-size: 13px;
     font-weight: 600;
-    color: #c7d2fe;
+    color: $accent-200;
     padding-left: 12px;
     flex-shrink: 0;
   }

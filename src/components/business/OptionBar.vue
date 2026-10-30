@@ -432,7 +432,7 @@ export default { name: 'OptionBar' }
   &__fill {
     height: 100%;
     border-radius: 3px;
-    background: #d4d4d8;
+    background: $track;
     /* 进场由 .anim--grow 的 scaleX 负责，这里只管数值变化时的宽度过渡 */
     transition: width $dur-slow $ease-both;
   }

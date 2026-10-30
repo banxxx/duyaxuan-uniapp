@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import type { PollType } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
@@ -75,11 +75,30 @@ function pick(t: TypeItem) {
   selected.value = t.key as PollType
 }
 
+/**
+ * 从内容页返回时，草稿里已经有填过的标题、描述和选项。
+ * 只要类型没变，就直接沿用，不要用空草稿把它清掉。
+ * 首次进入（包括从首页重新发起）仍然从空白开始。
+ */
+let backFromNext = false
+let firstShow = true
+onShow(() => {
+  if (firstShow) firstShow = false
+  else backFromNext = true
+})
+
 function next() {
-  draft.startCreate(selected.value)
-  if (sourceSurveyId.value) {
-    draft.patch({ sourceSurveyId: sourceSurveyId.value })
+  const cur = draft.draft
+  const keep =
+    backFromNext && cur.mode === 'create' && cur.type === selected.value && !sourceSurveyId.value
+
+  if (!keep) {
+    draft.startCreate(selected.value)
+    if (sourceSurveyId.value) {
+      draft.patch({ sourceSurveyId: sourceSurveyId.value })
+    }
   }
+  backFromNext = false
   go(ROUTES.createContent)
 }
 

@@ -8,6 +8,8 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppSwitch from '@/components/base/AppSwitch.vue'
+import AppDateTimePicker from '@/components/base/AppDateTimePicker.vue'
+import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import RuleRow from '@/components/business/RuleRow.vue'
 import { fetchPoll, updatePoll } from '@/api/poll'
 import { formatDateTime } from '@/utils/format'
@@ -21,8 +23,9 @@ import { cacheDrop, cacheKey } from '@/utils/cache'
  * 这一页的核心不是「能改什么」，而是「什么改不了」。
  *
  * 锁定规则（写在后端也是同一套）：
- *   投票：选择方式、匿名、参与方式
- *   问卷：匿名收集、参与方式、允许重复提交，且问卷已截止时连截止时间也锁
+ *   投票类型：创建后永远不能改 —— 单选票和多选票没法放在一起统计
+ *   已有参与记录：匿名、参与方式、问卷的重复提交、多选的选项上限；截止时间只能延后
+ *   已结束：规则全部锁定，只能回内容页修改主题和说明
  *
  * 为什么锁：这些字段决定已入库数据怎么解释。比如投票中途把「单选」改「多选」，
  * 之前的 42 张单选票就没法和后来的多选票放在一起统计。
@@ -32,6 +35,8 @@ import { cacheDrop, cacheKey } from '@/utils/cache'
  */
 const poll = ref<Poll | null>(null)
 const loading = ref(true)
+/** 首屏加载失败：给错误页和重试，不要停在空白页 */
+const loadError = ref(false)
 const saving = ref(false)
 const pollId = ref('')
 
@@ -44,17 +49,58 @@ const hasResponses = computed(() => responseCount.value > 0)
 
 /** 锁定的键 */
 const lockedKeys = computed(() => {
-  if (!hasResponses.value) return [] as string[]
+  // 已结束：规则全部锁死，只留主题/说明可改
+  if (isEnded.value) {
+    return [
+      'type',
+      'anonymous',
+      'allowEdit',
+      'allowShare',
+      'allowComment',
+      'allowRepeat',
+      'limitIp',
+      'maxChoice',
+      'resultVisibility',
+      'shuffleOptions',
+      'hideVoterCount',
+      'joinMethod',
+      'profileField',
+      'endAt'
+    ]
+  }
+  // 类型任何时候都不能改；参与过之后，决定「数据怎么解释」的字段跟着锁
+  const base = ['type']
+  if (!hasResponses.value) return base
   return isSurvey.value
-    ? ['anonymous', 'joinMethod', 'allowRepeat', ...(isEnded.value ? ['endAt'] : [])]
-    : ['type', 'anonymous', 'joinMethod']
+    ? [...base, 'anonymous', 'joinMethod', 'allowRepeat']
+    : [...base, 'anonymous', 'joinMethod', 'maxChoice']
 })
 
 function isLocked(key: string) {
   return lockedKeys.value.includes(key)
 }
 
-const lockedText = computed(() => (isSurvey.value ? '已有回答，不能再改' : '已有投票，不能再改'))
+const lockedText = computed(() =>
+  isEnded.value
+    ? isSurvey.value
+      ? '问卷已结束，不能再改'
+      : '投票已结束，不能再改'
+    : isSurvey.value
+      ? '已有回答，不能再改'
+      : '已有投票，不能再改'
+)
+
+/** 锁定原因：投票类型是「创建后不可改」，和「已有参与记录」不是一回事 */
+function lockReason(key: string) {
+  if (!isLocked(key)) return ''
+  if (key === 'type' && !isEnded.value && !hasResponses.value) return '投票类型创建后不可修改'
+  return lockedText.value
+}
+
+/** 行说明：锁定时换成原因，未锁定时用原本的功能说明 */
+function ruleDesc(key: string, normal: string) {
+  return isLocked(key) ? lockReason(key) : normal
+}
 
 /** 参与方式只有两档：链接 / 邀请码（后端会把老数据的 group、private 归一成 invite） */
 const joinText = computed(() =>
@@ -69,19 +115,110 @@ const activePreset = computed(() => {
 })
 
 const lockSummary = computed(() => {
+  if (isEnded.value) {
+    return `${isSurvey.value ? '问卷' : '投票'}已结束，规则和截止时间都已锁定，只能修改主题和说明。`
+  }
   if (!hasResponses.value) return ''
   if (isSurvey.value) {
-    const parts = ['匿名收集', '参与方式', '允许重复提交']
-    if (isEnded.value) parts.push('截止时间（问卷已截止）')
-    return `已锁定：${parts.join('、')}。其余开关随时可调。`
+    return '已锁定：匿名收集、参与方式、允许重复提交；截止时间只能延后。其余开关随时可调。'
   }
-  return '已锁定：选择方式、匿名、参与方式。其余开关随时可调，关闭后新规只对新票生效。'
+  return '已锁定：投票类型、匿名、参与方式、最多可选；截止时间只能延后。其余开关随时可调，关闭后新规只对新票生效。'
 })
+
+/** 投票结果显示：右侧展示当前值，点开用自定义底部菜单改 */
+const visibilityText = computed(() => {
+  switch (poll.value?.rules.resultVisibility) {
+    case 'hidden':
+      return '禁止查看'
+    case 'after_end':
+      return '投票结束后查看'
+    case 'always':
+      return '投票前查看'
+    default:
+      return '投票后查看'
+  }
+})
+
+const RESULT_VISIBILITY: Array<{ value: NonNullable<PollRules['resultVisibility']>; label: string }> = [
+  { value: 'always', label: '投票前查看' },
+  { value: 'after_vote', label: '投票后查看' },
+  { value: 'after_end', label: '投票结束后查看' },
+  { value: 'hidden', label: '禁止查看' }
+]
+
+const visibilityVisible = ref(false)
+const visibilityItems = computed(() =>
+  RESULT_VISIBILITY.map((o) => ({
+    key: o.value,
+    label: o.label,
+    selected: poll.value?.rules.resultVisibility === o.value
+  }))
+)
+
+function pickVisibility() {
+  if (!poll.value || isLocked('resultVisibility')) return
+  visibilityVisible.value = true
+}
+
+function onVisibility(key: string) {
+  if (!poll.value) return
+  const hit = RESULT_VISIBILITY.find((o) => o.value === key)
+  if (hit) poll.value.rules.resultVisibility = hit.value
+}
+
+/** 参与方式：响应后锁定，结束更不用说了 */
+const joinVisible = ref(false)
+const joinItems = computed(() => [
+  {
+    key: 'link',
+    label: '链接分享',
+    desc: '拿到链接的人都能参与',
+    selected: poll.value?.rules.joinMethod !== 'invite'
+  },
+  {
+    key: 'invite',
+    label: '邀请码',
+    desc: '参与者需单独输入 6 位码，转发链接也进不来',
+    selected: poll.value?.rules.joinMethod === 'invite'
+  }
+])
+
+function pickJoinMethod() {
+  if (!poll.value || isLocked('joinMethod')) return
+  joinVisible.value = true
+}
+
+function onJoinMethod(key: string) {
+  if (!poll.value) return
+  if (key === 'link' || key === 'invite') poll.value.rules.joinMethod = key
+}
+
+/* ---------------- 最多可选（多选） ---------------- */
+
+// 上限取「选项数」和「当前值」的较大者：删过没人投的选项后，旧上限可能比选项数大，
+// 强行收窄会在保存时被后端判成「修改了选择上限」而拒绝，这里保留原值不乱动。
+const maxChoiceMax = computed(() =>
+  Math.max(2, poll.value?.options.length ?? 2, poll.value?.rules.maxChoice ?? 0)
+)
+const maxChoiceValue = computed(() => {
+  const v = poll.value?.rules.maxChoice
+  return Math.min(Math.max(2, typeof v === 'number' ? v : 3), maxChoiceMax.value)
+})
+
+function stepMaxChoice(delta: number) {
+  if (!poll.value || isLocked('maxChoice')) return
+  const next = Math.min(Math.max(2, maxChoiceValue.value + delta), maxChoiceMax.value)
+  if (next === maxChoiceValue.value) return
+  poll.value.rules.maxChoice = next
+}
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     poll.value = await fetchPoll(pollId.value)
+  } catch {
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -101,13 +238,14 @@ async function save() {
   if (!poll.value) return
   saving.value = true
   try {
-    await updatePoll(poll.value.id, {
+    // 这一页永远不碰选项和类型：规则改动不需要把选项再传一遍。
+    // 已结束时 rules 也全部锁定，只回存主题/说明。
+    const body: Record<string, any> = {
       title: poll.value.title,
-      desc: poll.value.desc,
-      type: poll.value.type,
-      options: poll.value.options,
-      rules: poll.value.rules
-    })
+      desc: poll.value.desc
+    }
+    if (!isEnded.value) body.rules = poll.value.rules
+    await updatePoll(poll.value.id, body)
     // 规则变了（截止时间、匿名、结果可见性），详情/结果快照都要重拉
     cacheDrop(cacheKey.pollAll(poll.value.id))
     uni.showToast({ title: '已保存', icon: 'none' })
@@ -125,18 +263,64 @@ function close() {
 
 /** 已锁定的规则项点一下给出解释，而不是静默无反应 */
 function lockedHint() {
-  uni.showToast({ title: '编辑态沿用原设置', icon: 'none' })
+  uni.showToast({ title: lockedText.value, icon: 'none' })
 }
 
-/** 截止时间快捷选项；自定义时间只在创建时可选，编辑态给提示 */
+/* ---------------- 截止时间 ---------------- */
+
+/** 有参与记录后只能延后：快捷档位从「现在」改成「从当前截止时间往后加」 */
+const deadlinePresets = computed(() =>
+  hasResponses.value && !isEnded.value
+    ? [
+        { key: 1, label: '延长 1 天' },
+        { key: 3, label: '延长 3 天' },
+        { key: 7, label: '延长 7 天' },
+        { key: 0, label: '自定义' }
+      ]
+    : [
+        { key: 1, label: '1 天' },
+        { key: 3, label: '3 天' },
+        { key: 7, label: '7 天' },
+        { key: 0, label: '自定义' }
+      ]
+)
+
+/** 自定义面板打开时的草稿值；只有点「确定」才写回 */
+const deadlinePicker = ref(false)
+const customDeadline = ref(0)
+
+/** 自定义面板的最早可选时间：有参与记录时就是当前截止时间 */
+const deadlineMin = computed(() => {
+  if (!poll.value) return Date.now()
+  return hasResponses.value ? Math.max(Date.now(), poll.value.rules.endAt) : Date.now()
+})
+
 function pickDeadline(p: { key?: number }) {
   if (isLocked('endAt')) {
     lockedHint()
     return
   }
   if (!poll.value) return
-  if (p.key) poll.value.rules.endAt = Date.now() + p.key * 86400000
-  else uni.showToast({ title: '自定义时间请在创建时设置', icon: 'none' })
+  if (!p.key) {
+    customDeadline.value = Math.max(poll.value.rules.endAt, Date.now() + 3600000)
+    deadlinePicker.value = true
+    return
+  }
+  const base = hasResponses.value ? poll.value.rules.endAt : Date.now()
+  poll.value.rules.endAt = base + p.key * 86400000
+}
+
+function applyCustomDeadline(ts: number) {
+  if (!poll.value) return
+  if (ts <= deadlineMin.value) {
+    uni.showToast({
+      title: hasResponses.value ? '已有参与记录，截止时间只能延后' : '请选择未来的时间',
+      icon: 'none'
+    })
+    return
+  }
+  poll.value.rules.endAt = ts
+  deadlinePicker.value = false
 }
 </script>
 
@@ -160,13 +344,27 @@ function pickDeadline(p: { key?: number }) {
       <AppSkeleton type="detail" />
     </view>
 
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="加载失败"
+      desc="网络不太稳定，或者这条投票已经被删除"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
+
     <scroll-view v-else-if="poll" class="edit-rules__scroll" scroll-y>
       <view class="edit-rules__inner">
         <view v-if="lockSummary" class="notice">
           <AppIcon name="triangle-alert" :size="16" color="#D97706" />
           <view class="notice__text">
             <text class="notice__title">
-              {{ responseCount }} {{ isSurvey ? '条回答已入库' : '人已投票' }}，部分规则不能再改
+              {{
+                isEnded
+                  ? `${isSurvey ? '问卷' : '投票'}已结束，规则已全部锁定`
+                  : `${responseCount} ${isSurvey ? '条回答已入库' : '人已投票'}，部分规则不能再改`
+              }}
             </text>
             <text class="notice__desc">{{ lockSummary }}</text>
           </view>
@@ -183,7 +381,7 @@ function pickDeadline(p: { key?: number }) {
         <view v-if="!isSurvey" class="card">
           <RuleRow
             title="选择方式"
-            :desc="isLocked('type') ? lockedText : poll.type === 'multiple' ? '每人可勾选多项' : '每人只能选 1 项'"
+            :desc="isLocked('type') ? lockReason('type') : poll.type === 'multiple' ? '每人可勾选多项' : '每人只能选 1 项'"
             :locked="isLocked('type')"
           >
             <view v-if="!isLocked('type')" class="seg">
@@ -208,8 +406,35 @@ function pickDeadline(p: { key?: number }) {
           </RuleRow>
 
           <RuleRow
+            v-if="poll.type === 'multiple'"
+            title="最多可选"
+            :desc="isLocked('maxChoice') ? lockReason('maxChoice') : `最多 ${maxChoiceMax} 项，超过上限时禁止继续勾选`"
+            :locked="isLocked('maxChoice')"
+          >
+            <view class="stepper">
+              <view
+                class="stepper__btn"
+                :class="{ 'stepper__btn--off': isLocked('maxChoice') || maxChoiceValue <= 2 }"
+                :hover-class="isLocked('maxChoice') || maxChoiceValue <= 2 ? 'none' : 'stepper__btn--active'"
+                @tap="stepMaxChoice(-1)"
+              >
+                <AppIcon name="minus" :size="13" color="#71717A" />
+              </view>
+              <text class="stepper__value">{{ maxChoiceValue }}</text>
+              <view
+                class="stepper__btn"
+                :class="{ 'stepper__btn--off': isLocked('maxChoice') || maxChoiceValue >= maxChoiceMax }"
+                :hover-class="isLocked('maxChoice') || maxChoiceValue >= maxChoiceMax ? 'none' : 'stepper__btn--active'"
+                @tap="stepMaxChoice(1)"
+              >
+                <AppIcon name="plus" :size="13" color="#09090B" />
+              </view>
+            </view>
+          </RuleRow>
+
+          <RuleRow
             title="匿名投票"
-            :desc="isLocked('anonymous') ? lockedText : '参与者身份不公开'"
+            :desc="ruleDesc('anonymous', '参与者身份不公开')"
             :locked="isLocked('anonymous')"
           >
             <AppSwitch
@@ -219,76 +444,100 @@ function pickDeadline(p: { key?: number }) {
             />
           </RuleRow>
 
-          <RuleRow title="允许修改选择" desc="截止前可重新提交">
+          <RuleRow
+            title="允许修改选择"
+            :desc="ruleDesc('allowEdit', '截止前可重新提交')"
+            :locked="isLocked('allowEdit')"
+          >
             <AppSwitch
               :model-value="poll.rules.allowEdit"
+              :disabled="isLocked('allowEdit')"
               @update:model-value="(v) => setRule('allowEdit', v)"
             />
           </RuleRow>
 
-          <RuleRow title="选项随机排序" desc="每次打开顺序不同，减少位置影响">
+          <RuleRow
+            title="选项随机排序"
+            :desc="ruleDesc('shuffleOptions', '每次打开顺序不同，减少位置影响')"
+            :locked="isLocked('shuffleOptions')"
+          >
             <AppSwitch
               :model-value="!!poll.rules.shuffleOptions"
+              :disabled="isLocked('shuffleOptions')"
               @update:model-value="(v) => setRule('shuffleOptions', v)"
             />
           </RuleRow>
 
-          <RuleRow title="允许参与者分享" desc="参与者可转发邀请更多人">
+          <RuleRow
+            title="允许参与者分享"
+            :desc="ruleDesc('allowShare', '参与者可转发邀请更多人')"
+            :locked="isLocked('allowShare')"
+          >
             <AppSwitch
               :model-value="poll.rules.allowShare"
+              :disabled="isLocked('allowShare')"
               @update:model-value="(v) => setRule('allowShare', v)"
             />
           </RuleRow>
 
-          <RuleRow title="限制同IP投票" desc="同一网络下仅计入一票">
+          <RuleRow
+            title="限制同IP投票"
+            :desc="ruleDesc('limitIp', '同一网络下仅计入一票')"
+            :locked="isLocked('limitIp')"
+          >
             <AppSwitch
               :model-value="poll.rules.limitIp"
+              :disabled="isLocked('limitIp')"
               @update:model-value="(v) => setRule('limitIp', v)"
             />
           </RuleRow>
 
-          <RuleRow title="禁止查看投票人数" desc="隐藏参与人数，只展示得票比例">
+          <RuleRow
+            title="禁止查看投票人数"
+            :desc="ruleDesc('hideVoterCount', '隐藏参与人数，只展示得票比例')"
+            :locked="isLocked('hideVoterCount')"
+          >
             <AppSwitch
               :model-value="!!poll.rules.hideVoterCount"
+              :disabled="isLocked('hideVoterCount')"
               @update:model-value="(v) => setRule('hideVoterCount', v)"
             />
           </RuleRow>
 
           <RuleRow
             title="投票结果显示"
-            desc="决定参与者何时能看到票数"
-            :value="
-              poll.rules.resultVisibility === 'hidden'
-                ? '禁止查看'
-                : poll.rules.resultVisibility === 'after_end'
-                  ? '投票结束后查看'
-                  : poll.rules.resultVisibility === 'always'
-                    ? '投票前查看'
-                    : '投票后查看'
-            "
-            clickable
-            @tap="lockedHint"
+            :desc="isLocked('resultVisibility') ? lockReason('resultVisibility') : '决定参与者何时能看到票数'"
+            :value="visibilityText"
+            :locked="isLocked('resultVisibility')"
+            :clickable="!isLocked('resultVisibility')"
+            @tap="pickVisibility"
           />
 
-          <RuleRow title="允许评论" desc="参与者可在讨论区留言交流">
+          <RuleRow
+            title="允许评论"
+            :desc="ruleDesc('allowComment', '参与者可在讨论区留言交流')"
+            :locked="isLocked('allowComment')"
+          >
             <AppSwitch
               :model-value="poll.rules.allowComment"
+              :disabled="isLocked('allowComment')"
               @update:model-value="(v) => setRule('allowComment', v)"
             />
           </RuleRow>
 
           <RuleRow
             title="需个人信息"
-            desc="参与前需填写发起人指定的信息"
+            desc="参与前需填写发起人指定的信息，创建后不可修改"
             :value="poll.rules.profileField ?? '未设置'"
-            clickable
-            @tap="lockedHint"
+            locked
           />
 
           <RuleRow
             title="参与方式"
-            :desc="isLocked('joinMethod') ? lockedText : '谁可以看到并参与这个投票'"
+            :desc="isLocked('joinMethod') ? lockReason('joinMethod') : '谁可以看到并参与这个投票'"
             :locked="isLocked('joinMethod')"
+            :clickable="!isLocked('joinMethod')"
+            @tap="pickJoinMethod"
           >
             <text class="locked-value">{{ joinText }}</text>
           </RuleRow>
@@ -298,7 +547,7 @@ function pickDeadline(p: { key?: number }) {
         <view v-else class="card">
           <RuleRow
             title="匿名收集"
-            :desc="isLocked('anonymous') ? lockedText : '回答者身份不公开'"
+            :desc="ruleDesc('anonymous', '回答者身份不公开')"
             :locked="isLocked('anonymous')"
           >
             <AppSwitch
@@ -308,37 +557,57 @@ function pickDeadline(p: { key?: number }) {
             />
           </RuleRow>
 
-          <RuleRow title="允许修改回答" desc="提交后可编辑这条回答，总数不变">
+          <RuleRow
+            title="允许修改回答"
+            :desc="ruleDesc('allowEdit', '提交后可编辑这条回答，总数不变')"
+            :locked="isLocked('allowEdit')"
+          >
             <AppSwitch
               :model-value="poll.rules.allowEdit"
+              :disabled="isLocked('allowEdit')"
               @update:model-value="(v) => setRule('allowEdit', v)"
             />
           </RuleRow>
 
-          <RuleRow title="允许参与者分享" desc="参与者可转发邀请更多人">
+          <RuleRow
+            title="允许参与者分享"
+            :desc="ruleDesc('allowShare', '参与者可转发邀请更多人')"
+            :locked="isLocked('allowShare')"
+          >
             <AppSwitch
               :model-value="poll.rules.allowShare"
+              :disabled="isLocked('allowShare')"
               @update:model-value="(v) => setRule('allowShare', v)"
             />
           </RuleRow>
 
-          <RuleRow title="限制同IP提交" desc="同一网络下仅计入一份回答">
+          <RuleRow
+            title="限制同IP提交"
+            :desc="ruleDesc('limitIp', '同一网络下仅计入一份回答')"
+            :locked="isLocked('limitIp')"
+          >
             <AppSwitch
               :model-value="poll.rules.limitIp"
+              :disabled="isLocked('limitIp')"
               @update:model-value="(v) => setRule('limitIp', v)"
             />
           </RuleRow>
 
-          <RuleRow title="允许评论" desc="参与者可在讨论区留言交流">
+          <RuleRow
+            title="允许评论"
+            :desc="ruleDesc('allowComment', '参与者可在讨论区留言交流')"
+            :locked="isLocked('allowComment')"
+          >
             <AppSwitch
               :model-value="poll.rules.allowComment"
+              :disabled="isLocked('allowComment')"
               @update:model-value="(v) => setRule('allowComment', v)"
             />
           </RuleRow>
 
           <RuleRow
             title="允许重复提交"
-            :desc="isLocked('allowRepeat') ? lockedText : '同一人可再提交新的一条，独立计入总数'"
+            :desc="ruleDesc('allowRepeat', '同一人可再提交新的一条，独立计入总数')"
             :locked="isLocked('allowRepeat')"
           >
             <AppSwitch
@@ -350,16 +619,17 @@ function pickDeadline(p: { key?: number }) {
 
           <RuleRow
             title="需个人信息"
-            desc="参与前需填写发起人指定的信息"
+            desc="参与前需填写发起人指定的信息，创建后不可修改"
             :value="poll.rules.profileField ?? '未设置'"
-            clickable
-            @tap="lockedHint"
+            locked
           />
 
           <RuleRow
             title="参与方式"
-            :desc="isLocked('joinMethod') ? lockedText : '谁可以看到并参与这份问卷'"
+            :desc="isLocked('joinMethod') ? lockReason('joinMethod') : '谁可以看到并参与这份问卷'"
             :locked="isLocked('joinMethod')"
+            :clickable="!isLocked('joinMethod')"
+            @tap="pickJoinMethod"
           >
             <text class="locked-value">{{ joinText }}</text>
           </RuleRow>
@@ -369,28 +639,25 @@ function pickDeadline(p: { key?: number }) {
         <view class="deadline">
           <view class="deadline__head">
             <text class="deadline__title">截止时间</text>
-            <text class="deadline__hint">{{ isLocked('endAt') ? '已锁定' : '必填' }}</text>
+            <text class="deadline__hint">
+              {{ isLocked('endAt') ? '已锁定' : hasResponses ? '只能延后' : '必填' }}
+            </text>
           </view>
 
           <view class="deadline__chips">
             <view
-              v-for="p in [
-                { key: 1, label: '1 天' },
-                { key: 3, label: '3 天' },
-                { key: 7, label: '7 天' },
-                { key: 0, label: '自定义' }
-              ]"
+              v-for="p in deadlinePresets"
               :key="p.label"
               class="chip"
               :class="{
-                'chip--on': activePreset === p.key && !isLocked('endAt'),
+                'chip--on': activePreset === p.key && !isLocked('endAt') && !hasResponses,
                 'chip--off': isLocked('endAt')
               }"
               @tap="pickDeadline(p)"
             >
               <text
                 class="chip__text"
-                :class="{ 'chip__text--on': activePreset === p.key && !isLocked('endAt') }"
+                :class="{ 'chip__text--on': activePreset === p.key && !isLocked('endAt') && !hasResponses }"
               >
                 {{ p.label }}
               </text>
@@ -410,8 +677,37 @@ function pickDeadline(p: { key?: number }) {
 
     <view v-if="poll" class="edit-rules__actions" :style="{ paddingBottom: bottomInset(20) }">
       <AppButton type="subtle" size="action" :radius="14" class="edit-rules__action" @tap="close">取消</AppButton>
-      <AppButton size="submit" :loading="saving" class="edit-rules__action" @tap="save">保存修改</AppButton>
+      <AppButton size="submit" :loading="saving" :disabled="isEnded" class="edit-rules__action" @tap="save">
+        {{ isEnded ? '已结束' : '保存修改' }}
+      </AppButton>
     </view>
+
+    <!-- 34/35 自定义截止时间：有参与记录时 min 为当前截止时间，选早了会在确认时被拦下 -->
+    <AppDateTimePicker
+      :visible="deadlinePicker"
+      :model-value="customDeadline"
+      :min="deadlineMin"
+      @close="deadlinePicker = false"
+      @confirm="applyCustomDeadline"
+    />
+
+    <AppActionSheet
+      :visible="visibilityVisible"
+      title="投票结果显示"
+      desc="决定参与者何时能看到票数"
+      :items="visibilityItems"
+      @close="visibilityVisible = false"
+      @select="onVisibility"
+    />
+
+    <AppActionSheet
+      :visible="joinVisible"
+      title="参与方式"
+      desc="谁可以看到并参与"
+      :items="joinItems"
+      @close="joinVisible = false"
+      @select="onJoinMethod"
+    />
   </view>
 </template>
 
@@ -577,6 +873,42 @@ export default { name: 'EditRulesPage' }
   }
 }
 
+/* 最多可选：和创建页 31 同一个 Stepper（白底、$line 描边、r8、30 高） */
+.stepper {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  border-radius: 8px;
+  background: $surface;
+  border: 1px solid $line;
+  flex-shrink: 0;
+
+  &__btn {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &--active {
+      opacity: 0.6;
+    }
+
+    &--off {
+      opacity: 0.3;
+    }
+  }
+
+  &__value {
+    width: 32px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: $ink;
+    font-family: $font-num;
+  }
+}
+
 .deadline {
   display: flex;
   flex-direction: column;
@@ -660,7 +992,7 @@ export default { name: 'EditRulesPage' }
 
     &--on {
       font-weight: 600;
-      color: #fff;
+      color: $white;
     }
   }
 }

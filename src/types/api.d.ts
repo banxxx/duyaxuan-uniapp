@@ -87,9 +87,11 @@ export interface Poll {
    */
   myAnswered?: boolean
   deletedAt?: number | null
+  /** 最近一次内容编辑时间；有值才显示「已编辑」 */
+  updatedAt?: number
   /**
    * 邀请码：只有发起人拿得到。
-   * 分享链接、小程序码会带上它，收到的人不用手输。
+   * 不随分享链接 / 小程序码传播，需要发起人单独告知参与者。
    */
   inviteCode?: string
 }

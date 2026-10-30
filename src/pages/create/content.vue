@@ -5,6 +5,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
+import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import StepBar from '@/components/business/StepBar.vue'
 import { useDraftStore } from '@/stores/draft'
 import type { DraftOption } from '@/stores/draft'
@@ -32,6 +33,19 @@ const desc = ref('')
 
 /** 添加选项弹层（33） */
 const sheetVisible = ref(false)
+
+/** 长按选项：上移 / 下移 / 删除 */
+const optionMenuVisible = ref(false)
+const optionMenuIndex = ref(-1)
+const optionMenuItems = computed(() => {
+  const i = optionMenuIndex.value
+  const last = draft.draft.options.length - 1
+  return [
+    { key: 'up', label: '上移', icon: 'chevron-up', disabled: i <= 0 },
+    { key: 'down', label: '下移', icon: 'chevron-down', disabled: i >= last },
+    { key: 'delete', label: '删除选项', icon: 'trash-2', danger: true }
+  ]
+})
 const newTitle = ref('')
 const newDesc = ref('')
 
@@ -131,14 +145,16 @@ function moveOption(from: number, to: number) {
 
 /** 长按上移 / 下移：小程序没有原生拖拽，用长按菜单代替 */
 function onOptionLongPress(i: number) {
-  uni.showActionSheet({
-    itemList: ['上移', '下移', '删除'],
-    success: (r) => {
-      if (r.tapIndex === 0) moveOption(i, i - 1)
-      else if (r.tapIndex === 1) moveOption(i, i + 1)
-      else removeOption(i)
-    }
-  })
+  optionMenuIndex.value = i
+  optionMenuVisible.value = true
+}
+
+function onOptionAction(key: string) {
+  const i = optionMenuIndex.value
+  if (i < 0) return
+  if (key === 'up') moveOption(i, i - 1)
+  else if (key === 'down') moveOption(i, i + 1)
+  else removeOption(i)
 }
 
 const canNext = computed(() => {
@@ -390,6 +406,15 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
         </view>
       </template>
     </AppSheet>
+
+    <AppActionSheet
+      :visible="optionMenuVisible"
+      title="选项操作"
+      :desc="optionMenuIndex >= 0 ? draft.draft.options[optionMenuIndex]?.title : ''"
+      :items="optionMenuItems"
+      @close="optionMenuVisible = false"
+      @select="onOptionAction"
+    />
   </view>
 </template>
 
@@ -514,7 +539,7 @@ export default { name: 'CreateContentPage' }
   &__next-text {
     font-size: 16px;
     font-weight: 700;
-    color: #fff;
+    color: $white;
   }
 }
 

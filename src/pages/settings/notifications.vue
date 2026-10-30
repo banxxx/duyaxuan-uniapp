@@ -5,9 +5,11 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSwitch from '@/components/base/AppSwitch.vue'
+import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import type { Notification } from '@/types/api'
 import {
   fetchNotifications,
+  fetchPushPrefs,
   markNotificationsRead,
   savePushPrefs,
   type PushKind,
@@ -20,7 +22,7 @@ import {
   requestSubscribe
 } from '@/utils/subscribe'
 import { formatRelative } from '@/utils/format'
-import { bottomInset } from '@/utils/platform'
+import { bottomInset, isWeixinLike } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
 
 /**
@@ -43,6 +45,18 @@ const hasMore = ref(false)
 const loading = ref(false)
 
 const unreadCount = computed(() => list.value.filter((n) => !n.read).length)
+
+/** 导航栏「···」：自定义底部菜单，和站内其他操作面板统一 */
+const moreVisible = ref(false)
+const moreItems = computed(() => [
+  {
+    key: 'read',
+    label: '全部标为已读',
+    icon: 'square-check',
+    disabled: unreadCount.value === 0
+  },
+  { key: 'push', label: '推送通知设置', icon: 'message-square-text' }
+])
 const shown = computed(() =>
   filter.value === 'unread' ? list.value.filter((n) => !n.read) : list.value
 )
@@ -53,6 +67,18 @@ onLoad((q) => {
 
 /** 服务端没配模板时，开关仍然保存，但不会弹订阅授权框 —— 说明一下免得以为坏了 */
 const noTemplates = ref(false)
+/** 非微信端（H5 / QQ / 抖音）没有微信服务通知，整个分组都不该出现 */
+const showWechatPush = isWeixinLike()
+
+/** 服务端偏好是最终事实：本地只是缓存，换设备/清缓存后要以服务端为准 */
+function applyPrefs(p: PushPrefs) {
+  settings.set('pushEnabled', p.enabled)
+  settings.set('pushDeadline', p.deadline)
+  settings.set('pushJoined', p.joined)
+  settings.set('pushComment', p.comment)
+  settings.set('pushResult', p.result)
+  settings.set('pushUpdated', p.updated)
+}
 
 onMounted(() => {
   settings.restore()
@@ -61,6 +87,9 @@ onMounted(() => {
     noTemplates.value = !hasSubscribeTemplates()
   })
   load()
+  if (showWechatPush) {
+    fetchPushPrefs().then(applyPrefs).catch(() => {})
+  }
 })
 
 /** 第一页 / 翻页共用；下拉和滚动到底都走这里 */
@@ -104,13 +133,12 @@ async function markAllRead() {
 
 /** 设计稿 44 右上角是「···」，不是文字：收纳全部已读和推送设置 */
 function openMore() {
-  uni.showActionSheet({
-    itemList: ['全部标为已读', '推送通知设置'],
-    success: (r) => {
-      if (r.tapIndex === 0) markAllRead()
-      else tab.value = 'push'
-    }
-  })
+  moreVisible.value = true
+}
+
+function onMoreAction(key: string) {
+  if (key === 'read') markAllRead()
+  else tab.value = 'push'
 }
 
 type SwitchKey =
@@ -152,7 +180,7 @@ function set(key: SwitchKey, v: boolean) {
   if (v) {
     if (key === 'pushEnabled') {
       // 微信一次最多 3 个模板，总开关先要最常用的三个
-      requestSubscribe(['joined', 'comment', 'deadline'], prefs)
+      requestSubscribe(['comment', 'deadline', 'result'], prefs)
     } else {
       const kind = KIND_OF[key]
       if (kind) requestSubscribe([kind], prefs)
@@ -275,9 +303,10 @@ function iconOf(kind: Notification['kind']) {
           </view>
         </view>
 
-        <text class="notif__group">微信服务通知</text>
+        <template v-if="showWechatPush">
+          <text class="notif__group">微信服务通知</text>
 
-        <view class="card" :class="{ 'card--off': !settings.settings.pushEnabled }">
+          <view class="card" :class="{ 'card--off': !settings.settings.pushEnabled }">
           <view class="row">
             <view class="row__text">
               <text class="row__title">投票即将截止</text>
@@ -345,16 +374,29 @@ function iconOf(kind: Notification['kind']) {
               @update:model-value="(v) => set('pushUpdated', v)"
             />
           </view>
-        </view>
+          </view>
 
-        <text v-if="noTemplates" class="notif__note">
-          服务端还没有配置订阅消息模板，现在只会收到站内消息；开关会保存，配置模板后自动生效。
-        </text>
+          <text v-if="noTemplates" class="notif__note">
+            服务端还没有配置订阅消息模板，现在只会收到站内消息；开关会保存，配置模板后自动生效。
+          </text>
+          <text v-else class="notif__note">
+            站内消息始终记录在消息中心，本页开关只控制是否推送微信服务通知。微信订阅消息是「一次授权、一条消息」：打开开关时会弹窗征求同意，每同意一次只能收到一条，之后需要再次开启。若系统层关闭通知，本页开关将不生效。
+          </text>
+        </template>
+
         <text v-else class="notif__note">
-          站内消息始终记录在消息中心，本页开关只控制是否推送微信服务通知。微信订阅消息是「一次授权、一条消息」：打开开关时会弹窗征求同意，每同意一次只能收到一条，之后需要再次开启。若系统层关闭通知，本页开关将不生效。
+          当前平台不发送微信服务通知，站内消息会照常记录在消息中心。
         </text>
       </view>
     </scroll-view>
+
+    <AppActionSheet
+      :visible="moreVisible"
+      title="更多操作"
+      :items="moreItems"
+      @close="moreVisible = false"
+      @select="onMoreAction"
+    />
   </view>
 </template>
 

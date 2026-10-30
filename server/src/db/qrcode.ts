@@ -41,15 +41,15 @@ export async function getPollQrcode(
   db: D1Database,
   bucket: R2Bucket | undefined,
   env: Env,
-  pollId: string,
-  inviteCode?: string
+  pollId: string
 ): Promise<string> {
   if (!bucket) throw new HttpError(501, '文件存储还没配置')
 
   const version = envVersion(env.WX_ENV_VERSION)
-  // 邀请码进 scene：扫进来直接带上，不用让用户手输
-  const scene = inviteCode ? `${pollId}-${inviteCode}` : pollId
-  const key = `${QRCODE_PREFIX}${pollId}-${version}-${STYLE_TAG}${inviteCode ? `-${inviteCode}` : ''}.png`
+  // scene 只放 pollId：邀请码必须由发起人单独告知，不能随小程序码一起传播。
+  // 扫码的人打开落地页后，再被要求输入 6 位邀请码。
+  const scene = pollId
+  const key = `${QRCODE_PREFIX}${pollId}-${version}-${STYLE_TAG}.png`
 
   const cached = await bucket.head(key)
   if (cached) return publicUrl(key)
@@ -70,7 +70,7 @@ export async function getPollQrcode(
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(5000),
         body: JSON.stringify({
-          // scene 上限 32 字符：pollId（~18）+ '-' + 6 位邀请码，放得下
+          // scene 上限 32 字符：只放 pollId（~18），留足余量
           scene,
           // 落地页统一走 share/join，由它根据 scene 决定是详情还是填写页
           page: 'pages/share/join',

@@ -120,6 +120,10 @@
       "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
     },
     {
+      "path": "pages/me/pending",
+      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+    },
+    {
       "path": "pages/settings/index",
       "style": { "navigationStyle": "custom" }
     },

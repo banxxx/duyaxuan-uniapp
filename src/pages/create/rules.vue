@@ -80,7 +80,7 @@ const customDeadline = ref(0)
 
 const joinOptions: Array<{ value: JoinMethod; label: string; desc: string }> = [
   { value: 'link', label: '链接分享', desc: '拿到链接的人都能参与，适合群内公开征集' },
-  { value: 'invite', label: '邀请码', desc: '凭 6 位邀请码进入，可控制扩散范围' }
+  { value: 'invite', label: '邀请码', desc: '参与者需单独输入 6 位码，转发链接也进不来' }
 ]
 
 const resultOptions: Array<{ value: ResultVisibility; label: string; desc: string }> = [
@@ -713,7 +713,7 @@ export default { name: 'CreateRulesPage' }
   &__next-text {
     font-size: 14px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 }
 
@@ -878,7 +878,7 @@ export default { name: 'CreateRulesPage' }
     transition: color $dur-fast $ease-both;
 
     &--on {
-      color: #fff;
+      color: $white;
       font-weight: 600;
     }
   }

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types'
 import { ok, HttpError } from '../lib/response'
+import { enforceRateLimit, RATE_LIMITS } from '../lib/rate-limit'
 import { weixinCode2Session } from '../lib/oauth'
 import { signToken } from '../lib/jwt'
 import { findById, loginOrRegister, toProfile } from '../db/users'
@@ -15,6 +16,9 @@ const auth = new Hono<AppEnv>()
  * token 过期后前端会再走一次这个接口拿新的，没有单独的 refresh。
  */
 auth.post('/login', async (c) => {
+  // 这个接口没有登录态，按 IP 限。正常一次登录只调一次；
+  // 401 静默重登也走这里。阈值定得宽，避免同一出口 IP 下的人互相挤掉。
+  await enforceRateLimit(c, RATE_LIMITS.login)
   const body = (await c.req.json().catch(() => ({}))) as { platform?: string; code?: string }
 
   const platform = body.platform || 'weixin'

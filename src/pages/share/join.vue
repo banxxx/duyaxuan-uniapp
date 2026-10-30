@@ -6,15 +6,19 @@ import AppEmpty from '@/components/base/AppEmpty.vue'
 import { fetchPoll, fetchMyAnswers, joinPoll } from '@/api/poll'
 import { useUserStore } from '@/stores/user'
 import { askInviteCode } from '@/utils/invite'
+import { ApiError } from '@/utils/request'
 import { ROUTES, replace, reset } from '@/utils/router'
 
 /**
  * 分享落地页（不对外展示，只有一闪而过的骨架）
  *
  * 三个入口都从这里进：
- *   1. 微信好友/群分享卡片 → path 带 id（邀请码模式还会带 code）
- *   2. 小程序码 → scene = `pollId` 或 `pollId-邀请码`（scene 上限 32 字符）
+ *   1. 微信好友/群分享卡片 → path 只带 id
+ *   2. 小程序码 → scene = pollId（scene 上限 32 字符）
  *   3. 朋友圈单页模式 → 只展示「去小程序」引导
+ *
+ * 邀请码不随链接 / 小程序码传播：旧链接里即使带了 code 也忽略，
+ * 统一在这里停下来让参与者单独输入，避免「转发即准入」。
  *
  * 为什么不让卡片直接指详情页：分享给别人的目的是「来投票 / 来填写」，
  * 问卷应该直接落到填写页，已经填过或已截止才回详情页。这段判断放在这里，
@@ -29,9 +33,9 @@ import { ROUTES, replace, reset } from '@/utils/router'
 const user = useUserStore()
 
 const pollId = ref('')
-/** 链接/二维码里带的邀请码 */
-const inviteCode = ref('')
 const failed = ref(false)
+/** 410：发起人删除了投票，单独说清楚，而不是「链接不完整」 */
+const deleted = ref(false)
 const loading = ref(true)
 /** 邀请码模式，且没带码 / 码不对：停下来让用户输入 */
 const needCode = ref(false)
@@ -41,9 +45,10 @@ const needCode = ref(false)
  */
 const singlePage = ref(false)
 
-async function resolve(code = inviteCode.value) {
+async function resolve(code?: string) {
   loading.value = true
   failed.value = false
+  deleted.value = false
   needCode.value = false
   try {
     const poll = await fetchPoll(pollId.value)
@@ -51,8 +56,7 @@ async function resolve(code = inviteCode.value) {
     // 发起人自己预览不用登记；其他人先记录来源 / 校验邀请码
     if (poll.creatorId !== user.profile?.id) {
       try {
-        await joinPoll(poll.id, code || undefined)
-        inviteCode.value = code
+        await joinPoll(poll.id, code)
       } catch {
         // 链接模式：记来源失败不该挡住参与。
         // 邀请码模式：没带码或者码不对，都让用户输一次。
@@ -63,7 +67,6 @@ async function resolve(code = inviteCode.value) {
             loading.value = false
             return
           }
-          inviteCode.value = ''
           return resolve(next)
         }
       }
@@ -82,8 +85,9 @@ async function resolve(code = inviteCode.value) {
     }
 
     replace(ROUTES.detail, { id: pollId.value })
-  } catch {
+  } catch (err) {
     failed.value = true
+    if (err instanceof ApiError && (err.code === 404 || err.code === 410)) deleted.value = true
     loading.value = false
   }
 }
@@ -95,17 +99,16 @@ async function retryCode() {
 }
 
 onLoad((q) => {
-  // 扫小程序码时微信给的是 options.scene；普通分享卡片给的是 id + code
+  // 扫小程序码时微信给的是 options.scene；普通分享卡片给的是 id。
+  // 旧链接/旧码可能还带着 code，这里一律忽略 —— 邀请码必须由参与者单独输入。
   const scene = q?.scene as string | undefined
   if (scene) {
-    // scene 形如 pollId 或 pollId-邀请码；pollId 里没有 '-'
+    // scene 形如 pollId 或（旧码）pollId-邀请码；pollId 里没有 '-'
     const text = decodeURIComponent(scene)
     const cut = text.indexOf('-')
     pollId.value = cut > 0 ? text.slice(0, cut) : text
-    inviteCode.value = cut > 0 ? text.slice(cut + 1) : ''
   } else {
     pollId.value = (q?.id as string) ?? ''
-    inviteCode.value = (q?.code as string) ?? ''
   }
 
   try {
@@ -149,6 +152,14 @@ onMounted(() => {
         desc="这份投票只对受邀的人开放，向发起人要一个 6 位邀请码"
         action="输入邀请码"
         @action="retryCode"
+      />
+      <AppEmpty
+        v-else-if="deleted"
+        icon="trash-2"
+        title="该投票已被发起人删除"
+        desc="链接已经失效，去首页看看别的投票吧"
+        action="返回首页"
+        @action="reset(ROUTES.home)"
       />
       <AppEmpty
         v-else

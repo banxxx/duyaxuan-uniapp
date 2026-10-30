@@ -369,10 +369,17 @@ function onConfirm() {
           <!-- 选中带自己画：原生 indicator 的背景层可能盖住文字，这里只借它的高度 -->
           <view class="wheel__band" />
 
+          <!--
+            原生 indicator 的上下两条线是它内部 ::before/::after 画的，
+            indicator-style 里的 border: none 管不到；改用 indicator-class
+            把伪元素命中，在下面非 scoped 的样式里把线设成透明。
+            选中高亮由我们自己的 .wheel__band 负责，不需要原生那条带边框的选中框。
+          -->
           <picker-view
             class="wheel__view"
             :value="wheelValue"
-            indicator-style="height: 48px; border: none; background: transparent;"
+            indicator-class="wheel-indicator"
+            indicator-style="height: 48px; background: transparent;"
             @change="onWheelChange"
           >
             <picker-view-column>
@@ -506,7 +513,7 @@ export default { name: 'AppDateTimePicker' }
   &__confirm-text {
     font-size: 14px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 }
 
@@ -639,7 +646,7 @@ export default { name: 'AppDateTimePicker' }
 
     &--on {
       font-weight: 600;
-      color: #fff;
+      color: $white;
     }
   }
 }
@@ -732,7 +739,7 @@ export default { name: 'AppDateTimePicker' }
 
     &--on {
       font-weight: 600;
-      color: #fff;
+      color: $white;
     }
   }
 }
@@ -816,5 +823,22 @@ export default { name: 'AppDateTimePicker' }
     font-size: 10px;
     color: $faint;
   }
+}
+</style>
+
+<style lang="scss">
+/*
+ * 原生 picker-view 选中指示器的上下两条线
+ *
+ * 这两条线由组件内部的 ::before / ::after 绘制，写 indicator-style="border: none"
+ * 覆盖不到；只能通过 indicator-class 命中伪元素，把线的颜色设成透明。
+ *
+ * 必须放在非 scoped 样式里：scoped 会给选择器加上 data-v 属性，
+ * 而指示器是原生组件内部的节点，没有这个属性，规则命不中。
+ * 选中高亮由组件里自绘的 .wheel__band 负责，不需要原生那条带边框的选中框。
+ */
+.wheel-indicator::before,
+.wheel-indicator::after {
+  border-color: transparent !important;
 }
 </style>

@@ -30,14 +30,17 @@ const deadlineText = computed(() => {
   return `${formatDate(props.poll.endAt)}截止`
 })
 
+const isSurvey = computed(() => props.poll.type === 'survey')
+
 const metaText = computed(() => {
   const parts: string[] = []
   if (props.poll.anonymous) parts.push('匿名')
-  parts.push(props.poll.type === 'multiple' ? '多选' : '单选')
+  if (isSurvey.value) parts.push('问卷')
+  else parts.push(props.poll.type === 'multiple' ? '多选' : '单选')
   return parts.join(' · ')
 })
 
-/** 卡片底部：多选显示选择上限，单选显示剩余时间 */
+/** 卡片底部：多选显示选择上限，其余显示剩余时间 */
 const footText = computed(() =>
   props.poll.type === 'multiple' && props.poll.maxChoice
     ? `最多选 ${props.poll.maxChoice} 项`
@@ -45,10 +48,13 @@ const footText = computed(() =>
 )
 
 /** 「不看投票人数」时后端把数字置 0，这里连「· 0 人已投」也一起省掉 */
-const inviterText = computed(
-  () =>
-    `${props.poll.inviterName} 邀请你${props.poll.voterCount ? ` · ${props.poll.voterCount} 人已投` : ''}`
-)
+const inviterText = computed(() => {
+  if (isSurvey.value) {
+    const n = props.poll.answerCount ?? 0
+    return `${props.poll.inviterName} 邀请你填写问卷${n ? ` · ${n} 条回答` : ''}`
+  }
+  return `${props.poll.inviterName} 邀请你${props.poll.voterCount ? ` · ${props.poll.voterCount} 人已投` : ''}`
+})
 
 /** 设计稿里只有「剩余时间」这一种文案会跟着紧急态变橙色，「最多选 N 项」始终 $faint */
 const footUrgent = computed(
@@ -82,7 +88,7 @@ const footUrgent = computed(
     <view class="pending__foot">
       <text class="pending__left" :class="{ 'pending__left--urgent': footUrgent }">{{ footText }}</text>
       <view class="pending__btn" hover-class="pending__btn--active" @tap.stop="emit('vote')">
-        <text class="pending__btn-text">去投票</text>
+        <text class="pending__btn-text">{{ isSurvey ? '去填写' : '去投票' }}</text>
       </view>
     </view>
   </view>
@@ -106,7 +112,7 @@ export default { name: 'PendingCard' }
     border-color $dur-fast $ease-both;
 
   &--urgent {
-    border-color: #fde68a;
+    border-color: $warning-line;
   }
 
   &--active {
@@ -199,7 +205,7 @@ export default { name: 'PendingCard' }
   &__btn-text {
     font-size: 12px;
     font-weight: 600;
-    color: #fff;
+    color: $white;
   }
 }
 </style>

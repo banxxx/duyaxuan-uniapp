@@ -86,8 +86,21 @@ export const useUserStore = defineStore('user', () => {
       const opts: UniApp.LoginOptions = {}
       if (platform.value === 'toutiao') (opts as Record<string, unknown>).provider = 'toutiao'
 
+      // uni.login 在游客模式 / 部分基础库上可能既不回调 success 也不回调 fail，
+      // 不给上限的话，401 静默重登会一直挂着，页面停在骨架屏
       const res = await new Promise<UniApp.LoginRes>((resolve, reject) => {
-        uni.login({ ...opts, success: resolve, fail: reject })
+        const timer = setTimeout(() => reject(new Error('登录超时，请重试')), 10000)
+        uni.login({
+          ...opts,
+          success: (r) => {
+            clearTimeout(timer)
+            resolve(r)
+          },
+          fail: (e) => {
+            clearTimeout(timer)
+            reject(e)
+          }
+        })
       })
       if (!res.code) throw new Error('未获取到登录凭证')
       code = res.code

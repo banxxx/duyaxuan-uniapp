@@ -57,16 +57,3 @@ console.log('=== 标为已读 ===')
 await call(OWNER, 'POST', '/notifications/read', { ids: ownerList.data.list.map((n) => n.id) })
 console.log('owner 剩余未读：', (await call(OWNER, 'GET', '/notifications/unread-count')).data)
 
-console.log('=== 反馈 ===')
-const fb = await fetch(BASE + '/feedback', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ content: '匿名反馈联调' })
-})
-console.log('POST /feedback →', fb.status, JSON.stringify(await fb.json()))
-const fb2 = await fetch(BASE + '/feedback', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ content: '短' })
-})
-console.log('POST /feedback (太短) →', fb2.status, JSON.stringify(await fb2.json()))

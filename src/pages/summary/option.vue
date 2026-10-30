@@ -6,6 +6,7 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppConfirmSheet from '@/components/base/AppConfirmSheet.vue'
 import {
   deleteSummaryOption,
   fetchSummaryOption,
@@ -32,6 +33,8 @@ const DESC_MAX = 20
 
 const candidate = ref<SummaryOptionDetail | null>(null)
 const loading = ref(true)
+/** 首屏加载失败：没有缓存内容时给错误页，而不是空白页 */
+const loadError = ref(false)
 const saving = ref(false)
 const title = ref('')
 const desc = ref('')
@@ -61,12 +64,14 @@ async function load() {
   const cached = cacheGet<OptionSnapshot>(cacheKey.summaryOption(surveyId.value, optionId.value))
   if (cached) applyDetail(cached.detail)
   loading.value = !cached
+  loadError.value = false
   try {
     const detail = await fetchSummaryOption(surveyId.value, optionId.value)
     applyDetail(detail)
     cacheSet(cacheKey.summaryOption(surveyId.value, optionId.value), { detail })
   } catch {
-    if (!candidate.value) uni.showToast({ title: '选项加载失败', icon: 'none' })
+    // 有缓存就继续用缓存；连缓存都没有才整页报错
+    if (!candidate.value) loadError.value = true
   } finally {
     loading.value = false
   }
@@ -89,24 +94,22 @@ async function removeAnswer(id: string) {
   }
 }
 
+const deleteVisible = ref(false)
+
 function onDelete() {
-  uni.showModal({
-    title: '删除这个候选选项？',
-    content: `${answers.value.length} 条归类的回答会回到「未归类」。`,
-    confirmText: '删除',
-    confirmColor: '#DC2626',
-    success: async (r) => {
-      if (!r.confirm) return
-      try {
-        await deleteSummaryOption(surveyId.value, optionId.value)
-        cacheDrop(cacheKey.summaryOption(surveyId.value, optionId.value))
-        uni.showToast({ title: '已删除', icon: 'none' })
-        setTimeout(back, 400)
-      } catch {
-        uni.showToast({ title: '删除失败，请重试', icon: 'none' })
-      }
-    }
-  })
+  deleteVisible.value = true
+}
+
+async function doDelete() {
+  deleteVisible.value = false
+  try {
+    await deleteSummaryOption(surveyId.value, optionId.value)
+    cacheDrop(cacheKey.summaryOption(surveyId.value, optionId.value))
+    uni.showToast({ title: '已删除', icon: 'none' })
+    setTimeout(back, 400)
+  } catch {
+    uni.showToast({ title: '删除失败，请重试', icon: 'none' })
+  }
 }
 
 async function save() {
@@ -147,6 +150,16 @@ function goBack() {
     <view v-if="loading" class="option__body">
       <AppSkeleton type="list" />
     </view>
+
+    <AppEmpty
+      v-else-if="loadError"
+      icon="wifi-off"
+      title="选项加载失败"
+      desc="网络不太稳定，或者这个选项已经被删除"
+      action="重新加载"
+      action-icon="refresh-cw"
+      @action="load"
+    />
 
     <template v-else-if="candidate">
       <scroll-view class="option__scroll" scroll-y>
@@ -238,6 +251,16 @@ function goBack() {
         <AppButton size="cta" class="option__action" @tap="save">保存</AppButton>
       </view>
     </template>
+
+    <AppConfirmSheet
+      :visible="deleteVisible"
+      title="删除这个候选选项？"
+      :desc="`${answers.length} 条归类的回答会回到「未归类」。`"
+      confirm-text="删除"
+      danger
+      @close="deleteVisible = false"
+      @confirm="doDelete"
+    />
   </view>
 </template>
 
