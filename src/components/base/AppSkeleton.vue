@@ -10,39 +10,160 @@
  *   早先版本把容器也铺成浅灰、内部线条用同一个灰，真机上就是一整块「灰砖」，
  *   线条完全看不见，显得又脏又重。容器留白、内容灰，才像「内容还没加载出来」。
  *
- * 四种预设，覆盖全站主要加载场景：
- *   list    列表页（我发起的/我参与的/搜索/评论/投票记录/汇总）→ 若干整宽卡片行
- *   detail  详情页（投票详情/问卷填写/编辑回答）→ 徽标行 + 大标题 + 段落 + 选项块
- *   stats   数据页（投票数据/问卷数据）→ 大卡 + 三格 KPI + 一张趋势卡
- *   cards   首页（待我投票 + 我发起的）→ 两张高卡 + 两条窄行
+ * 每个预设都照着对应的真实组件搭，尺寸、间距、块的个数都对齐 ——
+ * 骨架的意义是「数据到了之后画面不跳」，随手画几根线是做不到这一点的：
+ *   home    首页 → 待我投票卡片 + 「我发起的」区块头 + 单列行（对应 PendingCard / mine-row）
+ *   cards   待我投票列表 → 整屏 PendingCard
+ *   list    投票列表（我发起的/我参与的/搜索/汇总）→ 状态胶囊 + 类型标识 + 标题 + 指标（对应 PollRow）
+ *   people  讨论区 → 分段控件 + 头像 + 昵称 + 正文
+ *   records 投票记录 → 上下文卡 + 一张白卡里的头像行
+ *   detail  详情页 → 徽标行 + 大标题 + 作者行 + 选项块（对应详情页头部 + OptionBar）
+ *   stats   数据页 → 大卡 + 三格 KPI + 一张趋势卡
+ *
+ * flush：放在已经有页面边距（padding: … $gutter …）的容器里时打开，
+ * 否则左右会再缩进一圈，比真实内容窄。
  */
-withDefaults(defineProps<{ type?: 'list' | 'detail' | 'stats' | 'cards' }>(), {
-  type: 'list'
-})
+withDefaults(
+  defineProps<{
+    type?: 'home' | 'cards' | 'list' | 'people' | 'records' | 'detail' | 'stats'
+    /** 外层容器已经给了页面边距，骨架自己不再加 */
+    flush?: boolean
+  }>(),
+  { type: 'list', flush: false }
+)
 </script>
 
 <template>
-  <view class="sk" :class="`sk--${type}`">
-    <!-- list -->
-    <template v-if="type === 'list'">
-      <view v-for="i in 4" :key="i" class="sk__row">
+  <view class="sk" :class="[`sk--${type}`, { 'sk--flush': flush }]">
+    <!-- home：首页两段内容（第一段的区块头由页面自己渲染） -->
+    <template v-if="type === 'home'">
+      <view v-for="i in 2" :key="`card-${i}`" class="sk__pending">
+        <view class="sk__top">
+          <view class="sk__badge" />
+          <view class="sk__line sk__line--action" />
+        </view>
+        <view class="sk__line sk__line--lg" />
+        <view class="sk__inviter">
+          <view class="sk__dot" />
+          <view class="sk__line sk__line--sub" />
+        </view>
+        <view class="sk__foot">
+          <view class="sk__line sk__line--tiny" />
+          <view class="sk__btn" />
+        </view>
+      </view>
+
+      <view class="sk__sec-head">
+        <view class="sk__line sk__line--sec" />
+        <view class="sk__line sk__line--action" />
+      </view>
+
+      <view v-for="i in 2" :key="`mine-${i}`" class="sk__mine">
         <view class="sk__line sk__line--title" />
-        <view class="sk__line sk__line--sub" />
-        <view class="sk__line sk__line--meta" />
+        <view class="sk__foot">
+          <view class="sk__line sk__line--meta" />
+          <view class="sk__line sk__line--time" />
+        </view>
       </view>
     </template>
 
-    <!-- detail -->
+    <!-- cards：整屏 PendingCard -->
+    <template v-else-if="type === 'cards'">
+      <view v-for="i in 3" :key="i" class="sk__pending">
+        <view class="sk__top">
+          <view class="sk__badge" />
+          <view class="sk__line sk__line--action" />
+        </view>
+        <view class="sk__line sk__line--lg" />
+        <view class="sk__inviter">
+          <view class="sk__dot" />
+          <view class="sk__line sk__line--sub" />
+        </view>
+        <view class="sk__foot">
+          <view class="sk__line sk__line--tiny" />
+          <view class="sk__btn" />
+        </view>
+      </view>
+    </template>
+
+    <!-- list：PollRow 的形状 -->
+    <template v-else-if="type === 'list'">
+      <view v-for="i in 4" :key="i" class="sk__row">
+        <view class="sk__top">
+          <view class="sk__pill" />
+          <view class="sk__badge sk__badge--sm" />
+          <view class="sk__spacer" />
+          <view class="sk__line sk__line--time" />
+        </view>
+        <view class="sk__line sk__line--title" />
+        <view class="sk__foot">
+          <view class="sk__line sk__line--meta" />
+          <view class="sk__icon" />
+        </view>
+      </view>
+    </template>
+
+    <!-- people：讨论区。分段控件 + 头像 + 昵称 + 正文 + 时间，行间一条分割线 -->
+    <template v-else-if="type === 'people'">
+      <view class="sk__tabs">
+        <view v-for="i in 3" :key="i" class="sk__tab" :class="{ 'sk__tab--on': i === 1 }">
+          <view class="sk__line sk__line--tabtext" />
+        </view>
+      </view>
+
+      <view v-for="i in 4" :key="i" class="sk__person">
+        <view class="sk__avatar" />
+        <view class="sk__person-text">
+          <view class="sk__line sk__line--name" />
+          <view class="sk__line sk__line--sub" />
+          <view class="sk__line sk__line--tiny" />
+        </view>
+      </view>
+    </template>
+
+    <!-- records：投票记录。上方上下文卡 + 一整张白卡里的头像行 -->
+    <template v-else-if="type === 'records'">
+      <view class="sk__hero">
+        <view class="sk__hero-top">
+          <view class="sk__badge" />
+          <view class="sk__badge sk__badge--sm" />
+        </view>
+        <view class="sk__line sk__line--lg" />
+        <view class="sk__line sk__line--stat" />
+      </view>
+
+      <view class="sk__records">
+        <view v-for="i in 5" :key="i" class="sk__rec">
+          <view class="sk__avatar" />
+          <view class="sk__rec-text">
+            <view class="sk__line sk__line--name" />
+            <view class="sk__line sk__line--tiny" />
+          </view>
+          <view class="sk__badge sk__badge--sm" />
+        </view>
+      </view>
+    </template>
+
+    <!-- detail：徽标行 + 大标题 + 作者行 + 选项块 -->
     <template v-else-if="type === 'detail'">
       <view class="sk__chips">
-        <view class="sk__chip" />
-        <view class="sk__chip" />
-        <view class="sk__chip" />
+        <view class="sk__pill" />
+        <view class="sk__badge sk__badge--sm" />
       </view>
+
       <view class="sk__line sk__line--h1" />
       <view class="sk__line sk__line--h1 sk__line--short" />
-      <view class="sk__line sk__line--sub" />
-      <view class="sk__line sk__line--sub sk__line--short" />
+
+      <view class="sk__author">
+        <view class="sk__avatar sk__avatar--sm" />
+        <view class="sk__person-text">
+          <view class="sk__line sk__line--name" />
+          <view class="sk__line sk__line--tiny" />
+        </view>
+      </view>
+
+      <view class="sk__line sk__line--label" />
+
       <view v-for="i in 3" :key="i" class="sk__opt">
         <view class="sk__mark" />
         <view class="sk__opt-text">
@@ -52,8 +173,8 @@ withDefaults(defineProps<{ type?: 'list' | 'detail' | 'stats' | 'cards' }>(), {
       </view>
     </template>
 
-    <!-- stats -->
-    <template v-else-if="type === 'stats'">
+    <!-- stats：大卡 + 三格 KPI + 趋势卡 -->
+    <template v-else>
       <view class="sk__hero">
         <view class="sk__hero-top">
           <view class="sk__pill" />
@@ -81,20 +202,6 @@ withDefaults(defineProps<{ type?: 'list' | 'detail' | 'stats' | 'cards' }>(), {
         </view>
       </view>
     </template>
-
-    <!-- cards（首页） -->
-    <template v-else>
-      <view v-for="i in 2" :key="`card-${i}`" class="sk__card sk__card--tall">
-        <view class="sk__line sk__line--tiny" />
-        <view class="sk__line sk__line--title" />
-        <view class="sk__line sk__line--sub" />
-        <view class="sk__line sk__line--meta" />
-      </view>
-      <view v-for="i in 2" :key="`row-${i}`" class="sk__row">
-        <view class="sk__line sk__line--title" />
-        <view class="sk__line sk__line--sub" />
-      </view>
-    </template>
   </view>
 </template>
 
@@ -108,11 +215,18 @@ export default { name: 'AppSkeleton' }
   flex-direction: column;
   gap: 14px;
   padding: 8px $gutter 20px;
+
+  /* 外层容器已经有页面边距时不再加，否则左右各多缩 20，比真实内容窄一圈 */
+  &--flush {
+    padding: 0;
+  }
 }
 
 /* ---------- 容器：白底 + 描边，和真实卡片一致 ---------- */
 .sk__row,
 .sk__opt,
+.sk__pending,
+.sk__mine,
 .sk__hero,
 .sk__kpi,
 .sk__card {
@@ -122,9 +236,13 @@ export default { name: 'AppSkeleton' }
 
 /* ---------- 内部灰块：只给线条、圆点、图表柱 ---------- */
 .sk__line,
-.sk__chip,
 .sk__pill,
+.sk__badge,
 .sk__mark,
+.sk__dot,
+.sk__avatar,
+.sk__btn,
+.sk__icon,
 .sk__bar {
   position: relative;
   overflow: hidden;
@@ -163,15 +281,7 @@ export default { name: 'AppSkeleton' }
   }
 }
 
-/* 列表行：白卡骨架，标题 + 副行 + 元信息 */
-.sk__row {
-  border-radius: 14px;
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
+/* ---------- 线条：宽度按真实文字的长度给 ---------- */
 .sk__line {
   border-radius: 5px;
 
@@ -180,9 +290,30 @@ export default { name: 'AppSkeleton' }
     width: 34%;
   }
 
+  &--time {
+    height: 10px;
+    width: 46px;
+  }
+
   &--title {
     height: 14px;
     width: 62%;
+  }
+
+  &--lg {
+    height: 16px;
+    width: 72%;
+    border-radius: 6px;
+  }
+
+  &--name {
+    height: 11px;
+    width: 34%;
+  }
+
+  &--tabtext {
+    width: 30px;
+    height: 10px;
   }
 
   &--sub {
@@ -198,6 +329,24 @@ export default { name: 'AppSkeleton' }
   &--h1 {
     height: 22px;
     width: 90%;
+    border-radius: 6px;
+  }
+
+  &--label {
+    height: 13px;
+    width: 26%;
+  }
+
+  &--sec {
+    height: 15px;
+    width: 34%;
+    border-radius: 6px;
+  }
+
+  /* 区块头右侧的「全部 3 个」 */
+  &--action {
+    width: 48px;
+    height: 10px;
   }
 
   &--stat {
@@ -209,7 +358,7 @@ export default { name: 'AppSkeleton' }
   &--num {
     height: 18px;
     width: 38%;
-    border-radius: 6px;
+    border-radius: $r-xs;
   }
 
   &--short {
@@ -217,23 +366,211 @@ export default { name: 'AppSkeleton' }
   }
 }
 
-/* 详情页：徽标行 */
+/* ---------- 通用小块 ---------- */
+.sk__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+
+.sk__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sk__spacer {
+  flex: 1;
+}
+
+/* 状态胶囊 20 高（和 StatusPill 一致） */
+.sk__pill {
+  width: 58px;
+  height: 20px;
+  border-radius: $r-xs;
+  flex-shrink: 0;
+}
+
+/* 类型标识：和 StatusPill 同高，sm 一档给列表行 */
+.sk__badge {
+  width: 44px;
+  height: 20px;
+  border-radius: $r-xs;
+  flex-shrink: 0;
+
+  &--sm {
+    width: 38px;
+    height: 20px;
+  }
+}
+
+/* 列表行尾部那个 › / ··· */
+.sk__icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ---------- home / cards：PendingCard 的形状 ---------- */
+.sk__pending {
+  padding: 16px;
+  border-radius: $r-button;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.sk__inviter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sk__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 「去投票」按钮：和真实按钮同尺寸，但不涂成主色，免得骨架比内容还抢眼 */
+.sk__btn {
+  width: 64px;
+  height: 30px;
+  border-radius: $r-sm;
+  flex-shrink: 0;
+}
+
+/* home：「我发起的」区块头 + 单列行 */
+.sk__sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+}
+
+.sk__mine {
+  padding: 14px;
+  border-radius: $r-input;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---------- list：PollRow 的形状 ---------- */
+.sk__row {
+  border-radius: $r-input;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* ---------- people：讨论区 ---------- */
+.sk--people {
+  gap: 12px;
+}
+
+/* 分段控件：$subtle 轨道 + 白色选中块，和真实的 tabs 一致 */
+.sk__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: $r-md;
+  background: $subtle;
+}
+
+.sk__tab {
+  flex: 1;
+  height: 30px;
+  border-radius: $r-chip;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &--on {
+    background: $surface;
+  }
+}
+
+/* 评论行：头像 34 + 昵称 / 正文 / 时间，行与行之间一条分割线 */
+.sk__person {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+
+  & + & {
+    border-top: 1px solid $line;
+    padding-top: 12px;
+  }
+}
+
+.sk__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+
+  &--sm {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+.sk__person-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 3px;
+}
+
+/* ---------- records：投票记录 ---------- */
+.sk__records {
+  background: $surface;
+  border: 1px solid $line;
+  border-radius: $r-input;
+  overflow: hidden;
+}
+
+.sk__rec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+
+  & + & {
+    border-top: 1px solid $line;
+  }
+}
+
+.sk__rec-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- detail ---------- */
 .sk__chips {
   display: flex;
   gap: 6px;
 }
 
-.sk__chip {
-  width: 56px;
-  height: 24px;
-  border-radius: 6px;
+.sk__author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-/* 详情页：选项行 —— 白卡 + 左侧圆点 + 两行文字 */
+/* 选项行：白卡 + 左侧圆点 + 两行文字 */
 .sk__opt {
   min-height: 64px;
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -253,10 +590,10 @@ export default { name: 'AppSkeleton' }
   gap: 7px;
 }
 
-/* 数据页：大卡 */
+/* ---------- stats ---------- */
 .sk__hero {
   padding: 18px;
-  border-radius: 20px;
+  border-radius: $r-sheet;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -268,18 +605,11 @@ export default { name: 'AppSkeleton' }
   justify-content: space-between;
 }
 
-.sk__pill {
-  width: 64px;
-  height: 22px;
-  border-radius: 8px;
-}
-
 .sk__bar {
   height: 8px;
   border-radius: 4px;
 }
 
-/* 数据页：三格 KPI */
 .sk__kpis {
   display: flex;
   gap: 10px;
@@ -288,13 +618,12 @@ export default { name: 'AppSkeleton' }
 .sk__kpi {
   flex: 1;
   padding: 13px;
-  border-radius: 14px;
+  border-radius: $r-input;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-/* 数据页：趋势卡 —— 用一排高低柱代替一整块灰 */
 .sk__card {
   padding: 16px;
   border-radius: 18px;
@@ -316,20 +645,16 @@ export default { name: 'AppSkeleton' }
   background: $subtle;
 }
 
-/* 首页：两张高卡 —— 四行占位按卡片的上/中/下分布，别全挤在顶部 */
-.sk__card--tall {
-  min-height: 150px;
-  border-radius: 16px;
-  gap: 10px;
-  justify-content: space-between;
-}
-
 /* 系统开了「减弱动态效果」就不扫光，只留静态占位 */
 @media (prefers-reduced-motion: reduce) {
   .sk__line::after,
-  .sk__chip::after,
   .sk__pill::after,
+  .sk__badge::after,
   .sk__mark::after,
+  .sk__dot::after,
+  .sk__avatar::after,
+  .sk__btn::after,
+  .sk__icon::after,
   .sk__bar::after {
     animation: none;
   }

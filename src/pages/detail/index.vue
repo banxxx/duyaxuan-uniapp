@@ -9,6 +9,7 @@ import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import AppConfirmSheet from '@/components/base/AppConfirmSheet.vue'
+import AppInviteCode from '@/components/base/AppInviteCode.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import OptionBar from '@/components/business/OptionBar.vue'
@@ -30,11 +31,13 @@ import { ApiError } from '@/utils/request'
 import { formatCreatedAt, formatRemaining, formatRelative, charCount, percent } from '@/utils/format'
 import { buildShareMessage, buildTimelineMessage, syncShareMenu } from '@/utils/share'
 import { canSeePollResult } from '@/utils/result-visibility'
-import { askInviteCode } from '@/utils/invite'
+import { useInviteCode } from '@/utils/invite'
 import { bottomInset } from '@/utils/platform'
 import { backTo, go, replace, switchTab, ROUTES } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
 import { setPendingUndo } from '@/utils/delete-undo'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 详情页 —— 05~12、16~20、22~23、67~70、75~76 全部合成这一页
@@ -51,6 +54,8 @@ import { setPendingUndo } from '@/utils/delete-undo'
  */
 
 const user = useUserStore()
+/** 邀请码模式的投票：被 403 拦下时弹自定义输入层 */
+const invite = useInviteCode()
 
 /**
  * 详情页可以公开预览，但邀请制投票的评论、以及「我还没提交过」的问卷回答
@@ -397,7 +402,7 @@ function selectOption(id: string) {
   const idx = selection.value.indexOf(id)
   if (idx >= 0) selection.value.splice(idx, 1)
   else if (selection.value.length < maxChoice.value) selection.value.push(id)
-  else uni.showToast({ title: `最多选 ${maxChoice.value} 项`, icon: 'none' })
+  else toast.show(`最多选 ${maxChoice.value} 项`)
 }
 
 /** 05/06 的「确认投票」；需要填信息时先弹 16 */
@@ -436,14 +441,24 @@ async function doVote() {
           p.rules.joinMethod === 'invite' && (err as { code?: number })?.code === 403
         if (!needInvite || attempt > 0) throw err
 
-        const code = await askInviteCode()
+        const code = await invite.ask({
+          // 校验放在弹层内部做：码错了留在原地抖动提示，不用收起再弹出
+          validate: async (candidate) => {
+            try {
+              await joinPoll(p.id, candidate)
+              return null
+            } catch (e) {
+              if ((e as { code?: number })?.code === 403) return '邀请码不正确，请重新输入'
+              return (e as Error)?.message || '网络异常，请稍后重试'
+            }
+          }
+        })
         if (!code) return
-        await joinPoll(p.id, code)
       }
     }
   } catch (err) {
     const msg = (err as Error)?.message || '投票失败，请重试'
-    uni.showToast({ title: msg, icon: 'none' })
+    toast.error(msg)
   } finally {
     submitting.value = false
   }
@@ -465,7 +480,7 @@ async function doRevoke() {
     selection.value = []
     saveSnapshot(next)
   } catch {
-    uni.showToast({ title: '撤回失败', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     revoking.value = false
   }
@@ -586,6 +601,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
 
 <template>
   <view class="detail">
+    <AppToast />
     <AppNavBar :back="true">
       <template #title>
         <text class="detail__nav-title">{{ isSurvey ? '问卷' : '投票' }}</text>
@@ -769,6 +785,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
                 :key="opt.id"
                 :title="opt.title"
                 :desc="opt.desc"
+                :images="opt.images"
                 :votes="opt.votes"
                 :total="totalVotes"
                 :multiple="poll.type === 'multiple'"
@@ -1062,7 +1079,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             :placeholder="`请输入你的${poll?.rules.profileField}`"
             placeholder-class="info-form__ph"
           />
-          <text class="info-form__hint">产品部 / 工号 1024</text>
+          <text class="info-form__hint">例如：张三 / 138****0000</text>
         </view>
       </view>
 
@@ -1119,6 +1136,17 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
       @close="deleteVisible = false"
       @confirm="doDelete"
     />
+
+    <!-- 邀请码模式的投票：和全站弹层同一套骨架，不再用原生 showModal -->
+    <AppInviteCode
+      :visible="invite.state.visible"
+      :initial="invite.state.initial"
+      :validating="invite.state.validating"
+      :error="invite.state.error"
+      :error-seq="invite.state.errorSeq"
+      @close="invite.close()"
+      @submit="invite.submit"
+    />
   </view>
 </template>
 
@@ -1130,12 +1158,15 @@ export default { name: 'PollDetailPage' }
 .detail {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   &__nav-title {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 600;
     color: $ink;
   }
@@ -1143,7 +1174,7 @@ export default { name: 'PollDetailPage' }
   &__nav-btn {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -1169,14 +1200,14 @@ export default { name: 'PollDetailPage' }
   }
 
   &__title {
-    font-size: 26px;
+    font-size: $fs-26;
     font-weight: 700;
     color: $ink;
     line-height: 1.35;
   }
 
   &__desc {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
     line-height: 1.6;
   }
@@ -1204,7 +1235,7 @@ export default { name: 'PollDetailPage' }
 
   &__live {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $success-soft;
     display: flex;
     align-items: center;
@@ -1232,7 +1263,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__live-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $success;
 
@@ -1248,7 +1279,7 @@ export default { name: 'PollDetailPage' }
   /* 设计稿 Chip 单选 / 匿名：$subtle、padding [5,8]、圆角 6、字 11 */
   &__chip {
     padding: 5px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -1264,7 +1295,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__chip-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
 
     &--warn {
@@ -1287,7 +1318,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__revoke-text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $accent;
   }
@@ -1306,13 +1337,13 @@ export default { name: 'PollDetailPage' }
   }
 
   &__name {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
 
   &__time {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -1326,20 +1357,20 @@ export default { name: 'PollDetailPage' }
   gap: 8px;
 
   &__label {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__hint {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
   }
 
   /* 06/08：多选的已选数量胶囊，圆角 10、内边距 [4,10] */
   &__pill {
     padding: 4px 10px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $subtle;
 
     &--on {
@@ -1348,7 +1379,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__pill-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $faint;
 
@@ -1366,7 +1397,7 @@ export default { name: 'PollDetailPage' }
   padding: 14px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
 
   &__head {
     display: flex;
@@ -1382,7 +1413,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__title-text {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
@@ -1394,7 +1425,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__count-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
@@ -1416,7 +1447,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__hint {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -1443,19 +1474,19 @@ export default { name: 'PollDetailPage' }
   }
 
   &__leader-name {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $ink;
   }
 
   &__leader-pct {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent;
   }
 
   &__gap {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     flex-shrink: 0;
   }
@@ -1485,7 +1516,7 @@ export default { name: 'PollDetailPage' }
   gap: 12px;
   padding: 14px;
   background: $subtle;
-  border-radius: 14px;
+  border-radius: $r-input;
 
   &__icon {
     width: 30px;
@@ -1507,13 +1538,13 @@ export default { name: 'PollDetailPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 500;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -1524,7 +1555,7 @@ export default { name: 'PollDetailPage' }
   align-items: center;
 
   &__text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -1537,7 +1568,7 @@ export default { name: 'PollDetailPage' }
   padding: 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
 
   &__head {
     display: flex;
@@ -1546,13 +1577,13 @@ export default { name: 'PollDetailPage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 700;
     color: $ink;
   }
 
   &__all {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent;
   }
 
@@ -1570,13 +1601,13 @@ export default { name: 'PollDetailPage' }
   }
 
   &__name {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $ink;
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
     line-height: 1.5;
     /* 预览只露两行：500 字的长评论不能把详情卡撑开，全文去讨论区看 */
@@ -1595,7 +1626,7 @@ export default { name: 'PollDetailPage' }
   gap: 12px;
   padding: 14px;
   background: $subtle;
-  border-radius: 14px;
+  border-radius: $r-input;
 
   &__icon {
     width: 30px;
@@ -1617,13 +1648,13 @@ export default { name: 'PollDetailPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 500;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     overflow: hidden;
     white-space: nowrap;
@@ -1639,7 +1670,7 @@ export default { name: 'PollDetailPage' }
   padding: 14px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 12px;
+  border-radius: $r-md;
 
   &__stack {
     display: flex;
@@ -1666,13 +1697,13 @@ export default { name: 'PollDetailPage' }
   }
 
   &__count {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $accent;
   }
 
   &__sub {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -1686,7 +1717,7 @@ export default { name: 'PollDetailPage' }
   padding: 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
 
   &__head {
     display: flex;
@@ -1697,7 +1728,7 @@ export default { name: 'PollDetailPage' }
 
   /* 「我的回答」是弱标题，11 / 600 / $faint */
   &__label {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $faint;
   }
@@ -1705,18 +1736,18 @@ export default { name: 'PollDetailPage' }
   /* 状态是 $subtle 小胶囊：圆角 6、内边距 [3,8]、10 / 600 / $muted */
   &__badge {
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $subtle;
   }
 
   &__badge-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $muted;
   }
 
   &__text {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
     line-height: 1.6;
   }
@@ -1730,7 +1761,7 @@ export default { name: 'PollDetailPage' }
 
   &__time,
   &__count {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -1742,7 +1773,7 @@ export default { name: 'PollDetailPage' }
   padding: 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
 
   &__head {
     display: flex;
@@ -1753,13 +1784,13 @@ export default { name: 'PollDetailPage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
 
   &__sub {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -1789,7 +1820,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__more-text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $accent-ink;
   }
@@ -1810,18 +1841,18 @@ export default { name: 'PollDetailPage' }
   }
 
   &__name {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $ink;
   }
 
   &__time {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     line-height: 1.5;
     color: $muted;
   }
@@ -1829,7 +1860,7 @@ export default { name: 'PollDetailPage' }
   &__empty {
     padding: 16px 0 4px;
     text-align: center;
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
   }
 }
@@ -1877,7 +1908,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__label {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
   }
@@ -1885,10 +1916,10 @@ export default { name: 'PollDetailPage' }
   &__input {
     height: 44px;
     padding: 0 14px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $surface;
     border: 1px solid $line;
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
   }
 
@@ -1898,7 +1929,7 @@ export default { name: 'PollDetailPage' }
   }
 
   &__hint {
-    font-size: 10px;
+    font-size: $fs-10;
   }
 
   &__ok {

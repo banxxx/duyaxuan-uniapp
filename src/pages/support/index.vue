@@ -5,6 +5,8 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import { mockFaq } from '@/mock/data'
 import { bottomInset } from '@/utils/platform'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 58 帮助与反馈
@@ -37,13 +39,14 @@ function toggle(i: number) {
 function copyMail() {
   uni.setClipboardData({
     data: 'posoovo@gmail.com',
-    success: () => uni.showToast({ title: '邮箱已复制', icon: 'none' })
+    success: () => toast.success('邮箱已复制')
   })
 }
 </script>
 
 <template>
   <view class="support">
+    <AppToast />
     <AppNavBar title="帮助与反馈" />
 
     <scroll-view class="support__scroll" scroll-y>
@@ -110,6 +113,9 @@ export default { name: 'SupportPage' }
 .support {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -128,7 +134,7 @@ export default { name: 'SupportPage' }
   }
 
   &__head {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 700;
     color: $ink;
   }
@@ -137,7 +143,7 @@ export default { name: 'SupportPage' }
 .search {
   height: 44px;
   padding: 0 14px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -146,25 +152,25 @@ export default { name: 'SupportPage' }
 
   &__input {
     flex: 1;
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
     height: 20px;
   }
 
   &__ph {
     color: $faint;
-    font-size: 13px;
+    font-size: $fs-13;
   }
 
   &__clear {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
     flex-shrink: 0;
   }
 }
 
 .faq {
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   overflow: hidden;
@@ -189,7 +195,7 @@ export default { name: 'SupportPage' }
 
   &__q-text {
     flex: 1;
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 500;
     color: $ink;
     line-height: 1.45;
@@ -205,7 +211,7 @@ export default { name: 'SupportPage' }
   }
 
   &__a {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
     line-height: 1.65;
   }
@@ -213,7 +219,7 @@ export default { name: 'SupportPage' }
 
 .contact {
   padding: 16px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -227,20 +233,20 @@ export default { name: 'SupportPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
   /* 点整行复制，不用精确点到邮箱文字 */
   &__mail {
     padding: 12px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -253,13 +259,13 @@ export default { name: 'SupportPage' }
 
   &__mail-text {
     flex: 1;
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
 
   &__copy {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent;
     flex-shrink: 0;
   }

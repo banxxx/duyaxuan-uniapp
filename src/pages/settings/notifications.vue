@@ -24,6 +24,8 @@ import {
 import { formatRelative } from '@/utils/format'
 import { bottomInset, isWeixinLike } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 44 消息通知 + 55 推送通知设置
@@ -125,7 +127,7 @@ async function markAllRead() {
   try {
     await markNotificationsRead()
     unread.forEach((n) => (n.read = true))
-    uni.showToast({ title: '已全部标为已读', icon: 'none' })
+    toast.success('已全部标为已读')
   } catch {
     // toast 由请求层给出
   }
@@ -212,6 +214,7 @@ function iconOf(kind: Notification['kind']) {
 
 <template>
   <view class="notif">
+    <AppToast />
     <AppNavBar :title="tab === 'push' ? '推送通知' : '消息通知'">
       <template #right>
         <view v-if="tab === 'list'" class="notif__more" hover-class="notif__more--active" @tap="openMore">
@@ -408,6 +411,9 @@ export default { name: 'NotificationsPage' }
 .notif {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -415,7 +421,7 @@ export default { name: 'NotificationsPage' }
   &__more {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -452,7 +458,7 @@ export default { name: 'NotificationsPage' }
   }
 
   &__more-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -470,14 +476,14 @@ export default { name: 'NotificationsPage' }
   }
 
   &__group {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $faint;
     padding-top: 2px;
   }
 
   &__note {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.6;
     padding: 6px 2px 0;
@@ -489,13 +495,13 @@ export default { name: 'NotificationsPage' }
   display: flex;
   gap: 4px;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $subtle;
 
   &__item {
     flex: 1;
     padding: 8px 0;
-    border-radius: 8px;
+    border-radius: $r-chip;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -507,7 +513,7 @@ export default { name: 'NotificationsPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
     transition: color $dur-fast $ease-both;
@@ -521,7 +527,7 @@ export default { name: 'NotificationsPage' }
 
 .msg {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -537,7 +543,7 @@ export default { name: 'NotificationsPage' }
   &__icon {
     width: 34px;
     height: 34px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -574,20 +580,20 @@ export default { name: 'NotificationsPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__time {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     flex-shrink: 0;
   }
 
   &__content {
     flex: 1;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
     line-height: 1.5;
   }
@@ -602,7 +608,7 @@ export default { name: 'NotificationsPage' }
 }
 
 .card {
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   overflow: hidden;
@@ -632,12 +638,12 @@ export default { name: 'NotificationsPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -647,7 +653,7 @@ export default { name: 'NotificationsPage' }
   padding: 14px 15px;
 
   .row__title {
-    font-size: 14px;
+    font-size: $fs-14;
   }
 
   .row__text {

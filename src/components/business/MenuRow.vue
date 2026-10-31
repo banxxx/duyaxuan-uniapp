@@ -107,7 +107,7 @@ export default { name: 'MenuRow' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 400;
     color: $ink;
 
@@ -119,12 +119,12 @@ export default { name: 'MenuRow' }
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
   &__value {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
     flex-shrink: 0;
 

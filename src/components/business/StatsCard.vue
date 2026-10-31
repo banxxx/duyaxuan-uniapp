@@ -31,7 +31,7 @@ export default { name: 'StatsCard' }
   padding: 14px 0;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
 
   &__item {
     flex: 1;
@@ -48,7 +48,7 @@ export default { name: 'StatsCard' }
   }
 
   &__value {
-    font-size: 19px;
+    font-size: $fs-19;
     font-weight: 700;
     color: $ink;
     font-family: $font-num;
@@ -56,7 +56,7 @@ export default { name: 'StatsCard' }
   }
 
   &__label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 }

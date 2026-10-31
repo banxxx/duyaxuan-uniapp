@@ -9,6 +9,7 @@ import { fetchPoll, fetchMyAnswers } from '@/api/poll'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { backTo, go, ROUTES } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 66 问卷 · 提交成功
@@ -70,6 +71,7 @@ onShareAppMessage(() =>
 
 <template>
   <view class="done">
+    <AppToast />
     <AppNavBar :back="error" />
 
     <AppEmpty
@@ -105,7 +107,7 @@ onShareAppMessage(() =>
         </view>
         <view class="done__secondary" hover-class="done__secondary--active" @tap="goShare">
           <AppIcon name="share-2" :size="17" color="#09090B" />
-          <text class="done__secondary-text">邀请同事一起填</text>
+          <text class="done__secondary-text">邀请朋友一起填</text>
         </view>
       </view>
 
@@ -121,6 +123,9 @@ export default { name: 'SurveyDonePage' }
 <style lang="scss" scoped>
 .done {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -139,7 +144,7 @@ export default { name: 'SurveyDonePage' }
   &__icon {
     width: 88px;
     height: 88px;
-    border-radius: 44px;
+    border-radius: $r-circle;
     background: $success;
     display: flex;
     align-items: center;
@@ -147,13 +152,13 @@ export default { name: 'SurveyDonePage' }
   }
 
   &__title {
-    font-size: 26px;
+    font-size: $fs-26;
     font-weight: 700;
     color: $ink;
   }
 
   &__desc {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
     text-align: center;
   }
@@ -167,7 +172,7 @@ export default { name: 'SurveyDonePage' }
 
   &__primary {
     height: 52px;
-    border-radius: 16px;
+    border-radius: $r-button;
     background: $ink;
     display: flex;
     align-items: center;
@@ -179,14 +184,14 @@ export default { name: 'SurveyDonePage' }
   }
 
   &__primary-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $white;
   }
 
   &__secondary {
     height: 52px;
-    border-radius: 16px;
+    border-radius: $r-button;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -200,13 +205,13 @@ export default { name: 'SurveyDonePage' }
   }
 
   &__secondary-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
   }
 
   &__note {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -216,13 +221,13 @@ export default { name: 'SurveyDonePage' }
   padding: 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
   display: flex;
   flex-direction: column;
   gap: 10px;
 
   &__label {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -234,7 +239,7 @@ export default { name: 'SurveyDonePage' }
 
   &__text {
     flex: 1;
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
     line-height: 1.5;

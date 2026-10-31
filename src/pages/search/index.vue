@@ -8,6 +8,7 @@ import AppEmpty from '@/components/base/AppEmpty.vue'
 import { searchPolls } from '@/api/poll'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, back, go } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 04 搜索结果
@@ -97,6 +98,7 @@ function cancel() {
 
 <template>
   <view class="search">
+    <AppToast />
     <AppNavBar title="搜索">
       <template #right>
         <text class="search__cancel" @tap="cancel">取消</text>
@@ -186,7 +188,7 @@ function cancel() {
             v-if="!results.length && !loading"
             icon="search"
             title="没有找到相关内容"
-            desc="换个关键词试试，比如「团建」「午餐」"
+            desc="换个关键词试试，比如「出游」「午餐」"
           />
 
           <view v-if="results.length" class="results__more">
@@ -205,12 +207,15 @@ export default { name: 'SearchPage' }
 <style lang="scss" scoped>
 .search {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   &__cancel {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
   }
 
@@ -227,7 +232,7 @@ export default { name: 'SearchPage' }
 .box {
   height: 46px;
   padding: 0 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -240,7 +245,7 @@ export default { name: 'SearchPage' }
 
   &__input {
     flex: 1;
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
   }
 
@@ -265,13 +270,13 @@ export default { name: 'SearchPage' }
   justify-content: space-between;
 
   &__count {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 
   &__btn {
     padding: 6px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -284,7 +289,7 @@ export default { name: 'SearchPage' }
   }
 
   &__btn-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $ink;
   }
@@ -302,7 +307,7 @@ export default { name: 'SearchPage' }
   }
 
   &__title {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
@@ -319,7 +324,7 @@ export default { name: 'SearchPage' }
 
   &__tag {
     padding: 7px 12px;
-    border-radius: 16px;
+    border-radius: $r-button;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -331,12 +336,12 @@ export default { name: 'SearchPage' }
   }
 
   &__tag-text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 
   &__empty {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -347,7 +352,7 @@ export default { name: 'SearchPage' }
   gap: 10px;
 
   &__head {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
@@ -359,14 +364,14 @@ export default { name: 'SearchPage' }
   }
 
   &__more-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
 
 .card {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -392,12 +397,12 @@ export default { name: 'SearchPage' }
   }
 
   &__people {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
     line-height: 1.4;

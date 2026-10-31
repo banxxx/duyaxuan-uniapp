@@ -9,9 +9,14 @@ import AppActionSheet from '@/components/base/AppActionSheet.vue'
 import StepBar from '@/components/business/StepBar.vue'
 import { useDraftStore } from '@/stores/draft'
 import type { DraftOption } from '@/stores/draft'
+import { uploadPollImage } from '@/api/poll'
+import { resolveFileUrl } from '@/utils/api-base'
 import { charCount } from '@/utils/format'
+import { MAX_OPTION_IMAGES, chooseImage } from '@/utils/image'
 import { bottomInset } from '@/utils/platform'
 import { back, exitFlow, go, ROUTES } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 29 创建 · ② 内容（投票）/ 62 创建 · ② 内容（问卷）/ 33 添加选项弹层
@@ -27,6 +32,9 @@ import { back, exitFlow, go, ROUTES } from '@/utils/router'
 const draft = useDraftStore()
 
 const isSurvey = computed(() => draft.draft.type === 'survey')
+
+/** 图文投票：选项可配图（在步骤① 选，单选/多选在步骤③ 定） */
+const imageMode = computed(() => draft.draft.imageMode)
 
 const title = ref('')
 const desc = ref('')
@@ -48,6 +56,14 @@ const optionMenuItems = computed(() => {
 })
 const newTitle = ref('')
 const newDesc = ref('')
+/** 弹层里先攒着、点「添加」才落到选项上的图 */
+const newImages = ref<string[]>([])
+
+/**
+ * 正在上传的图位：选项下标（字符串）或 'sheet'，null 表示空闲。
+ * 同一时间只允许传一张 —— 连点两下会同时起两个上传，回来的顺序还不一定。
+ */
+const uploadingAt = ref<string | null>(null)
 
 const TITLE_MAX = 60
 const DESC_MAX = 200
@@ -89,7 +105,7 @@ function cancel() {
 function goSummary() {
   const source = draft.draft.sourceSurveyId
   if (!source) {
-    uni.showToast({ title: '没有关联的问卷', icon: 'none' })
+    toast.show('没有关联的问卷')
     return
   }
   go(ROUTES.summary, { surveyId: source })
@@ -97,11 +113,12 @@ function goSummary() {
 
 function openAdd() {
   if (draft.draft.options.length >= 12) {
-    uni.showToast({ title: '最多 12 个选项', icon: 'none' })
+    toast.show('最多 12 个选项')
     return
   }
   newTitle.value = ''
   newDesc.value = ''
+  newImages.value = []
   sheetVisible.value = true
 }
 
@@ -120,15 +137,100 @@ function confirmAdd() {
   const t = newTitle.value.trim()
   if (!t) return
   adding = true
-  draft.draft.options.push({ title: t, desc: newDesc.value.trim() || undefined })
+  draft.draft.options.push({
+    title: t,
+    desc: newDesc.value.trim() || undefined,
+    images: newImages.value.length ? [...newImages.value] : undefined
+  })
   sheetVisible.value = false
   syncToDraft()
   newTitle.value = ''
   newDesc.value = ''
+  newImages.value = []
   // 下一帧再解锁，足以吃掉同一次点击产生的第二个事件
   setTimeout(() => {
     adding = false
   }, 300)
+}
+
+/* ---------------- 选项配图（图文投票） ---------------- */
+
+/**
+ * 选图 + 上传，返回服务端相对地址；取消或失败返回 null。
+ *
+ * 图是立刻上传的，不等发布：发布时再统一传，用户点完「发布」要盯着
+ * 转圈好几秒，图越多越久。失败只提示，选项的其他内容不受影响。
+ */
+async function pickAndUpload(at: string): Promise<string | null> {
+  if (uploadingAt.value) return null
+
+  let path: string | null = null
+  try {
+    path = await chooseImage()
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : '选择图片失败')
+    return null
+  }
+  if (!path) return null // 用户取消
+
+  uploadingAt.value = at
+  try {
+    return await uploadPollImage(path)
+  } catch (err) {
+    toast.show(err instanceof Error ? err.message : '上传失败，请重试')
+    return null
+  } finally {
+    uploadingAt.value = null
+  }
+}
+
+async function addOptionImage(index: number) {
+  const opt = draft.draft.options[index]
+  if (!opt) return
+  if ((opt.images?.length ?? 0) >= MAX_OPTION_IMAGES) {
+    toast.show(`最多 ${MAX_OPTION_IMAGES} 张图`)
+    return
+  }
+
+  const url = await pickAndUpload(String(index))
+  if (!url) return
+  // 上传期间这一项可能被删掉或挪过位置，按对象引用重新确认一次
+  if (!draft.draft.options.includes(opt)) return
+  opt.images = [...(opt.images ?? []), url]
+  syncToDraft()
+}
+
+function removeOptionImage(index: number, imgIndex: number) {
+  const opt = draft.draft.options[index]
+  if (!opt?.images) return
+  opt.images = opt.images.filter((_, i) => i !== imgIndex)
+  syncToDraft()
+}
+
+/** 点图看大图：带上这一项的全部图，左右能翻 */
+function previewOptionImages(index: number, imgIndex: number) {
+  const urls = (draft.draft.options[index]?.images ?? []).map(resolveFileUrl)
+  if (!urls.length) return
+  uni.previewImage({ urls, current: urls[Math.min(imgIndex, urls.length - 1)] })
+}
+
+async function addSheetImage() {
+  if (newImages.value.length >= MAX_OPTION_IMAGES) {
+    toast.show(`最多 ${MAX_OPTION_IMAGES} 张图`)
+    return
+  }
+  const url = await pickAndUpload('sheet')
+  if (url) newImages.value = [...newImages.value, url]
+}
+
+function removeSheetImage(imgIndex: number) {
+  newImages.value = newImages.value.filter((_, i) => i !== imgIndex)
+}
+
+function previewSheetImages(imgIndex: number) {
+  const urls = newImages.value.map(resolveFileUrl)
+  if (!urls.length) return
+  uni.previewImage({ urls, current: urls[Math.min(imgIndex, urls.length - 1)] })
 }
 
 function removeOption(i: number) {
@@ -157,20 +259,28 @@ function onOptionAction(key: string) {
   else removeOption(i)
 }
 
+/** 图文投票至少要有一张图，否则和普通文字投票没区别 */
+const hasImage = computed(() => draft.draft.options.some((o: DraftOption) => !!o.images?.length))
+
 const canNext = computed(() => {
   if (!title.value.trim()) return false
   if (isSurvey.value) return true
-  return draft.draft.options.filter((o: DraftOption) => o.title.trim()).length >= 2
+  if (draft.draft.options.filter((o: DraftOption) => o.title.trim()).length < 2) return false
+  return !imageMode.value || hasImage.value
 })
 
 function next() {
   syncToDraft()
   if (!title.value.trim()) {
-    uni.showToast({ title: '先填投票主题', icon: 'none' })
+    toast.show('先填投票主题')
     return
   }
   if (!isSurvey.value && draft.draft.options.length < 2) {
-    uni.showToast({ title: '至少添加 2 个选项', icon: 'none' })
+    toast.show('至少添加 2 个选项')
+    return
+  }
+  if (!isSurvey.value && imageMode.value && !hasImage.value) {
+    toast.show('至少给一个选项配张图')
     return
   }
   go(ROUTES.createRules)
@@ -182,6 +292,7 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
 
 <template>
   <view class="content">
+    <AppToast />
     <AppNavBar :back="false">
       <template #left>
         <text class="content__cancel" @tap="cancel">取消</text>
@@ -211,7 +322,7 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
               v-model="title"
               class="field__input-inner"
               :maxlength="TITLE_MAX"
-              :placeholder="isSurvey ? '关于什么，一句话说清楚' : '例如：周末团建活动，你想安排哪些项目？'"
+              :placeholder="isSurvey ? '关于什么，一句话说清楚' : '例如：周末出游活动，你想安排哪些项目？'"
               placeholder-class="field__ph"
               @blur="syncToDraft"
             />
@@ -291,6 +402,34 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
                   placeholder-class="field__ph"
                   @blur="syncToDraft"
                 />
+
+                <!-- 图文投票：每个选项最多 3 张，第一张当封面 -->
+                <view v-if="imageMode" class="shots">
+                  <view
+                    v-for="(img, ii) in opt.images ?? []"
+                    :key="img"
+                    class="shot"
+                    @tap="previewOptionImages(i, ii)"
+                  >
+                    <image class="shot__img" :src="resolveFileUrl(img)" mode="aspectFill" />
+                    <view v-if="ii === 0 && (opt.images?.length ?? 0) > 1" class="shot__badge">
+                      <text class="shot__badge-text">封面</text>
+                    </view>
+                    <view class="shot__remove" @tap.stop="removeOptionImage(i, ii)">
+                      <AppIcon name="x" :size="9" color="#FFFFFF" :stroke-width="3" />
+                    </view>
+                  </view>
+
+                  <view
+                    v-if="(opt.images?.length ?? 0) < MAX_OPTION_IMAGES"
+                    class="shot shot--add"
+                    :hover-class="uploadingAt === String(i) ? 'none' : 'shot--active'"
+                    @tap="addOptionImage(i)"
+                  >
+                    <view v-if="uploadingAt === String(i)" class="shot__spin" />
+                    <AppIcon v-else name="image-plus" :size="15" color="#A1A1AA" />
+                  </view>
+                </view>
               </view>
               <view class="opt__handle" @tap.stop="onOptionLongPress(i)">
                 <AppIcon name="grip-vertical" :size="16" color="#A1A1AA" />
@@ -388,6 +527,40 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
             />
           </view>
         </view>
+
+        <view v-if="imageMode" class="sheet-form__group">
+          <view class="sheet-form__head">
+            <text class="sheet-form__label">选项配图</text>
+            <text class="sheet-form__count">最多 {{ MAX_OPTION_IMAGES }} 张 · 第一张为封面</text>
+          </view>
+
+          <view class="shots">
+            <view
+              v-for="(img, ii) in newImages"
+              :key="img"
+              class="shot"
+              @tap="previewSheetImages(ii)"
+            >
+              <image class="shot__img" :src="resolveFileUrl(img)" mode="aspectFill" />
+              <view v-if="ii === 0 && newImages.length > 1" class="shot__badge">
+                <text class="shot__badge-text">封面</text>
+              </view>
+              <view class="shot__remove" @tap.stop="removeSheetImage(ii)">
+                <AppIcon name="x" :size="9" color="#FFFFFF" :stroke-width="3" />
+              </view>
+            </view>
+
+            <view
+              v-if="newImages.length < MAX_OPTION_IMAGES"
+              class="shot shot--add"
+              :hover-class="uploadingAt === 'sheet' ? 'none' : 'shot--active'"
+              @tap="addSheetImage"
+            >
+              <view v-if="uploadingAt === 'sheet'" class="shot__spin" />
+              <AppIcon v-else name="image-plus" :size="15" color="#A1A1AA" />
+            </view>
+          </view>
+        </view>
       </view>
 
       <view class="sheet-tip">
@@ -430,31 +603,34 @@ export default { name: 'CreateContentPage' }
    * 定成 100vh 后滚动交给 scroll-view，导航栏、步骤条、操作栏三块才是固定的。
    */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   &__cancel {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $muted;
   }
 
   &__nav-title {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 600;
     color: $ink;
   }
 
   &__draft {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $accent-soft;
     display: flex;
     align-items: center;
   }
 
   &__draft-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent;
   }
@@ -497,7 +673,7 @@ export default { name: 'CreateContentPage' }
   &__prev {
     flex: 1;
     height: 52px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -511,7 +687,7 @@ export default { name: 'CreateContentPage' }
   }
 
   &__prev-text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
@@ -519,7 +695,7 @@ export default { name: 'CreateContentPage' }
   &__next {
     flex: 1;
     height: 52px;
-    border-radius: 16px;
+    border-radius: $r-button;
     background: $accent;
     display: flex;
     align-items: center;
@@ -537,7 +713,7 @@ export default { name: 'CreateContentPage' }
   }
 
   &__next-text {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 700;
     color: $white;
   }
@@ -556,25 +732,25 @@ export default { name: 'CreateContentPage' }
   }
 
   &__label {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__optional {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
   &__link {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent-ink;
   }
 
   /* 29/33：输入框是 14 圆角、内边距 14 的白卡（聚焦时 2px 描边，用内阴影补足） */
   &__input {
     padding: 14px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -591,7 +767,7 @@ export default { name: 'CreateContentPage' }
 
   &__input-inner {
     flex: 1;
-    font-size: 15px;
+    font-size: $fs-15;
     color: $ink;
     line-height: 1.4;
   }
@@ -599,7 +775,7 @@ export default { name: 'CreateContentPage' }
   &__textarea {
     height: 76px;
     padding: 14px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $surface;
     border: 1px solid $line;
     transition:
@@ -610,7 +786,7 @@ export default { name: 'CreateContentPage' }
   &__textarea-inner {
     width: 100%;
     height: 100%;
-    font-size: 12px;
+    font-size: $fs-12;
     color: $ink;
     line-height: 1.55;
   }
@@ -631,12 +807,12 @@ export default { name: 'CreateContentPage' }
 
   &__hint,
   &__count {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
   &__note {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.55;
     padding-top: 2px;
@@ -652,7 +828,7 @@ export default { name: 'CreateContentPage' }
 
 .opt {
   padding: 11px 13px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -671,7 +847,7 @@ export default { name: 'CreateContentPage' }
   }
 
   &__index-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $muted;
   }
@@ -685,13 +861,13 @@ export default { name: 'CreateContentPage' }
   }
 
   &__title-input {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 500;
     color: $ink;
   }
 
   &__desc-input {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
@@ -705,9 +881,96 @@ export default { name: 'CreateContentPage' }
   }
 }
 
+/*
+ * 选项配图：44 的方图，最多 3 张 + 一个加号位。
+ * 放在文字下面而不是左侧 —— 一行里已经有序号、两个输入框和拖拽手柄，
+ * 再挤一列 44 的图，标题就只剩十来个字可写了。
+ */
+.shots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.shot {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: $r-sm;
+  overflow: hidden;
+  background: $subtle;
+  flex-shrink: 0;
+
+  &__img {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  &--add {
+    border: 1px dashed $line;
+    background: $surface;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color $dur-fast $ease-both;
+  }
+
+  &--active {
+    background: $subtle;
+  }
+
+  /* 右上角删除：压一层半透明黑底，白色 × 才看得清 */
+  &__remove {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    border-bottom-left-radius: $r-xs;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 封面角标：左下角，小一号 */
+  &__badge {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    padding: 1px 4px;
+    border-top-right-radius: $r-xs;
+    background: rgba(0, 0, 0, 0.55);
+  }
+
+  &__badge-text {
+    font-size: 8px;
+    line-height: 1.2;
+    color: $white;
+  }
+
+  /* 上传中的转圈：不引组件，14 的圆环足够 */
+  &__spin {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid $line;
+    border-top-color: $accent;
+    animation: shot-spin 0.7s linear infinite;
+  }
+}
+
+@keyframes shot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .add {
   height: 44px;
-  border-radius: 12px;
+  border-radius: $r-md;
   border: 1px solid $line;
   display: flex;
   align-items: center;
@@ -723,18 +986,18 @@ export default { name: 'CreateContentPage' }
   }
 
   &__text {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
   }
 }
 
 .from-survey {
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: $r-sm;
   background: $accent-soft;
 
   &__text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent-ink;
     line-height: 1.5;
   }
@@ -743,7 +1006,7 @@ export default { name: 'CreateContentPage' }
 /* 问卷回答方式预览（93）：r14 pad14 gap10，内层 96 高灰框 */
 .preview {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -757,19 +1020,19 @@ export default { name: 'CreateContentPage' }
   }
 
   &__label {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
   &__box {
     height: 96px;
     padding: 12px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $bg;
   }
 
   &__ph {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $faint;
   }
 
@@ -781,7 +1044,7 @@ export default { name: 'CreateContentPage' }
 
   &__count,
   &__hint {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -805,25 +1068,25 @@ export default { name: 'CreateContentPage' }
   }
 
   &__label {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
 
   &__count {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   /* 33：白底 + 1px $line，12 圆角，内边距 12 */
   &__input {
     padding: 12px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $surface;
     border: 1px solid $line;
     display: flex;
     align-items: center;
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
     transition:
       border-color $dur-fast $ease-both,
@@ -840,7 +1103,7 @@ export default { name: 'CreateContentPage' }
 .sheet-close {
   width: 28px;
   height: 28px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $subtle;
   display: flex;
   align-items: center;
@@ -860,7 +1123,7 @@ export default { name: 'CreateContentPage' }
   margin-top: 12px;
 
   &__text {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 }

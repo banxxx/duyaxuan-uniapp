@@ -51,6 +51,19 @@ remote = true
 # token 有效期（天）。前端第 6 天会主动续，这里保持 7
 TOKEN_TTL_DAYS = "7"
 
+# 小程序码打开哪个版本：
+#   trial   → 体验版（体验成员都能扫，测试阶段用这个）
+#   develop → 开发版（只有开发者本人能扫）
+#   release → 正式版（默认值；未发布/旧包会白屏）
+# 不配时 wx.ts 里默认按 release 处理。
+WX_ENV_VERSION = "trial"
+
+# H5 的 QQ / 微信扫码登录走自部署的 MixAuth（Vercel）。
+#
+# 只由 Worker 服务端访问，客户端不直连：境内直接访问 vercel.app 会被 DNS
+# 污染。换部署地址时只改这里，然后重新 wrangler deploy。
+MIXAUTH_BASE_URL = "https://mixauth-one.vercel.app"
+
 # 定时任务：补发截止提醒 / 结果通知。
 #
 # 免费套餐就支持 Cron Trigger（账号上限 5 个），每次触发算 1 次请求，

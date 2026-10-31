@@ -63,6 +63,9 @@ npm run db:local     # 建本地库（wrangler dev 用）
 > # 详情页「已编辑」标记：已编辑过的投票才会有值
 > npx wrangler d1 execute duyaxuan-db --remote \
 >   --command "ALTER TABLE polls ADD COLUMN updated_at INTEGER"
+> # 图文投票：选项配图，JSON 数组存 /files/options/... 相对地址
+> npx wrangler d1 execute duyaxuan-db --remote \
+>   --command "ALTER TABLE options ADD COLUMN images TEXT"
 > ```
 >
 > 本地开发如果 `.wrangler` 里已经有旧库，把上面命令里的 `--remote` 换成 `--local` 再执行。
@@ -196,6 +199,7 @@ npm run seed:remote    # 可选：灌演示数据，会真实写云端 D1
 ```bash
 npx wrangler d1 execute duyaxuan-db --remote --command "ALTER TABLE polls ADD COLUMN invite_code TEXT"
 npx wrangler d1 execute duyaxuan-db --remote --command "ALTER TABLE answers ADD COLUMN ip TEXT"
+npx wrangler d1 execute duyaxuan-db --remote --command "ALTER TABLE options ADD COLUMN images TEXT"
 ```
 
 ---

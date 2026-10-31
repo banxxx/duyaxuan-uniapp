@@ -106,7 +106,7 @@ export default { name: 'PendingCard' }
   padding: 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
   transition:
     background-color $dur-fast $ease-both,
     border-color $dur-fast $ease-both;
@@ -127,7 +127,7 @@ export default { name: 'PendingCard' }
 
   &__badge {
     padding: 4px 9px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -138,7 +138,7 @@ export default { name: 'PendingCard' }
   }
 
   &__badge-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $muted;
 
@@ -148,12 +148,12 @@ export default { name: 'PendingCard' }
   }
 
   &__meta {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__title {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 600;
     color: $ink;
     line-height: 1.35;
@@ -166,7 +166,7 @@ export default { name: 'PendingCard' }
   }
 
   &__inviter-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
@@ -177,7 +177,7 @@ export default { name: 'PendingCard' }
   }
 
   &__left {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
 
     &--urgent {
@@ -188,7 +188,7 @@ export default { name: 'PendingCard' }
   /* 设计稿 Vote Btn：$accent、圆角 10、padding [8,16]、字 12/600 */
   &__btn {
     padding: 8px 16px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $accent;
     display: flex;
     align-items: center;
@@ -203,7 +203,7 @@ export default { name: 'PendingCard' }
   }
 
   &__btn-text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $white;
   }

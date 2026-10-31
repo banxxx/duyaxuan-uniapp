@@ -3,7 +3,12 @@ import type { AppEnv } from '../types'
 import { ok, HttpError } from '../lib/response'
 import { enforceRateLimit, RATE_LIMITS } from '../lib/rate-limit'
 import { requireAuth } from '../middleware/auth'
-import { deactivate, getProfile, unbindPlatform, updateProfile } from '../db/users'
+import { bindPlatform, deactivate, getProfile, unbindPlatform, updateProfile } from '../db/users'
+import {
+  checkMixauthStatus,
+  createMixauthQr,
+  readMixauthProvider
+} from '../lib/mixauth'
 import {
   avatarKey,
   imageExt,
@@ -105,6 +110,37 @@ user.post('/unbind', async (c) => {
   await enforceRateLimit(c, RATE_LIMITS.unbind)
   const body = (await c.req.json().catch(() => ({}))) as { platform?: string }
   return ok(c, await unbindPlatform(c.env.DB, c.get('userId')!, body.platform || 'weixin'))
+})
+
+/* ============================================================
+ * 绑定扫码登录（把 H5 的 QQ / 微信登录挂到当前账号）
+ *
+ * 只有已登录用户能调用（requireAuth 在上面的 user.use('*') 里）。
+ * 扫码成功后把 MixAuth 的 openid 追加到当前账号的 user_platforms，
+ * 这样下次用这个方式登录能进到同一个账号。
+ * ============================================================ */
+
+/** POST /user/bind/qr  body: { provider } */
+user.post('/bind/qr', async (c) => {
+  await enforceRateLimit(c, RATE_LIMITS.mixauthQr)
+  const body = (await c.req.json().catch(() => ({}))) as { provider?: unknown }
+  return ok(c, await createMixauthQr(c.env, readMixauthProvider(body.provider)))
+})
+
+/** POST /user/bind/status  body: { provider, id } */
+user.post('/bind/status', async (c) => {
+  await enforceRateLimit(c, RATE_LIMITS.mixauthStatus)
+  const body = (await c.req.json().catch(() => ({}))) as { provider?: unknown; id?: unknown }
+  const provider = readMixauthProvider(body.provider)
+  const id = typeof body.id === 'string' ? body.id : ''
+  if (!id || id.length > 4096) throw new HttpError(400, '登录凭证无效')
+
+  const result = await checkMixauthStatus(c.env, provider, id)
+  if (result.state !== 'success') return ok(c, { state: result.state })
+
+  const platform = provider === 'qq' ? 'qq' : 'weixin'
+  const user = await bindPlatform(c.env.DB, c.get('userId')!, platform, result.openid)
+  return ok(c, { state: 'success', user })
 })
 
 export default user

@@ -7,7 +7,7 @@ page {
   background-color: $bg;
   color: $ink;
   font-family: $font-sans;
-  font-size: 14px;
+  font-size: $fs-14;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }

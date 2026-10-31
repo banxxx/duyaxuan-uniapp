@@ -49,20 +49,20 @@ export default { name: 'SectionCard' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__hint {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
   &__card {
     background: $surface;
     border: 1px solid $line;
-    border-radius: 16px;
+    border-radius: $r-button;
     padding: 0 16px;
 
     &--flush {

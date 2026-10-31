@@ -15,6 +15,8 @@ export interface DraftOption {
   id?: string
   title: string
   desc?: string
+  /** 图文投票的配图（最多 3 张，第一张当封面），存服务端相对地址 */
+  images?: string[]
   /** 编辑时带上原票数，只读展示 */
   votes?: number
   /** 已有票数的选项不可删除 */
@@ -26,6 +28,13 @@ export interface Draft {
   /** 编辑态：被编辑的投票 id */
   pollId?: string
   type: PollType
+  /**
+   * 图文投票：选项可配图。
+   *
+   * 不是第四种 PollType —— 图文投票一样要选单选还是多选，
+   * 所以它是一个和 type 正交的开关，单选/多选在步骤③ 决定。
+   */
+  imageMode: boolean
   title: string
   desc: string
   options: DraftOption[]
@@ -39,10 +48,11 @@ export interface Draft {
 
 const DRAFT_KEY = 'dyx_draft'
 
-export function createEmptyDraft(type: PollType = 'single'): Draft {
+export function createEmptyDraft(type: PollType = 'single', imageMode = false): Draft {
   return {
     mode: 'create',
     type,
+    imageMode,
     title: '',
     desc: '',
     options: [],
@@ -80,8 +90,8 @@ export const useDraftStore = defineStore('draft', () => {
     return lockedRules.value.includes(key)
   }
 
-  function startCreate(type: PollType = 'single') {
-    draft.value = createEmptyDraft(type)
+  function startCreate(type: PollType = 'single', imageMode = false) {
+    draft.value = createEmptyDraft(type, imageMode)
     persist()
   }
 
@@ -91,7 +101,7 @@ export const useDraftStore = defineStore('draft', () => {
     type: PollType
     title: string
     desc?: string
-    options: Array<{ id: string; title: string; desc?: string; votes: number }>
+    options: Array<{ id: string; title: string; desc?: string; images?: string[]; votes: number }>
     rules: PollRules
     responseCount: number
   }) {
@@ -99,12 +109,15 @@ export const useDraftStore = defineStore('draft', () => {
       mode: 'edit',
       pollId: poll.id,
       type: poll.type,
+      // 已有选项带图就当作图文投票；全部删光图之后会退回纯文字
+      imageMode: poll.options.some((o) => !!o.images?.length),
       title: poll.title,
       desc: poll.desc ?? '',
       options: poll.options.map((o) => ({
         id: o.id,
         title: o.title,
         desc: o.desc,
+        images: o.images,
         votes: o.votes,
         locked: o.votes > 0
       })),
@@ -172,7 +185,15 @@ export const useDraftStore = defineStore('draft', () => {
         ...base,
         ...parsed,
         type,
-        options: Array.isArray(parsed.options) ? parsed.options : [],
+        // 老草稿没有这个字段，当成纯文字投票
+        imageMode: parsed.imageMode === true,
+        options: Array.isArray(parsed.options)
+          ? parsed.options.map((o: DraftOption) => ({
+              ...o,
+              // 图片地址必须是数组；旧草稿 / 手改过的缓存里可能是别的东西
+              images: Array.isArray(o?.images) ? o.images.filter((u) => typeof u === 'string') : undefined
+            }))
+          : [],
         rules: { ...base.rules, ...(parsed.rules ?? {}) }
       }
     } catch {

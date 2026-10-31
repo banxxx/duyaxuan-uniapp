@@ -41,7 +41,7 @@ export default { name: 'FilterChips' }
   /* 设计稿 Chip：padding [7,13]、圆角 16、字 12 —— 高度由内边距撑开，不写死 */
   &__item {
     padding: 7px 13px;
-    border-radius: 16px;
+    border-radius: $r-button;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -57,7 +57,7 @@ export default { name: 'FilterChips' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
     line-height: 1;

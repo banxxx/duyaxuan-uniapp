@@ -10,6 +10,8 @@ import { fetchPoll, fetchMyAnswers, updateAnswer } from '@/api/poll'
 import { formatCreatedAt, formatRelative, formatRemaining, charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 72 问卷 · 编辑回答
@@ -79,10 +81,10 @@ async function save() {
   saving.value = true
   try {
     await updateAnswer(poll.value.id, answerId.value, content.value.trim())
-    uni.showToast({ title: '已保存', icon: 'none' })
+    toast.success('已保存')
     setTimeout(back, 600)
   } catch {
-    uni.showToast({ title: '保存失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     saving.value = false
   }
@@ -91,6 +93,7 @@ async function save() {
 
 <template>
   <view class="edit-answer">
+    <AppToast />
     <AppNavBar :back="true" />
 
     <view v-if="loading" class="edit-answer__body">
@@ -188,6 +191,9 @@ export default { name: 'SurveyEditAnswerPage' }
 .edit-answer {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -209,14 +215,14 @@ export default { name: 'SurveyEditAnswerPage' }
   }
 
   &__title {
-    font-size: 26px;
+    font-size: $fs-26;
     font-weight: 700;
     color: $ink;
     line-height: 1.32;
   }
 
   &__desc {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
     line-height: 1.55;
   }
@@ -227,7 +233,7 @@ export default { name: 'SurveyEditAnswerPage' }
   }
 
   &__note {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.55;
   }
@@ -247,7 +253,7 @@ export default { name: 'SurveyEditAnswerPage' }
 
   &__live {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $success-soft;
     display: flex;
     align-items: center;
@@ -270,7 +276,7 @@ export default { name: 'SurveyEditAnswerPage' }
   }
 
   &__live-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $success;
 
@@ -281,7 +287,7 @@ export default { name: 'SurveyEditAnswerPage' }
 
   &__chip {
     padding: 5px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -292,7 +298,7 @@ export default { name: 'SurveyEditAnswerPage' }
   }
 
   &__chip-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
 
     &--warn {
@@ -310,7 +316,7 @@ export default { name: 'SurveyEditAnswerPage' }
   &__avatar {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $accent-soft;
     display: flex;
     align-items: center;
@@ -318,7 +324,7 @@ export default { name: 'SurveyEditAnswerPage' }
   }
 
   &__initial {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 700;
     color: $accent-ink;
   }
@@ -330,13 +336,13 @@ export default { name: 'SurveyEditAnswerPage' }
   }
 
   &__name {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
 
   &__time {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -347,20 +353,20 @@ export default { name: 'SurveyEditAnswerPage' }
   justify-content: space-between;
 
   &__label {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__hint {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
   }
 }
 
 .area {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -370,14 +376,14 @@ export default { name: 'SurveyEditAnswerPage' }
   &__box {
     height: 148px;
     padding: 12px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $bg;
   }
 
   &__input {
     width: 100%;
     height: 100%;
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
     line-height: 1.6;
   }
@@ -394,7 +400,7 @@ export default { name: 'SurveyEditAnswerPage' }
 
   &__tip,
   &__count {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }

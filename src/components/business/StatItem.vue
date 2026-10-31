@@ -32,7 +32,7 @@ export default { name: 'StatItem' }
   gap: 4px;
 
   &__text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
     line-height: 1;
   }

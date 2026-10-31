@@ -43,6 +43,13 @@ import {
 } from '../db/comments'
 import { notifyPollEnded, remindMe } from '../db/notifications'
 import { getPollQrcode } from '../db/qrcode'
+import {
+  imageExt,
+  MAX_OPTION_IMAGE_BYTES,
+  mimeByExt,
+  optionImageKey,
+  publicUrl
+} from '../lib/storage'
 import { acceptInvite, ensureInviteCode } from '../db/invites'
 import { castVote, myVote, revokeVote } from '../db/votes'
 import { listAnswers, myAnswers, submitAnswer, updateAnswer } from '../db/answers'
@@ -108,6 +115,39 @@ polls.post('/', requireAuth, async (c) => {
   await enforceRateLimit(c, RATE_LIMITS.pollCreate)
   const body = await c.req.json().catch(() => ({}))
   return ok(c, await createPoll(c.env.DB, c.get('userId')!, body))
+})
+
+/**
+ * 上传选项配图（图文投票）。
+ *
+ * 和头像上传同一套做法：multipart 直传 R2，返回 `/files/options/...` 相对地址，
+ * 由客户端在发布投票时随选项一起提交。之所以不在发布接口里收图，
+ * 是因为创建流程里用户是一边加选项一边传图的，等发布时再传会让点「发布」
+ * 之后卡住好几秒。
+ *
+ * 上传时就按用户分目录，此时还没有 pollId —— 放弃的草稿会留下孤儿对象，
+ * 和头像一样不做清理。
+ */
+polls.post('/media', requireAuth, async (c) => {
+  await enforceRateLimit(c, RATE_LIMITS.pollMedia)
+  const bucket = c.env.BUCKET
+  if (!bucket) throw new HttpError(501, '文件存储还没配置（R2 未绑定）')
+
+  const form = await c.req.parseBody()
+  const file = form.file
+  if (!(file instanceof File)) throw new HttpError(400, '没有收到图片')
+
+  const ext = imageExt(file.type, file.name)
+  if (!ext) throw new HttpError(400, '只支持 jpg / png / webp / gif')
+  if (!file.size) throw new HttpError(400, '图片是空的')
+  if (file.size > MAX_OPTION_IMAGE_BYTES) throw new HttpError(400, '图片不能超过 5MB')
+
+  const key = optionImageKey(c.get('userId')!, ext)
+  // Content-Type 按扩展名写，不信客户端传来的值（理由同头像上传）
+  await bucket.put(key, await file.arrayBuffer(), {
+    httpMetadata: { contentType: mimeByExt(ext) }
+  })
+  return ok(c, { url: publicUrl(key) })
 })
 
 /* ============================================================

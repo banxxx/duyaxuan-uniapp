@@ -12,10 +12,10 @@ import type {
  *
  * 后端还没起来时用它跑通页面；接后端后把 .env 的 VITE_USE_MOCK 关掉即可。
  * 数据口径沿用设计稿：
- *   「部门月度之星评选」42 票 / 9 条评论（41 列表首行，编辑页 90/91 编辑的就是它）
- *   「关于下季度团建」问卷 34 条回答 / 3 条评论（已截止，可汇总）
- *   「团建预算怎么分配？」问卷 12 条回答（进行中，我在 71 里有 3 次提交）
- *   「下季度团建地点」89 人已投票，41/28/14/6 票（05/09/21 详情页）
+ *   「社区月度之星评选」42 票 / 9 条评论（41 列表首行，编辑页 90/91 编辑的就是它）
+ *   「关于下次出游」问卷 34 条回答 / 3 条评论（已截止，可汇总）
+ *   「出游预算怎么分配？」问卷 12 条回答（进行中，我在 71 里有 3 次提交）
+ *   「下次出游地点」89 人已投票，41/28/14/6 票（05/09/21 详情页）
  */
 
 const HOUR = 3600 * 1000
@@ -37,17 +37,17 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_star',
     type: 'single',
-    title: '部门月度之星评选',
+    title: '社区月度之星评选',
     desc: '每人一票，10 月 26 日公布结果，得票最高者为本月之星。',
     creatorId: '1024',
     creatorName: '林小满',
     createdAt: now - 2 * DAY,
     rules: { ...baseRules, endAt: now + 3 * DAY },
     options: [
-      { id: 'o1', title: '张伟 · 市场部', desc: '本月签下 6 个新客户', votes: 18 },
-      { id: 'o2', title: '李静 · 产品部', desc: '主导新版投票页改版', votes: 11 },
-      { id: 'o3', title: '王磊 · 技术部', desc: '上线 3 个核心功能', votes: 8 },
-      { id: 'o4', title: '陈曦 · 设计部', desc: '完成品牌视觉更新', votes: 5 }
+      { id: 'o1', title: '张伟 · 志愿者', desc: '本月参与志愿服务 6 次', votes: 18 },
+      { id: 'o2', title: '李静 · 文艺队', desc: '组织了两场社区演出', votes: 11 },
+      { id: 'o3', title: '王磊 · 运动队', desc: '带队拿下街道比赛', votes: 8 },
+      { id: 'o4', title: '陈曦 · 手工坊', desc: '开了三期公益手工课', votes: 5 }
     ],
     voterCount: 42,
     commentCount: 9,
@@ -56,8 +56,8 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_tea',
     type: 'multiple',
-    title: '周五下午茶菜单',
-    desc: '最多选 3 项，票数最高的三项本周五下午供应。',
+    title: '周末下午茶菜单',
+    desc: '最多选 3 项，票数最高的三项周末一起安排。',
     creatorId: '1024',
     creatorName: '林小满',
     createdAt: now - 1 * DAY,
@@ -75,8 +75,8 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_plant',
     type: 'single',
-    title: '办公室绿植品种投票',
-    desc: '工位区域统一摆放，选一种。',
+    title: '阳台绿植品种投票',
+    desc: '阳台统一摆放，选一种。',
     creatorId: '1024',
     creatorName: '林小满',
     createdAt: now - 12 * DAY,
@@ -93,8 +93,8 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_seat',
     type: 'single',
-    title: '新办公室工位朝向',
-    desc: '两种布局方案，选一个。',
+    title: '新家书桌朝向',
+    desc: '两种摆放方案，选一个。',
     creatorId: '1024',
     creatorName: '林小满',
     createdAt: now - 26 * DAY,
@@ -110,7 +110,7 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_shirt',
     type: 'survey',
-    title: '关于下季度团建，你有什么想法？',
+    title: '关于下次出游，你有什么想法？',
     desc: '随便聊聊想去哪、想玩什么，我们会根据大家的回答整理成投票方案。',
     creatorId: '1024',
     creatorName: '林小满',
@@ -131,7 +131,7 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_survey_team',
     type: 'survey',
-    title: '团建预算怎么分配？',
+    title: '出游预算怎么分配？',
     desc: '说说你希望预算花在哪些地方，比如住宿、餐饮、活动。',
     creatorId: 'u_zhou',
     creatorName: '周子墨',
@@ -153,12 +153,12 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_team',
     type: 'single',
-    title: '下季度团建地点，你最想去哪里？',
+    title: '下次出游地点，你最想去哪里？',
     desc: '预算 300 元/人，两天一夜。请选择你最想去的目的地，得票最高者即为最终方案。',
     creatorId: 'u_zhou',
     creatorName: '周子墨',
     createdAt: now - 2 * DAY,
-    rules: { ...baseRules, profileField: '部门', endAt: now + 3 * DAY + 6 * HOUR },
+    rules: { ...baseRules, profileField: '联系方式', endAt: now + 3 * DAY + 6 * HOUR },
     options: [
       { id: 'o1', title: '莫干山 · 山野民宿', desc: '含徒步与篝火，适合放松', votes: 28 },
       { id: 'o2', title: '安吉 · 竹林露营', desc: '户外体验，需自带装备', votes: 41 },
@@ -174,7 +174,7 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_weekend',
     type: 'multiple',
-    title: '周末团建活动，你想安排哪些项目？',
+    title: '周末出游活动，你想安排哪些项目？',
     desc: '可多选，最多选 3 项。票数最高的两项将进入最终方案。',
     creatorId: 'u_zhou',
     creatorName: '周子墨',
@@ -198,7 +198,7 @@ export const mockPolls: Poll[] = [
     id: 'p_lunch',
     type: 'single',
     title: '午餐去哪儿吃？',
-    desc: '今天中午团建餐，选一家，12 点前截止。',
+    desc: '今天中午聚餐，选一家，12 点前截止。',
     creatorId: 'u_zhou',
     creatorName: '周子墨',
     createdAt: now - 6 * HOUR,
@@ -215,7 +215,7 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_team_time',
     type: 'single',
-    title: '下季度团建时间投票',
+    title: '下次出游时间投票',
     desc: '两天一夜，选一个大家都能来的周末。',
     creatorId: 'u_zhou',
     creatorName: '周子墨',
@@ -233,7 +233,7 @@ export const mockPolls: Poll[] = [
   {
     id: 'p_move',
     type: 'multiple',
-    title: '办公室搬迁日投票',
+    title: '搬家日期投票',
     desc: '最多选 2 个你方便的日期。',
     creatorId: 'u_yi',
     creatorName: '陈一',
@@ -302,7 +302,7 @@ export const mockComments: Comment[] = [
 ]
 
 /**
- * 「关于下季度团建，你有什么想法？」的 34 条回答（匿名，所以不带 user）
+ * 「关于下次出游，你有什么想法？」的 34 条回答（匿名，所以不带 user）
  *
  * 前 30 条正好落进 84 汇总页的 4 个候选（安吉 10 / 千岛湖 8 / 莫干山 7 / 苏州 5），
  * 后 4 条就是 86 里的未归类 —— 汇总页三块统计相加必须等于 34，
@@ -358,7 +358,7 @@ export const mockAnswers: SurveyAnswer[] = [
     createdAt: now - (2 + i * 3) * 60 * 1000,
     user: undefined
   })),
-  // 「团建预算怎么分配？」12 条，其中前 3 条是我（1024）重复提交的
+  // 「出游预算怎么分配？」12 条，其中前 3 条是我（1024）重复提交的
   {
     id: 'sa3',
     pollId: 'p_survey_team',
@@ -390,7 +390,7 @@ export const mockAnswers: SurveyAnswer[] = [
   {
     id: 'sb8',
     pollId: 'p_survey_team',
-    content: '希望餐饮能多给一点，上次团建吃得太简单。',
+    content: '希望餐饮能多给一点，上次出游吃得太简单。',
     createdAt: now - 5 * HOUR,
     user: { id: 'u_chen', name: '陈一' }
   },
@@ -519,7 +519,7 @@ export const mockMyVotes: Record<string, string[]> = {
 
 /** pollId → 我提交的问卷回答 id（可重复提交时有多条） */
 export const mockMyAnswers: Record<string, string[]> = {
-  // 「团建预算怎么分配？」我重复提交了 3 次，详情页显示「已提交 3 次」
+  // 「出游预算怎么分配？」我重复提交了 3 次，详情页显示「已提交 3 次」
   p_survey_team: ['sa3', 'sa2', 'sa1']
 }
 
@@ -534,7 +534,7 @@ export const mockNotifications: Notification[] = [
     id: 'n1',
     kind: 'deadline',
     title: '投票即将截止',
-    content: '「下季度团建时间投票」还有 3 天截止，记得投票',
+    content: '「下次出游时间投票」还有 3 天截止，记得投票',
     createdAt: now - 10 * 60 * 1000,
     read: false,
     pollId: 'p_team_time'
@@ -552,7 +552,7 @@ export const mockNotifications: Notification[] = [
     id: 'n3',
     kind: 'result',
     title: '投票结果已公布',
-    content: '「办公室绿植品种投票」结果：龟背竹 62%',
+    content: '「阳台绿植品种投票」结果：龟背竹 62%',
     createdAt: now - 3 * HOUR,
     read: false,
     pollId: 'p_plant'
@@ -561,7 +561,7 @@ export const mockNotifications: Notification[] = [
     id: 'n4',
     kind: 'joined',
     title: '有人参与了你的投票',
-    content: '陈一 参与了「周五下午茶菜单」',
+    content: '陈一 参与了「周末下午茶菜单」',
     createdAt: now - 1 * DAY,
     read: true,
     pollId: 'p_tea'
@@ -570,7 +570,7 @@ export const mockNotifications: Notification[] = [
     id: 'n5',
     kind: 'published',
     title: '投票已发布',
-    content: '你的投票「周五下午茶菜单」已成功发布',
+    content: '你的投票「周末下午茶菜单」已成功发布',
     createdAt: now - 3 * DAY,
     read: true,
     pollId: 'p_tea'

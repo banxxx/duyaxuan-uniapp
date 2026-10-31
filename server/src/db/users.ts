@@ -48,7 +48,9 @@ export async function loginOrRegister(
   db: D1Database,
   platform: string,
   openid: string,
-  unionid?: string
+  unionid?: string,
+  /** 只在首次建号时使用；已有账号不会被登录方覆盖昵称 */
+  displayName?: string
 ): Promise<UserRow> {
   const now = Date.now()
   const existing = await findByPlatform(db, platform, openid)
@@ -59,9 +61,10 @@ export async function loginOrRegister(
   }
 
   const id = newId('u')
+  const preferred = typeof displayName === 'string' ? displayName.trim().slice(0, 20) : ''
   const row: UserRow = {
     id,
-    nickname: `用户${id.slice(-4).toUpperCase()}`,
+    nickname: preferred || `用户${id.slice(-4).toUpperCase()}`,
     avatar: null,
     bio: null,
     status: 0,
@@ -185,6 +188,37 @@ export async function deactivate(db: D1Database, userId: string): Promise<void> 
     db.prepare('DELETE FROM wx_push_prefs WHERE user_id = ?').bind(userId),
     db.prepare('DELETE FROM wx_push_log WHERE user_id = ?').bind(userId)
   ])
+}
+
+/**
+ * 给当前账号追加一种登录方式（绑定）。
+ *
+ * 一个 openid 只能属于一个账号：如果它已经绑在别的账号上就直接拒绝，
+ * 否则会出现「两个账号共用同一种登录」——登录时 findByPlatform 只能命中一个，
+ * 另一个人会莫名登录进别人的号。
+ */
+export async function bindPlatform(
+  db: D1Database,
+  userId: string,
+  platform: string,
+  openid: string,
+  unionid?: string
+): Promise<UserProfileOut> {
+  const owner = await findByPlatform(db, platform, openid)
+  if (owner) {
+    // 已绑在当前账号上：幂等，直接返回，别报错吓用户
+    if (owner.id === userId) return getProfile(db, userId)
+    throw new HttpError(409, '该登录方式已绑定到其他账号')
+  }
+
+  await db
+    .prepare(
+      `INSERT INTO user_platforms (user_id, platform, openid, unionid, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .bind(userId, platform, openid, unionid ?? null, Date.now())
+    .run()
+  return getProfile(db, userId)
 }
 
 /** 解绑平台。最后一个绑定时也允许解 —— 用户就是想彻底断开，前端会提示 */

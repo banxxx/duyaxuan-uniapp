@@ -12,6 +12,8 @@ import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { go, reset, ROUTES, switchTab } from '@/utils/router'
 import { cacheDrop } from '@/utils/cache'
+import { downloadQrImage } from '@/utils/qr-cache'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 39 发布成功 / 81 问卷发布成功
@@ -62,7 +64,10 @@ async function submit() {
 async function loadQr(id: string) {
   qrLoading.value = true
   try {
-    qrUrl.value = await fetchPollQrcode(id)
+    const url = await fetchPollQrcode(id)
+    qrUrl.value = url
+    // 顺手存一份到本地：紧接着进分享页时，码图不用再走一遍网络
+    void downloadQrImage(id, url)
   } catch {
     // 没配 AppID / 没开 R2 / 网络问题都退回占位图案，不影响本页
   } finally {
@@ -100,6 +105,7 @@ onShareAppMessage(() =>
 
 <template>
   <view class="published">
+    <AppToast />
     <AppNavBar :back="false" />
 
     <view v-if="loading" class="published__body">
@@ -125,7 +131,7 @@ onShareAppMessage(() =>
 
         <text class="published__title anim anim--fade-up anim--stagger-2">{{ isSurvey ? '问卷已发布' : '投票已发布' }}</text>
         <text class="published__desc anim anim--fade-up anim--stagger-3">
-          分享出去，邀请更多同事{{ isSurvey ? '填写' : '参与' }}吧
+          分享出去，邀请更多朋友{{ isSurvey ? '填写' : '参与' }}吧
         </text>
 
         <!-- 海报位 -->
@@ -197,6 +203,9 @@ export default { name: 'CreateSuccessPage' }
 .published {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -219,13 +228,13 @@ export default { name: 'CreateSuccessPage' }
     gap: 20px;
   }
   &__title {
-    font-size: 26px;
+    font-size: $fs-26;
     font-weight: 700;
     color: $ink;
   }
 
   &__desc {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
   }
 }
@@ -233,7 +242,7 @@ export default { name: 'CreateSuccessPage' }
 .mark {
   width: 96px;
   height: 96px;
-  border-radius: 48px;
+  border-radius: $r-circle;
   background: $accent-soft;
   display: flex;
   align-items: center;
@@ -243,7 +252,7 @@ export default { name: 'CreateSuccessPage' }
 .poster {
   width: 100%;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -267,7 +276,7 @@ export default { name: 'CreateSuccessPage' }
   }
 
   &__thumb-title {
-    font-size: 7px;
+    font-size: $fs-7;
     font-weight: 600;
     color: $white;
     line-height: 1.3;
@@ -333,7 +342,7 @@ export default { name: 'CreateSuccessPage' }
   }
 
   &__thumb-scan {
-    font-size: 6px;
+    font-size: $fs-6;
     color: $muted;
   }
 
@@ -344,7 +353,7 @@ export default { name: 'CreateSuccessPage' }
   }
 
   &__thumb-by {
-    font-size: 6px;
+    font-size: $fs-6;
     color: $muted;
   }
 
@@ -357,13 +366,13 @@ export default { name: 'CreateSuccessPage' }
   }
 
   &__info-title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
 
   &__info-desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.45;
   }
@@ -384,7 +393,7 @@ export default { name: 'CreateSuccessPage' }
   }
 
   &__open-text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $accent;
   }
@@ -398,7 +407,7 @@ export default { name: 'CreateSuccessPage' }
 
   &__primary {
     height: 52px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $accent;
     display: flex;
     align-items: center;
@@ -410,14 +419,14 @@ export default { name: 'CreateSuccessPage' }
   }
 
   &__primary-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $white;
   }
 
   &__secondary {
     height: 52px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -430,7 +439,7 @@ export default { name: 'CreateSuccessPage' }
   }
 
   &__secondary-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
   }

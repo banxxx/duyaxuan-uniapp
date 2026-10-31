@@ -18,6 +18,8 @@ import { charCount, formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 85 汇总 · 编辑选项
@@ -88,9 +90,9 @@ async function removeAnswer(id: string) {
     await unassignSummaryAnswer(surveyId.value, optionId.value, id)
     answers.value = answers.value.filter((a) => a.id !== id)
     cacheDrop(cacheKey.summaryOption(surveyId.value, optionId.value))
-    uni.showToast({ title: '已移出，可在未归类里再处理', icon: 'none' })
+    toast.success('已移出，可在未归类里再处理')
   } catch {
-    uni.showToast({ title: '移出失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   }
 }
 
@@ -105,16 +107,16 @@ async function doDelete() {
   try {
     await deleteSummaryOption(surveyId.value, optionId.value)
     cacheDrop(cacheKey.summaryOption(surveyId.value, optionId.value))
-    uni.showToast({ title: '已删除', icon: 'none' })
+    toast.success('已删除')
     setTimeout(back, 400)
   } catch {
-    uni.showToast({ title: '删除失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   }
 }
 
 async function save() {
   if (!title.value.trim()) {
-    uni.showToast({ title: '选项标题不能为空', icon: 'none' })
+    toast.show('选项标题不能为空')
     return
   }
   if (saving.value) return
@@ -125,10 +127,10 @@ async function save() {
       desc: desc.value.trim()
     })
     cacheDrop(cacheKey.summaryOption(surveyId.value, optionId.value))
-    uni.showToast({ title: '已保存', icon: 'none' })
+    toast.success('已保存')
     setTimeout(back, 400)
   } catch {
-    uni.showToast({ title: '保存失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     saving.value = false
   }
@@ -141,6 +143,7 @@ function goBack() {
 
 <template>
   <view class="option">
+    <AppToast />
     <AppNavBar title="编辑选项">
       <template #right>
         <text class="option__delete" @tap="onDelete">删除</text>
@@ -272,13 +275,16 @@ export default { name: 'SummaryOptionPage' }
 .option {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   /* 85 页头右侧是 14 号灰字「删除」，不是红色 */
   &__delete {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $muted;
   }
 
@@ -306,7 +312,7 @@ export default { name: 'SummaryOptionPage' }
 
   &__note-text {
     flex: 1;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.5;
   }
@@ -321,7 +327,7 @@ export default { name: 'SummaryOptionPage' }
 
   &__action {
     flex: 1;
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
   }
 }
@@ -332,7 +338,7 @@ export default { name: 'SummaryOptionPage' }
   gap: 8px;
 
   &__label {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
@@ -340,7 +346,7 @@ export default { name: 'SummaryOptionPage' }
   /* 85：白卡 r14 pad14，聚焦态 2px 紫描边 */
   &__input {
     padding: 14px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -354,7 +360,7 @@ export default { name: 'SummaryOptionPage' }
 
   &__input-inner {
     flex: 1;
-    font-size: 15px;
+    font-size: $fs-15;
     color: $ink;
   }
 
@@ -371,13 +377,13 @@ export default { name: 'SummaryOptionPage' }
 
   &__hint {
     flex: 1;
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     line-height: 1.45;
   }
 
   &__count {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     flex-shrink: 0;
   }
@@ -385,7 +391,7 @@ export default { name: 'SummaryOptionPage' }
 
 /* 归类的回答：白卡 r16，内部行内边距 [12,16] */
 .answers {
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -399,21 +405,21 @@ export default { name: 'SummaryOptionPage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
 
   &__badge {
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $accent-soft;
     display: flex;
     align-items: center;
   }
 
   &__badge-text {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $accent-ink;
   }
 
@@ -432,7 +438,7 @@ export default { name: 'SummaryOptionPage' }
   }
 
   &__more-text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $accent;
   }
@@ -456,7 +462,7 @@ export default { name: 'SummaryOptionPage' }
   }
 
   &__idx-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $muted;
   }
@@ -477,7 +483,7 @@ export default { name: 'SummaryOptionPage' }
   }
 
   &__time {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
@@ -488,12 +494,12 @@ export default { name: 'SummaryOptionPage' }
   }
 
   &__remove-text {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__content {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $ink;
     line-height: 1.5;
   }

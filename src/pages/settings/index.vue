@@ -11,6 +11,8 @@ import { fetchDevAccounts } from '@/api/auth'
 import { useSettingsStore } from '@/stores/settings'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go, reset } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 43 设置（含 49 退出登录确认、56 清除缓存确认）
@@ -28,7 +30,7 @@ const version = '1.2.0'
 
 const name = computed(() => user.profile?.nickname ?? '未登录')
 
-/** 设计稿这里写的是「ID 1024 · 产品部」，但数据模型里没有部门字段，
+/** 设计稿这里还带了一行副标题，但数据模型里没有对应字段，
  *  换成和 40 一致的「加入 N 天」，两页对得上，也不用凭空造字段。
  *  用户 id 是内部标识，对用户没有意义，不往界面上放。 */
 const meta = computed(() => {
@@ -62,7 +64,7 @@ async function openDevAccounts() {
   if (!import.meta.env.DEV) return
   const accounts = await fetchDevAccounts().catch(() => [])
   if (!accounts.length) {
-    uni.showToast({ title: '没有可切换的测试账号', icon: 'none' })
+    toast.show('没有可切换的测试账号')
     return
   }
   devAccounts.value = accounts
@@ -85,6 +87,24 @@ function open(url: string) {
   go(url)
 }
 
+/**
+ * 打开《小程序用户隐私保护指引》
+ *
+ * 这份文档是在微信后台配置的，只能通过 wx.openPrivacyContract 打开；
+ * H5 / 抖音没有这个接口，后台没配置时调用也会失败 —— 两种情况都退回
+ * 站内自己写的隐私政策，不让用户点了没反应。
+ */
+function openPrivacy() {
+  const wxApi = (globalThis as any).wx
+  if (typeof wxApi?.openPrivacyContract === 'function') {
+    wxApi.openPrivacyContract({
+      fail: () => go(ROUTES.settingsDoc, { type: 'privacy' })
+    })
+    return
+  }
+  go(ROUTES.settingsDoc, { type: 'privacy' })
+}
+
 function confirmLogout() {
   user.logout()
   sheet.value = null
@@ -94,10 +114,7 @@ function confirmLogout() {
 function confirmClear() {
   const cleared = settings.clearCache()
   sheet.value = null
-  uni.showToast({
-    title: cleared === '0 KB' ? '没有可清理的缓存' : `已清除 ${cleared}`,
-    icon: 'none'
-  })
+  toast.show(cleared === '0 KB' ? '没有可清理的缓存' : `已清除 ${cleared}`)
 }
 
 /** 缓存为 0 时换一句提示，避免出现「将清除 0 KB」这种别扭文案 */
@@ -110,6 +127,7 @@ const cacheDesc = computed(() =>
 
 <template>
   <view class="settings">
+    <AppToast />
     <AppNavBar title="设置" />
 
     <scroll-view class="settings__scroll" scroll-y>
@@ -163,6 +181,8 @@ const cacheDesc = computed(() =>
             <MenuRow title="帮助与反馈" icon="info" @tap="open('/pages/support/index')" />
             <view class="group__sep" />
             <MenuRow title="用户协议" icon="file-text" @tap="open('/pages/settings/doc?type=terms')" />
+            <view class="group__sep" />
+            <MenuRow title="隐私保护指引" icon="shield-check" @tap="openPrivacy" />
             <view class="group__sep" />
             <!-- 长按「关于我们」切换测试账号：只在开发构建里生效，线上没有这个后门 -->
             <view @longpress="openDevAccounts">
@@ -237,6 +257,9 @@ export default { name: 'SettingsPage' }
 .settings {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -257,7 +280,7 @@ export default { name: 'SettingsPage' }
 
 .profile {
   padding: 16px;
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -273,13 +296,13 @@ export default { name: 'SettingsPage' }
   }
 
   &__name {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 700;
     color: $ink;
   }
 
   &__meta {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -290,13 +313,13 @@ export default { name: 'SettingsPage' }
   gap: 18px;
 
   &__head {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $faint;
   }
 
   &__card {
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $surface;
     border: 1px solid $line;
     overflow: hidden;
@@ -310,7 +333,7 @@ export default { name: 'SettingsPage' }
 
 .logout {
   height: 48px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -322,7 +345,7 @@ export default { name: 'SettingsPage' }
   }
 
   &__text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $danger;
   }

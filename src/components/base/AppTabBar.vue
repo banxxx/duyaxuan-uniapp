@@ -93,7 +93,7 @@ export default { name: 'AppTabBar' }
   }
 
   &__label {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 500;
     color: $faint;
     line-height: 1;
@@ -109,7 +109,7 @@ export default { name: 'AppTabBar' }
   &__create {
     width: 46px;
     height: 46px;
-    border-radius: 23px;
+    border-radius: $r-circle;
     background: $accent;
     display: flex;
     align-items: center;

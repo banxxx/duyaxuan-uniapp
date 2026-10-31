@@ -3,15 +3,25 @@
 /* ============================================================
  * 设计 token —— 唯一来源是 duyaxuan.pen 的「设计规范」区块
  * 改动这里会同时影响所有页面，页面里不要再写死色值
+ *
+ * 文字灰阶按 WCAG AA（正文 4.5:1）校准，基准背景 $bg / $surface：
+ *   $ink      #09090B  ≈ 19:1   主文字、主标题
+ *   $muted    #52525B  ≈ 7.4:1  次要文字、副标题
+ *   $faint    #71717A  ≈ 4.6:1  三级文字、占位符、时间
+ *   $disabled #A1A1AA           仅禁用态（WCAG 不要求禁用控件达标）
+ * 原 $faint #A1A1AA 在页面底色上只有 2.5:1，小字几乎看不清，已整体上调。
  * ============================================================ */
 
 /* 中性色 */
 $ink: #09090b; // 主文字、主标题
-$muted: #71717a; // 次要文字、副标题
-$faint: #a1a1aa; // 占位符、时间、弱提示
+$muted: #52525b; // 次要文字、副标题
+$faint: #71717a; // 三级文字、占位符、时间、弱提示
+$disabled: #a1a1aa; // 禁用态文字/图标，只用于「不可操作」，不用于信息
 $line: #e4e4e7; // 描边、分割线
 $subtle: #f4f4f5; // 次级底色、禁用开关轨道
-$track: #d4d4d8; // 进度轨道、禁用态填充
+$track: #d4d4d8; // 开关未开启的轨道
+/* 进度条填充：$track 在 $line / $bg 上只有 1.2~1.5:1，条形几乎看不见，单独加深一档 */
+$track-strong: #a1a1aa;
 $bg: #fafafa; // 页面底色
 $surface: #ffffff; // 卡片、弹层
 $white: #ffffff; // 彩色按钮/图标上的白字
@@ -25,30 +35,64 @@ $accent-200: #c7d2fe; // 深色条上的浅紫文字（如撤销）
 /* 语义色 */
 $success: #047857; // 设计稿 success = #047857（规范卡上的文字写的是 #10B981，以色板与变量为准）
 $success-soft: #d1fae5;
-$warning: #d97706;
+/* 警示文字：原 #D97706 在 $warning-soft 上只有 2.9:1，加深到 4.5:1 */
+$warning: #b45309;
 $warning-soft: #fef3c7;
 $warning-line: #fde68a; // 紧急卡片的描边（比 $warning 更浅，用于边界而非文字）
 $danger: #dc2626;
 $danger-soft: #fee2e2; // 危险提示图标底色（53）
 $danger-mist: #fef2f2; // 危险提示卡底色（53）
 
-/* 字号（设计稿 px，构建时统一乘 1.923 转 rpx） */
-$fs-page-title: 28px; // 页面标题 28 / bold
-$fs-card-title: 16px; // 卡片标题 16 / 600
-$fs-body: 13px; // 正文 13 / 400
-$fs-body-strong: 13px; // 正文强调 13 / 500–600
-$fs-caption: 11px; // 辅助说明 11 / 400
-$fs-micro: 10px; // 徽标、时间 10 / 400–600
+/* ============================================================
+ * 字号阶梯（设计稿 px，构建时统一乘 1.923 转 rpx）
+ *
+ * 按实际用到的尺寸列全，页面里写 $fs-13 而不是 13px：
+ * 以后要整体放大正文，只改这里。
+ * ============================================================ */
+$fs-32: 32px; // 数据页大数字
+$fs-30: 30px; // 结果页大数字
+$fs-28: 28px; // 页面标题
+$fs-26: 26px; // 详情 / 填写页标题
+$fs-24: 24px; // 昵称、选择器
+$fs-22: 22px; // 邀请码
+$fs-20: 20px; // 海报标题、空态标题
+$fs-19: 19px; // 统计数值
+$fs-18: 18px; // 卡片大标题、弹层标题
+$fs-17: 17px; // 区块标题
+$fs-16: 16px; // 卡片标题
+$fs-15: 15px; // 主按钮
+$fs-14: 14px; // 强调正文、导航标题
+$fs-13: 13px; // 正文
+$fs-12: 12px; // 小字正文
+$fs-11: 11px; // 辅助说明
+$fs-10: 10px; // 徽标、时间、图表刻度
+$fs-7: 7px; // 缩略海报（等比缩小，不可读属预期）
+$fs-6: 6px; // 缩略海报（同上）
+
+/* 语义别名：保留旧名字，新代码直接用上面的阶梯 */
+$fs-page-title: $fs-28; // 页面标题 28 / bold
+$fs-card-title: $fs-16; // 卡片标题 16 / 600
+$fs-body: $fs-13; // 正文 13 / 400
+$fs-body-strong: $fs-13; // 正文强调 13 / 500–600
+$fs-caption: $fs-11; // 辅助说明 11 / 400
+$fs-micro: $fs-10; // 徽标、时间 10 / 400–600
 
 $font-sans: 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 $font-num: 'Inter', 'DIN Alternate', $font-sans;
 
-/* 圆角 */
+/* ============================================================
+ * 圆角
+ * ============================================================ */
+$r-circle: 50%; // 正圆（替代「宽高一半」的魔法数字）
+$r-full: 999px; // 胶囊：开关、筛选 chip、进度条
 $r-card: 22px; // 大卡片
-$r-input: 14px; // 卡片 / 输入框
-$r-button: 16px; // 按钮
-$r-chip: 8px; // 胶囊 / 标签
 $r-sheet: 20px; // 底部弹层上沿
+$r-button: 16px; // 按钮
+$r-input: 14px; // 卡片 / 输入框（设计稿里最常用的一档）
+$r-md: 12px; // 内嵌卡片、提示条
+$r-sm: 10px; // 小卡片
+$r-chip: 8px; // 标签
+$r-xs: 6px; // 徽标、勾选框
 
 /* 间距 */
 $gutter: 20px; // 页面左右边距
@@ -75,7 +119,7 @@ $uni-text-color: $ink;
 $uni-text-color-inverse: $white;
 $uni-text-color-grey: $muted;
 $uni-text-color-placeholder: $faint;
-$uni-text-color-disable: $faint;
+$uni-text-color-disable: $disabled;
 $uni-bg-color: $surface;
 $uni-bg-color-grey: $bg;
 $uni-bg-color-hover: $subtle;

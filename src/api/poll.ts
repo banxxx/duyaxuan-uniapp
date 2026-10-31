@@ -9,7 +9,8 @@ import type {
   VoterRecord
 } from '@/types/api'
 import { http } from '@/utils/request'
-import { resolveFileUrl } from '@/utils/api-base'
+import { API_BASE, resolveFileUrl } from '@/utils/api-base'
+import { currentToken } from '@/utils/auth-token'
 import { useMock } from '@/utils/env'
 import {
   mockPolls,
@@ -226,11 +227,54 @@ export async function fetchMyVote(pollId: string): Promise<string[]> {
   return http.get<string[]>(`/polls/${pollId}/my-vote`)
 }
 
+/**
+ * 上传图文投票的选项配图，返回服务端相对地址（/files/options/...）。
+ *
+ * 和头像上传一样走 uni.uploadFile：JSON 请求塞不下 multipart，
+ * 而且 uploadFile 不会帮我们解包 { code, data, msg }，得自己来。
+ */
+export function uploadPollImage(filePath: string): Promise<string> {
+  // mock 模式没有 R2，直接把本地临时路径当结果返回，页面预览照样能看到图
+  if (USE_MOCK) {
+    return new Promise((resolve) => setTimeout(() => resolve(filePath), 260))
+  }
+
+  return new Promise((resolve, reject) => {
+    uni.uploadFile({
+      url: `${API_BASE}/polls/media`,
+      filePath,
+      name: 'file',
+      header: { Authorization: `Bearer ${currentToken()}` },
+      success: (res) => {
+        try {
+          const body = JSON.parse(res.data) as { code: number; data?: { url: string }; msg?: string }
+          if (res.statusCode === 401) {
+            reject(new Error('登录已失效，请重新登录'))
+            return
+          }
+          if (body.code !== 0 || !body.data?.url) {
+            reject(new Error(body.msg || '上传失败'))
+            return
+          }
+          resolve(body.data.url)
+        } catch {
+          reject(new Error('上传失败，请重试'))
+        }
+      },
+      fail: () => reject(new Error('上传失败，请重试'))
+    })
+  })
+}
+
 /** 创建投票 / 问卷：body 直接就是 draft 的形状，服务端自己拆表 */
 export async function createPoll(body: Record<string, any>): Promise<Poll> {
   if (USE_MOCK) {
     await delay(320)
-    const draftOptions = (body.options ?? []) as Array<{ title: string; desc?: string }>
+    const draftOptions = (body.options ?? []) as Array<{
+      title: string
+      desc?: string
+      images?: string[]
+    }>
     const poll: Poll = {
       id: `p_${Date.now()}`,
       type: body.type,
@@ -247,6 +291,7 @@ export async function createPoll(body: Record<string, any>): Promise<Poll> {
               id: `o${i + 1}`,
               title: o.title,
               desc: o.desc,
+              images: o.images?.length ? [...o.images] : undefined,
               votes: 0
             })),
       voterCount: 0,
@@ -276,6 +321,7 @@ export async function updatePoll(id: string, body: Record<string, any>): Promise
         id: o.id ?? `o_new_${i}`,
         title: o.title,
         desc: o.desc,
+        images: o.images?.length ? [...o.images] : undefined,
         votes: o.votes ?? 0
       }))
     }
@@ -294,12 +340,16 @@ export async function deletePoll(id: string): Promise<void> {
   return http.del<void>(`/polls/${id}`)
 }
 
+/**
+ * 撤销删除。失败时「我发起的」页要给「已超出可撤销时间」这种更具体的文案，
+ * 所以这里关掉请求层的通用提示，由页面统一说明。
+ */
 export async function restorePoll(id: string): Promise<void> {
   if (USE_MOCK) {
     await delay(200)
     return
   }
-  return http.post<void>(`/polls/${id}/restore`)
+  return http.post<void>(`/polls/${id}/restore`, undefined, { toast: false })
 }
 
 export async function fetchComments(

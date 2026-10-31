@@ -46,6 +46,11 @@ export interface PollOption {
   id: string
   title: string
   desc?: string
+  /**
+   * 图文投票的配图，最多 3 张，第一张是封面。
+   * 存的是 `/files/options/...` 相对地址，渲染前用 resolveFileUrl 补全域名。
+   */
+  images?: string[]
   votes: number
   /** 汇总创建时标记：来自问卷的哪几条回答 */
   sourceAnswerIds?: string[]

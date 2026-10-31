@@ -131,7 +131,7 @@ function comment(id, pollId, userId, content, likeCount, at) {
   )
 }
 
-/* --- 1. 团建地点（进行中，多人在投） --- */
+/* --- 1. 出游地点（进行中，多人在投） --- */
 {
   const opts = ['安吉竹海', '千岛湖骑行', '莫干山民宿', '本地聚餐']
   const ids = opts.map((_, i) => `seed_o_trip_${i + 1}`)
@@ -152,7 +152,7 @@ function comment(id, pollId, userId, content, likeCount, at) {
     id: 'seed_p_trip',
     creator: 'seed_u_alice',
     type: 'single',
-    title: '下季度团建去哪里',
+    title: '下次出游去哪里',
     desc: '四个选项，选一个最想去的，周末两天一夜',
     createdAt: ago(3 * DAY),
     endAt: later(4 * DAY),
@@ -167,7 +167,7 @@ function comment(id, pollId, userId, content, likeCount, at) {
   comment('seed_c_trip_3', 'seed_p_trip', 'seed_u_lin', '莫干山去过一次，民宿条件确实不错，晚上还能看星星。', 5, ago(20 * HOUR))
 }
 
-/* --- 2. 部门之星（多选，进行中） --- */
+/* --- 2. 月度之星（多选，进行中） --- */
 {
   const names = ['周子墨', '陈一', '林夏']
   const ids = names.map((_, i) => `seed_o_star_${i + 1}`)
@@ -182,7 +182,7 @@ function comment(id, pollId, userId, content, likeCount, at) {
     type: 'multiple',
     maxChoice: 2,
     allowEdit: 1,
-    title: '部门月度之星评选',
+    title: '社区月度之星评选',
     desc: '可以选两位，投票截止后公布结果',
     createdAt: ago(2 * DAY),
     endAt: later(5 * DAY),
@@ -204,20 +204,20 @@ function comment(id, pollId, userId, content, likeCount, at) {
     id: 'seed_p_lunch',
     creator: 'seed_u_zhou',
     type: 'single',
-    title: '本周午餐怎么解决',
-    desc: '楼下食堂还是点外卖，中午 12 点截止',
+    title: '今天午餐怎么解决',
+    desc: '附近小店还是点外卖，中午 12 点截止',
     createdAt: ago(9 * HOUR),
     endAt: later(2 * DAY),
     voterCount: plan.length,
     options: [
-      { id: ids[0], title: '楼下食堂', votes: counts[0] },
-      { id: ids[1], title: '一起点外卖', votes: counts[1] }
+      { id: ids[0], title: '附近小店', votes: counts[0] },
+      { id: ids[1], title: '点外卖', votes: counts[1] }
     ]
   })
   for (const p of plan) vote('seed_p_lunch', p.userId, p.optionIds, p.at)
 }
 
-/* --- 4. 年会节目（已结束，发起人视角能看结果） --- */
+/* --- 4. 聚会节目（已结束，发起人视角能看结果） --- */
 {
   const names = ['唱歌', '小品', '不表演']
   const ids = names.map((_, i) => `seed_o_gala_${i + 1}`)
@@ -228,7 +228,7 @@ function comment(id, pollId, userId, content, likeCount, at) {
     creator: 'seed_u_alice',
     type: 'single',
     status: 1,
-    title: '年会节目征集',
+    title: '聚会节目征集',
     desc: '已经截止，结果可以查看',
     createdAt: ago(6 * DAY),
     endAt: ago(2 * DAY),
@@ -252,8 +252,8 @@ function comment(id, pollId, userId, content, likeCount, at) {
     id: 'seed_p_tea',
     creator: 'seed_u_zhou',
     type: 'single',
-    title: '周五下午茶喝什么',
-    desc: '只发给受邀的同事，凭邀请码参与',
+    title: '周末下午茶喝什么',
+    desc: '只发给受邀的朋友，凭邀请码参与',
     createdAt: ago(6 * HOUR),
     endAt: later(2 * DAY),
     voterCount: plan.length,
@@ -269,7 +269,7 @@ function comment(id, pollId, userId, content, likeCount, at) {
   }
 }
 
-/* --- 5. 团建建议（问卷，已截止，可汇总） --- */
+/* --- 5. 出游建议（问卷，已截止，可汇总） --- */
 {
   // 现在的自动归并只按「内容完全相同」分组，所以这里故意让选项名重复出现，
   // 才能演示出 84 的候选选项（3 / 2 / 2）和 1 条未归类。
@@ -288,7 +288,7 @@ function comment(id, pollId, userId, content, likeCount, at) {
     creator: 'seed_u_alice',
     type: 'survey',
     status: 1,
-    title: '关于下季度团建的建议',
+    title: '关于下次出游的建议',
     desc: '随便说说想去哪、想玩什么，截止后我会整理成投票',
     createdAt: ago(8 * DAY),
     endAt: ago(1 * DAY),
@@ -308,7 +308,7 @@ function comment(id, pollId, userId, content, likeCount, at) {
     id: 'seed_s_budget',
     creator: 'seed_u_zhou',
     type: 'survey',
-    title: '团建预算怎么分配？',
+    title: '出游预算怎么分配？',
     desc: '总预算 2 万，三个问题：交通、住宿、吃喝',
     createdAt: ago(2 * DAY),
     endAt: later(3 * DAY),
@@ -327,9 +327,9 @@ function notification(id, userId, kind, title, content, pollId, createdAt, read)
   )
 }
 
-notification('seed_n_1', 'seed_u_alice', 'joined', '有人参与了你的投票', '周子墨 在「下季度团建去哪里」投了一票', 'seed_p_trip', ago(2 * DAY), false)
-notification('seed_n_2', 'seed_u_alice', 'comment', '新的评论', '陈一 评论了「下季度团建去哪里」：千岛湖骑行强度会不会太大？', 'seed_p_trip', ago(1 * DAY), false)
-notification('seed_n_3', 'seed_u_alice', 'joined', '收到新的回答', '用户005 提交了「关于下季度团建的建议」的回答：千岛湖骑行不错…', 'seed_s_team', ago(4 * DAY), true)
+notification('seed_n_1', 'seed_u_alice', 'joined', '有人参与了你的投票', '周子墨 在「下次出游去哪里」投了一票', 'seed_p_trip', ago(2 * DAY), false)
+notification('seed_n_2', 'seed_u_alice', 'comment', '新的评论', '陈一 评论了「下次出游去哪里」：千岛湖骑行强度会不会太大？', 'seed_p_trip', ago(1 * DAY), false)
+notification('seed_n_3', 'seed_u_alice', 'joined', '收到新的回答', '用户005 提交了「关于下次出游的建议」的回答：千岛湖骑行不错…', 'seed_s_team', ago(4 * DAY), true)
 
 // 给林小满留一条未到期的提醒：种子里的已结束投票会在第一次拉通知列表时补发
 insert('poll_reminders', ['poll_id', 'user_id', 'created_at'], ['seed_p_gala', 'seed_u_alice', ago(3 * DAY)])

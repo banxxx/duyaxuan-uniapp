@@ -16,6 +16,8 @@ import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
 import { cacheDrop, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 91 编辑投票 · 规则 / 94 编辑问卷 · 规则
@@ -248,10 +250,10 @@ async function save() {
     await updatePoll(poll.value.id, body)
     // 规则变了（截止时间、匿名、结果可见性），详情/结果快照都要重拉
     cacheDrop(cacheKey.pollAll(poll.value.id))
-    uni.showToast({ title: '已保存', icon: 'none' })
+    toast.success('已保存')
     setTimeout(back, 600)
   } catch {
-    uni.showToast({ title: '保存失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     saving.value = false
   }
@@ -263,7 +265,7 @@ function close() {
 
 /** 已锁定的规则项点一下给出解释，而不是静默无反应 */
 function lockedHint() {
-  uni.showToast({ title: lockedText.value, icon: 'none' })
+  toast.show(lockedText.value)
 }
 
 /* ---------------- 截止时间 ---------------- */
@@ -313,10 +315,7 @@ function pickDeadline(p: { key?: number }) {
 function applyCustomDeadline(ts: number) {
   if (!poll.value) return
   if (ts <= deadlineMin.value) {
-    uni.showToast({
-      title: hasResponses.value ? '已有参与记录，截止时间只能延后' : '请选择未来的时间',
-      icon: 'none'
-    })
+    toast.show(hasResponses.value ? '已有参与记录，截止时间只能延后' : '请选择未来的时间')
     return
   }
   poll.value.rules.endAt = ts
@@ -326,6 +325,7 @@ function applyCustomDeadline(ts: number) {
 
 <template>
   <view class="edit-rules">
+    <AppToast />
     <AppNavBar :back="false">
       <template #left>
         <text class="edit-rules__close" @tap="close">关闭</text>
@@ -357,7 +357,7 @@ function applyCustomDeadline(ts: number) {
     <scroll-view v-else-if="poll" class="edit-rules__scroll" scroll-y>
       <view class="edit-rules__inner">
         <view v-if="lockSummary" class="notice">
-          <AppIcon name="triangle-alert" :size="16" color="#D97706" />
+          <AppIcon name="triangle-alert" :size="16" color="#B45309" />
           <view class="notice__text">
             <text class="notice__title">
               {{
@@ -719,17 +719,20 @@ export default { name: 'EditRulesPage' }
 .edit-rules {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   &__close {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $muted;
   }
 
   &__nav-title {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 600;
     color: $ink;
   }
@@ -737,14 +740,14 @@ export default { name: 'EditRulesPage' }
   /* 已发布标记：浅紫胶囊，11/600 */
   &__status {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $accent-soft;
     display: flex;
     align-items: center;
   }
 
   &__status-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent;
   }
@@ -782,7 +785,7 @@ export default { name: 'EditRulesPage' }
 /* 提示条：r12 pad[12,14] gap10，图标与两行文案并排 */
 .notice {
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $warning-soft;
   display: flex;
   align-items: flex-start;
@@ -797,13 +800,13 @@ export default { name: 'EditRulesPage' }
   }
 
   &__title {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $warning;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
     line-height: 1.5;
   }
@@ -815,13 +818,13 @@ export default { name: 'EditRulesPage' }
   gap: 6px;
 
   &__title {
-    font-size: 20px;
+    font-size: $fs-20;
     font-weight: 700;
     color: $ink;
   }
 
   &__sub {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 }
@@ -829,7 +832,7 @@ export default { name: 'EditRulesPage' }
 .card {
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
   overflow: hidden;
 }
 
@@ -853,7 +856,7 @@ export default { name: 'EditRulesPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
 
     &--on {
@@ -864,12 +867,12 @@ export default { name: 'EditRulesPage' }
 }
 
 .locked-value {
-  font-size: 12px;
+  font-size: $fs-12;
   color: $muted;
   flex-shrink: 0;
 
   &--faint {
-    color: $faint;
+    color: $disabled;
   }
 }
 
@@ -878,7 +881,7 @@ export default { name: 'EditRulesPage' }
   display: flex;
   align-items: center;
   height: 30px;
-  border-radius: 8px;
+  border-radius: $r-chip;
   background: $surface;
   border: 1px solid $line;
   flex-shrink: 0;
@@ -902,7 +905,7 @@ export default { name: 'EditRulesPage' }
   &__value {
     width: 32px;
     text-align: center;
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
     font-family: $font-num;
@@ -921,13 +924,13 @@ export default { name: 'EditRulesPage' }
   }
 
   &__title {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
 
   &__hint {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
@@ -940,7 +943,7 @@ export default { name: 'EditRulesPage' }
   &__value {
     height: 52px;
     padding: 0 14px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -955,20 +958,20 @@ export default { name: 'EditRulesPage' }
 
   &__value-text {
     flex: 1;
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__value--off &__value-text {
-    color: $faint;
+    color: $disabled;
   }
 }
 
 .chip {
   flex: 1;
   padding: 10px 0;
-  border-radius: 10px;
+  border-radius: $r-sm;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -986,7 +989,7 @@ export default { name: 'EditRulesPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
 

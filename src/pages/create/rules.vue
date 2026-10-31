@@ -14,6 +14,8 @@ import { useDraftStore } from '@/stores/draft'
 import { formatDateTime } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back, exitFlow, go, ROUTES } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 30 创建 · ③ 规则 · 单选 / 31 · 多选 / 63 · 问卷（含 32/34/35/36/37/38 六个弹层）
@@ -181,7 +183,7 @@ function applyCustomDeadline(ts: number) {
   // 看起来就是「点确定没反应」。
   if (ts <= now) {
     ts = now + 5 * 60 * 1000
-    uni.showToast({ title: '已顺延到最近的可选时间', icon: 'none' })
+    toast.show('已顺延到最近的可选时间')
   }
   deadlinePreset.value = 'custom'
   draft.patchRules({ endAt: ts })
@@ -217,6 +219,7 @@ function publish() {
 
 <template>
   <view class="rules">
+    <AppToast />
     <AppNavBar :back="false">
       <template #left>
         <text class="rules__cancel" @tap="cancel">取消</text>
@@ -561,7 +564,7 @@ function publish() {
             <input
               v-model="profileTitle"
               maxlength="12"
-              placeholder="例如：部门、工号"
+              placeholder="例如：姓名、联系方式"
               placeholder-class="form__ph"
             />
           </view>
@@ -610,31 +613,34 @@ export default { name: 'CreateRulesPage' }
    * 导航栏、步骤条、操作栏三块才固定得住。
    */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   &__cancel {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $muted;
   }
 
   &__nav-title {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 600;
     color: $ink;
   }
 
   &__draft {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $accent-soft;
     display: flex;
     align-items: center;
   }
 
   &__draft-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent;
   }
@@ -676,7 +682,7 @@ export default { name: 'CreateRulesPage' }
   &__prev {
     flex: 1;
     height: 52px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -690,7 +696,7 @@ export default { name: 'CreateRulesPage' }
   }
 
   &__prev-text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
@@ -698,7 +704,7 @@ export default { name: 'CreateRulesPage' }
   &__next {
     flex: 1;
     height: 52px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $accent;
     display: flex;
     align-items: center;
@@ -711,7 +717,7 @@ export default { name: 'CreateRulesPage' }
   }
 
   &__next-text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $white;
   }
@@ -723,24 +729,24 @@ export default { name: 'CreateRulesPage' }
   gap: 6px;
 
   &__title {
-    font-size: 20px;
+    font-size: $fs-20;
     font-weight: 700;
     color: $ink;
   }
 
   &__sub {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 }
 
 .from-survey {
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $accent-soft;
 
   &__text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent-ink;
     line-height: 1.55;
   }
@@ -749,7 +755,7 @@ export default { name: 'CreateRulesPage' }
 .card {
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
   overflow: hidden;
 }
 
@@ -775,7 +781,7 @@ export default { name: 'CreateRulesPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
     transition: color $dur-fast $ease-both;
 
@@ -791,7 +797,7 @@ export default { name: 'CreateRulesPage' }
   display: flex;
   align-items: center;
   height: 30px;
-  border-radius: 8px;
+  border-radius: $r-chip;
   background: $surface;
   border: 1px solid $line;
   flex-shrink: 0;
@@ -817,7 +823,7 @@ export default { name: 'CreateRulesPage' }
   &__value {
     width: 32px;
     text-align: center;
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
     font-family: $font-num;
@@ -837,13 +843,13 @@ export default { name: 'CreateRulesPage' }
   }
 
   &__title {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
 
   &__req {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
@@ -855,7 +861,7 @@ export default { name: 'CreateRulesPage' }
   &__opt {
     flex: 1;
     padding: 10px 0;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -872,7 +878,7 @@ export default { name: 'CreateRulesPage' }
   }
 
   &__opt-text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
     transition: color $dur-fast $ease-both;
@@ -886,7 +892,7 @@ export default { name: 'CreateRulesPage' }
   &__value {
     height: 52px;
     padding: 0 14px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -901,7 +907,7 @@ export default { name: 'CreateRulesPage' }
 
   &__value-text {
     flex: 1;
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
@@ -915,7 +921,7 @@ export default { name: 'CreateRulesPage' }
 
   &__item {
     padding: 14px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $bg;
     border: 1px solid $line;
     display: flex;
@@ -940,13 +946,13 @@ export default { name: 'CreateRulesPage' }
   }
 
   &__label {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.4;
   }
@@ -954,7 +960,7 @@ export default { name: 'CreateRulesPage' }
   &__check {
     width: 20px;
     height: 20px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $accent;
     display: flex;
     align-items: center;
@@ -977,7 +983,7 @@ export default { name: 'CreateRulesPage' }
   }
 
   &__label {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
@@ -985,11 +991,11 @@ export default { name: 'CreateRulesPage' }
   &__input {
     height: 46px;
     padding: 0 14px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $subtle;
     display: flex;
     align-items: center;
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
 
     &--picker {
@@ -998,12 +1004,12 @@ export default { name: 'CreateRulesPage' }
   }
 
   &__picker-text {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
   }
 
   &__hint {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 

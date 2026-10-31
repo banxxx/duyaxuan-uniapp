@@ -2,14 +2,20 @@
  * 统一请求层
  *
  * 职责：拼 baseURL、注入 token、统一解包 { code, data, msg }、
- * 401 静默重登一次、错误 Toast、loading 计数。
+ * 401 静默重登一次、错误 Toast。
  * 业务层只关心 data，不再碰 uni.request。
+ *
+ * 这里故意不提供全屏 loading：uni.showLoading 是微信原生的黑色遮罩，
+ * 和项目视觉完全不是一套，而且后台静默重登时突然盖住整屏很突兀。
+ * 需要等待反馈的页面用自己的按钮 loading / 骨架屏。
  *
  * token 通过 auth-token 中转，避免和 user store 互相 import。
  */
 
 import { currentToken, tryRefreshToken } from './auth-token'
 import { API_BASE } from './api-base'
+// 请求层只负责「说什么」，怎么显示交给 AppToast（别名避免和 options.toast 重名）
+import { toast as appToast } from './toast'
 
 export interface ApiResponse<T> {
   code: number
@@ -21,8 +27,6 @@ export interface RequestOptions {
   url: string
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   data?: Record<string, any>
-  /** 展示全屏 loading */
-  loading?: boolean
   /** 失败时是否自动 Toast，默认 true；表单校验类可关掉自己处理 */
   toast?: boolean
   /** 不注入 token（登录接口） */
@@ -45,18 +49,6 @@ const BASE_URL = API_BASE
  * 12s：够覆盖 Worker 冷启动 + 慢网，又不至于让用户盯着骨架屏太久。
  */
 const TIMEOUT = 12000
-
-let loadingCount = 0
-
-function showLoading() {
-  if (loadingCount === 0) uni.showLoading({ title: '', mask: true })
-  loadingCount++
-}
-
-function hideLoading() {
-  loadingCount = Math.max(0, loadingCount - 1)
-  if (loadingCount === 0) uni.hideLoading()
-}
 
 export class ApiError extends Error {
   code: number
@@ -140,14 +132,11 @@ export async function request<T>(options: RequestOptions): Promise<T> {
     url,
     method = 'GET',
     data,
-    loading = false,
     toast = true,
     skipAuth = false,
     timeout = TIMEOUT,
     retried = false
   } = options
-
-  if (loading) showLoading()
 
   try {
     const header: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -173,7 +162,7 @@ export async function request<T>(options: RequestOptions): Promise<T> {
       if (retried) throw new ApiError(401, '登录已失效，请重新登录')
       // uni.login 在部分环境可能不回调，重登也要有上限，否则整条请求会一直挂着
       const ok = await withTimeout(tryRefreshToken(), timeout, false)
-      if (ok) return request<T>({ ...options, loading: false, retried: true })
+      if (ok) return request<T>({ ...options, retried: true })
       throw new ApiError(401, '登录已失效，请重新登录')
     }
 
@@ -190,10 +179,8 @@ export async function request<T>(options: RequestOptions): Promise<T> {
     return body as unknown as T
   } catch (err) {
     const message = err instanceof ApiError ? err.message : '网络异常，请稍后重试'
-    if (toast) uni.showToast({ title: message, icon: 'none' })
+    if (toast) appToast.error(message)
     throw err instanceof ApiError ? err : new ApiError(-1, message)
-  } finally {
-    if (loading) hideLoading()
   }
 }
 

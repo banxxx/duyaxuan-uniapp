@@ -37,10 +37,20 @@ export interface RateLimitRule {
  */
 export const RATE_LIMITS = {
   /**
-   * 登录：按 IP。公司 Wi-Fi / 运营商 NAT 后面可能有一群人同时打开，
+   * 登录：按 IP。公共 Wi-Fi / 运营商 NAT 后面可能有一群人同时打开，
    * 所以给到 60 次/分钟，只挡脚本级别的轰炸。
    */
   login: { bucket: 'login', limit: 60, windowMs: 60_000 },
+  /**
+   * H5 扫码登录：生成二维码。每次都会让 MixAuth 去腾讯拉一张新码，
+   * 成本比普通登录高，限得紧一些。
+   */
+  mixauthQr: { bucket: 'mixauth-qr', limit: 12, windowMs: 60_000 },
+  /**
+   * H5 扫码登录：轮询扫码状态。前端约 1.5 秒一次，一次登录 40～80 次，
+   * 阈值给到 300 次/分钟，同一个出口 IP 下几个人同时登录也不会互相挤掉。
+   */
+  mixauthStatus: { bucket: 'mixauth-status', limit: 300, windowMs: 60_000 },
   /** 发起投票 / 问卷 */
   pollCreate: { bucket: 'poll-create', limit: 5, windowMs: 600_000 },
   /** 编辑内容：一次编辑可能连点保存 */
@@ -67,6 +77,11 @@ export const RATE_LIMITS = {
   summary: { bucket: 'summary', limit: 120, windowMs: 60_000 },
   /** 上传头像 */
   avatar: { bucket: 'avatar', limit: 5, windowMs: 600_000 },
+  /**
+   * 上传选项配图。一个选项最多 3 张、一页最多 12 个选项，
+   * 一次创建最多 36 张，所以阈值给得比头像宽；仍然挡得住脚本刷图。
+   */
+  pollMedia: { bucket: 'poll-media', limit: 40, windowMs: 600_000 },
   /** 改资料 */
   profile: { bucket: 'profile', limit: 10, windowMs: 600_000 },
   /** 解绑平台 */

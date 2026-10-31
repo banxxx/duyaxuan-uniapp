@@ -17,6 +17,8 @@ import { getSafeArea, bottomInset } from '@/utils/platform'
 import { takePendingUndo } from '@/utils/delete-undo'
 import { ROUTES, go } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 41 我发起的 + 88 左滑操作 + 89 更多操作 + 96 删除撤销
@@ -240,7 +242,7 @@ async function confirmDelete() {
     showUndo(poll)
   } catch {
     if (index >= 0) list.value.splice(index, 0, poll)
-    uni.showToast({ title: '删除失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   }
 }
 
@@ -256,7 +258,7 @@ async function undoDelete() {
     await load(true)
     saveSnapshot()
   } catch {
-    uni.showToast({ title: '撤销失败，已超出可撤销时间', icon: 'none' })
+    toast.error('撤销失败，已超出可撤销时间')
   }
 }
 
@@ -271,6 +273,7 @@ function onSwipeDelete(poll: Poll) {
 
 <template>
   <view class="page">
+    <AppToast />
     <AppNavBar title="我发起的" :back="true" />
 
     <view class="page__content">
@@ -311,7 +314,7 @@ function onSwipeDelete(poll: Poll) {
 
         <!-- 只有真的没内容时才铺骨架：刷新时列表已经在，不需要再占一次屏 -->
         <view v-if="loading && !list.length" class="page__loading">
-          <AppSkeleton type="list" />
+          <AppSkeleton type="list" flush />
         </view>
       </view>
     </view>
@@ -392,6 +395,9 @@ export default { name: 'CreatedPollsPage' }
 <style lang="scss" scoped>
 .page {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -470,19 +476,19 @@ export default { name: 'CreatedPollsPage' }
   }
 
   &__title {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
   &__actions {
     background: $subtle;
-    border-radius: 14px;
+    border-radius: $r-input;
     overflow: hidden;
   }
 
@@ -499,7 +505,7 @@ export default { name: 'CreatedPollsPage' }
   }
 
   &__item-text {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
 
     &--danger {
@@ -515,7 +521,7 @@ export default { name: 'CreatedPollsPage' }
 
   &__cancel {
     height: 50px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -523,7 +529,7 @@ export default { name: 'CreatedPollsPage' }
   }
 
   &__cancel-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
   }
@@ -563,13 +569,13 @@ export default { name: 'CreatedPollsPage' }
   }
 
   &__title {
-    font-size: 17px;
+    font-size: $fs-17;
     font-weight: 600;
     color: $ink;
   }
 
   &__desc {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
     line-height: 1.55;
   }
@@ -582,7 +588,7 @@ export default { name: 'CreatedPollsPage' }
   &__btn {
     flex: 1;
     height: 50px;
-    border-radius: 14px;
+    border-radius: $r-input;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -597,7 +603,7 @@ export default { name: 'CreatedPollsPage' }
   }
 
   &__btn-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
 
@@ -615,7 +621,7 @@ export default { name: 'CreatedPollsPage' }
   /* bottom 由内联 style 按 safeBottom 给 */
   height: 52px;
   padding: 0 16px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $ink;
   display: flex;
   align-items: center;
@@ -625,7 +631,7 @@ export default { name: 'CreatedPollsPage' }
   animation: dyx-fade-up $dur-base $ease-out both;
 
   &__text {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 500;
     color: $white;
     flex: 1;
@@ -635,7 +641,7 @@ export default { name: 'CreatedPollsPage' }
   }
 
   &__undo {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $accent-200;
     padding-left: 12px;

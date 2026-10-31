@@ -477,7 +477,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__title {
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     color: $ink;
   }
@@ -485,7 +485,7 @@ export default { name: 'AppDateTimePicker' }
   &__close {
     width: 28px;
     height: 28px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -499,7 +499,7 @@ export default { name: 'AppDateTimePicker' }
   /* 设计稿：48 高、圆角 14、$accent 底、14/600 白字 */
   &__confirm {
     height: 48px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $accent;
     display: flex;
     align-items: center;
@@ -511,7 +511,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__confirm-text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $white;
   }
@@ -521,7 +521,7 @@ export default { name: 'AppDateTimePicker' }
 .seg {
   height: 34px;
   padding: 3px;
-  border-radius: 10px;
+  border-radius: $r-sm;
   background: $subtle;
   display: flex;
   gap: 3px;
@@ -530,7 +530,7 @@ export default { name: 'AppDateTimePicker' }
   &__item {
     flex: 1;
     height: 28px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -542,7 +542,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
     transition: color $dur-fast $ease-both;
@@ -570,7 +570,7 @@ export default { name: 'AppDateTimePicker' }
   &__arrow {
     width: 32px;
     height: 32px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -587,7 +587,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__month {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
@@ -602,7 +602,7 @@ export default { name: 'AppDateTimePicker' }
     height: 20px;
     line-height: 20px;
     text-align: center;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -621,7 +621,7 @@ export default { name: 'AppDateTimePicker' }
   &__day {
     flex: 1;
     height: 38px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -641,7 +641,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__day-text {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
 
     &--on {
@@ -655,7 +655,7 @@ export default { name: 'AppDateTimePicker' }
 .time-row {
   height: 48px;
   padding: 0 14px;
-  border-radius: 12px;
+  border-radius: $r-md;
   border: 1px solid $line;
   display: flex;
   align-items: center;
@@ -672,7 +672,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__text {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
@@ -685,7 +685,7 @@ export default { name: 'AppDateTimePicker' }
   justify-content: space-between;
 
   &__date {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 
@@ -700,7 +700,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__change-text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $accent;
   }
@@ -714,7 +714,7 @@ export default { name: 'AppDateTimePicker' }
   &__chip {
     flex: 1;
     height: 36px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -733,7 +733,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
 
@@ -760,7 +760,7 @@ export default { name: 'AppDateTimePicker' }
     width: 164px;
     height: 48px;
     margin: -24px 0 0 -82px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $accent-soft;
     pointer-events: none;
     z-index: 0;
@@ -785,7 +785,7 @@ export default { name: 'AppDateTimePicker' }
   }
 
   &__text {
-    font-size: 18px;
+    font-size: $fs-18;
     color: $faint;
     font-family: $font-num;
     transition:
@@ -794,7 +794,7 @@ export default { name: 'AppDateTimePicker' }
 
     /* 当前停在中间的那一格：24/700 $accent-ink */
     &--on {
-      font-size: 24px;
+      font-size: $fs-24;
       font-weight: 700;
       color: $accent-ink;
     }
@@ -806,7 +806,7 @@ export default { name: 'AppDateTimePicker' }
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    font-size: 20px;
+    font-size: $fs-20;
     font-weight: 700;
     color: $ink;
     pointer-events: none;
@@ -820,7 +820,7 @@ export default { name: 'AppDateTimePicker' }
   gap: 5px;
 
   &__text {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 }

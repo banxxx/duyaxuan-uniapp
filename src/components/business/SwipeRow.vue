@@ -110,7 +110,7 @@ export default { name: 'SwipeRow' }
 .swipe {
   position: relative;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: $r-input;
 
   &__actions {
     position: absolute;
@@ -138,7 +138,7 @@ export default { name: 'SwipeRow' }
   }
 
   &__label {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $ink;
 
@@ -151,7 +151,7 @@ export default { name: 'SwipeRow' }
     position: relative;
     z-index: 1;
     background: $surface;
-    border-radius: 14px;
+    border-radius: $r-input;
     will-change: transform;
   }
 }

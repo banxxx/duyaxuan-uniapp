@@ -9,6 +9,7 @@ import { deleteAccount } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
 import { bottomInset } from '@/utils/platform'
 import { reset, ROUTES } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 53 注销账号
@@ -63,7 +64,7 @@ async function confirmDeactivate() {
     user.logout()
     reset(ROUTES.login)
   } catch {
-    uni.showToast({ title: '注销失败，请稍后重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     submitting.value = false
   }
@@ -72,6 +73,7 @@ async function confirmDeactivate() {
 
 <template>
   <view class="deact">
+    <AppToast />
     <AppNavBar title="注销账号" />
 
     <scroll-view class="deact__scroll" scroll-y>
@@ -140,6 +142,9 @@ export default { name: 'DeactivatePage' }
 .deact {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -158,13 +163,13 @@ export default { name: 'DeactivatePage' }
   }
 
   &__group {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $faint;
   }
 
   &__note {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.6;
     padding: 0 2px;
@@ -173,7 +178,7 @@ export default { name: 'DeactivatePage' }
 
 .warn {
   padding: 16px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $danger-mist;
   display: flex;
   gap: 12px;
@@ -182,7 +187,7 @@ export default { name: 'DeactivatePage' }
   &__icon {
     width: 36px;
     height: 36px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $danger-soft;
     display: flex;
     align-items: center;
@@ -199,20 +204,20 @@ export default { name: 'DeactivatePage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 700;
     color: $danger;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
     line-height: 1.55;
   }
 }
 
 .group {
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   overflow: hidden;
@@ -238,12 +243,12 @@ export default { name: 'DeactivatePage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }

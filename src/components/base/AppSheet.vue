@@ -27,8 +27,13 @@ const props = withDefaults(
      * 标题 17/700、按钮 50 高 14 圆角。常规弹层（16/32-38/89）走默认值。
      */
     variant?: 'sheet' | 'confirm'
+    /**
+     * 键盘弹起时把面板整体抬高（px）。带输入框的弹层传入键盘高度，
+     * 否则键盘会盖住底部的「取消 / 进入」。0 表示不抬。
+     */
+    bottomOffset?: number
   }>(),
-  { maskClosable: true, titleSize: 'lg', variant: 'sheet' }
+  { maskClosable: true, titleSize: 'lg', variant: 'sheet', bottomOffset: 0 }
 )
 
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -48,7 +53,13 @@ function onMask() {
 </script>
 
 <template>
-  <view v-if="rendered" class="sheet" :class="{ 'sheet--closing': closing }" @tap="maskClosable && onMask()">
+  <view
+    v-if="rendered"
+    class="sheet"
+    :class="{ 'sheet--closing': closing }"
+    :style="bottomOffset ? { paddingBottom: `${bottomOffset}px` } : undefined"
+    @tap="maskClosable && onMask()"
+  >
     <!--
       遮罩单独一层：面板上滑时遮罩同时淡入，比整块一起位移更像原生。
       顺带吃掉 touchmove —— 否则手指在遮罩上划，滚的是下面那一页，
@@ -100,6 +111,8 @@ export default { name: 'AppSheet' }
   z-index: 200;
   display: flex;
   align-items: flex-end;
+  /* 键盘高度变化时跟着键盘一起抬起来，避免面板瞬移 */
+  transition: padding-bottom $dur-base $ease-both;
 
   /*
    * 退场：怎么进来的就怎么出去 —— 面板滑回屏幕外，遮罩同步淡掉。
@@ -185,25 +198,25 @@ export default { name: 'AppSheet' }
 
   /* 设计稿弹层标题 18/700 */
   &__title {
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     color: $ink;
 
     /* 92/95 的删除确认：17/600 */
     &--md {
-      font-size: 17px;
+      font-size: $fs-17;
       font-weight: 600;
     }
 
     /* 49/56/57：17/700 */
     &--confirm {
-      font-size: 17px;
+      font-size: $fs-17;
       font-weight: 700;
     }
   }
 
   &__desc {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
     line-height: 1.55;
   }

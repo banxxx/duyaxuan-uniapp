@@ -19,6 +19,8 @@ import { bottomInset } from '@/utils/platform'
 import type { Poll, SummaryCandidate, UnclassifiedAnswer } from '@/types/api'
 import { ROUTES, back, go } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 84 汇总 · 整理回答
@@ -113,24 +115,33 @@ function goBack() {
  * 手动改过的标题、归到别的选项的回答都会丢，所以要二次确认。
  */
 const remergeVisible = ref(false)
+/** 归并请求进行中：按钮转圈、面板不关，代替原生黑框 loading */
+const remerging = ref(false)
 
 function remerge() {
   remergeVisible.value = true
 }
 
-async function doRemerge() {
+/** 请求中不允许关面板，避免归并还在跑就又点一次 */
+function closeRemerge() {
+  if (remerging.value) return
   remergeVisible.value = false
-  uni.showLoading({ title: '正在归并' })
+}
+
+async function doRemerge() {
+  if (remerging.value) return
+  remerging.value = true
   try {
     await remergeSummary(surveyId.value)
     // 重新归并后旧分组全部作废
     cacheDrop(cacheKey.pollSummary(surveyId.value))
     await load()
-    uni.showToast({ title: '已重新归并', icon: 'none' })
+    remergeVisible.value = false
+    toast.success('已重新归并')
   } catch {
-    uni.showToast({ title: '归并失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
-    uni.hideLoading()
+    remerging.value = false
   }
 }
 
@@ -183,6 +194,7 @@ function goContent() {
 
 <template>
   <view class="summary">
+    <AppToast />
     <AppNavBar title="整理回答">
       <template #right>
         <text class="summary__remerge" @tap="remerge">重新归并</text>
@@ -284,13 +296,13 @@ function goContent() {
           <!-- 未归类提示 -->
           <view v-if="unclassifiedTotal" class="unclassified" @tap="goUnclassified">
             <view class="unclassified__icon">
-              <AppIcon name="triangle-alert" :size="15" color="#D97706" />
+              <AppIcon name="triangle-alert" :size="15" color="#B45309" />
             </view>
             <view class="unclassified__text">
               <text class="unclassified__title">{{ unclassifiedTotal }} 条回答没有归类</text>
               <text class="unclassified__desc">可新建选项或归入已有</text>
             </view>
-            <AppIcon name="chevron-right" :size="14" color="#D97706" />
+            <AppIcon name="chevron-right" :size="14" color="#B45309" />
           </view>
         </view>
       </scroll-view>
@@ -306,7 +318,8 @@ function goContent() {
       title="重新归并？"
       desc="会按回答原文重新分组，手动调整过的选项标题和归类会丢失。"
       confirm-text="重新归并"
-      @close="remergeVisible = false"
+      :loading="remerging"
+      @close="closeRemerge"
       @confirm="doRemerge"
     />
   </view>
@@ -320,13 +333,16 @@ export default { name: 'SummaryIndexPage' }
 .summary {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   /* 84 页头的「重新归并」是 14 号灰字 */
   &__remerge {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $muted;
   }
 
@@ -357,7 +373,7 @@ export default { name: 'SummaryIndexPage' }
   /* 84：取消 110 宽、主按钮吃掉剩余宽度 */
   &__action {
     flex: 1;
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
   }
 }
@@ -365,7 +381,7 @@ export default { name: 'SummaryIndexPage' }
 /* 来源卡：r14 pad14 gap5 */
 .source {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -373,19 +389,19 @@ export default { name: 'SummaryIndexPage' }
   gap: 5px;
 
   &__label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
     line-height: 1.4;
   }
 
   &__meta {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -393,7 +409,7 @@ export default { name: 'SummaryIndexPage' }
 /* 归并规则条：$accent-soft r12 pad[10,14] gap8 */
 .rule-row {
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $accent-soft;
   display: flex;
   align-items: center;
@@ -406,7 +422,7 @@ export default { name: 'SummaryIndexPage' }
 
   &__text {
     flex: 1;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent-ink;
     line-height: 1.4;
   }
@@ -421,7 +437,7 @@ export default { name: 'SummaryIndexPage' }
 .count {
   flex: 1;
   padding: 13px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -429,12 +445,12 @@ export default { name: 'SummaryIndexPage' }
   gap: 5px;
 
   &__label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__num {
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     color: $ink;
     line-height: 1.2;
@@ -457,13 +473,13 @@ export default { name: 'SummaryIndexPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__all {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent;
   }
 }
@@ -471,7 +487,7 @@ export default { name: 'SummaryIndexPage' }
 /* 分组卡：r14 pad12 gap10，左侧 20 的勾选块 */
 .cand {
   padding: 12px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -486,7 +502,7 @@ export default { name: 'SummaryIndexPage' }
   &__check {
     width: 20px;
     height: 20px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $accent;
     display: flex;
     align-items: center;
@@ -512,14 +528,14 @@ export default { name: 'SummaryIndexPage' }
 
   &__title {
     flex: 1;
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
 
   &__badge {
     padding: 2px 6px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $accent-soft;
     display: flex;
     align-items: center;
@@ -527,23 +543,23 @@ export default { name: 'SummaryIndexPage' }
   }
 
   &__badge-text {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $accent-ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
   &__quote {
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $subtle;
   }
 
   &__sample {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.5;
   }
@@ -552,7 +568,7 @@ export default { name: 'SummaryIndexPage' }
 /* 未归类提示：$warning-soft r14 pad[12,14] gap10，图标装 28 的白底圆角块 */
 .unclassified {
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $warning-soft;
   display: flex;
   align-items: center;
@@ -578,13 +594,13 @@ export default { name: 'SummaryIndexPage' }
   }
 
   &__title {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $warning;
   }
 
   &__desc {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $muted;
   }
 }

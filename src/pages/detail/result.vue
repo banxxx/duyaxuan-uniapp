@@ -8,6 +8,7 @@ import AppButton from '@/components/base/AppButton.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import { fetchPoll, fetchMyVote, remindMe } from '@/api/poll'
+import { resolveFileUrl } from '@/utils/api-base'
 import { formatDate, formatDateTime, formatRelative, percent } from '@/utils/format'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { canSeePollResult } from '@/utils/result-visibility'
@@ -16,6 +17,8 @@ import { preloadSubscribeTemplates, requestSubscribe } from '@/utils/subscribe'
 import { backTo, go, replace, ROUTES } from '@/utils/router'
 import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
 import { useUserStore } from '@/stores/user'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 21 结果 · 实时统计 / 22 结果 · 待公布 / 23 结果 · 已关闭
@@ -76,6 +79,13 @@ const winner = computed(() => ranked.value[0])
 const myChoices = computed(() =>
   (poll.value?.options ?? []).filter((o) => myVote.value.includes(o.id))
 )
+
+/** 图文投票：点排名行的小图看大图 */
+function previewImages(images: string[]) {
+  const urls = images.map(resolveFileUrl)
+  if (!urls.length) return
+  uni.previewImage({ urls, current: urls[0] })
+}
 
 /** 22 的倒计时 */
 const countdown = computed(() => {
@@ -151,10 +161,9 @@ async function onRemind() {
   try {
     await remindMe(poll.value.id)
     reminded.value = true
-    uni.showToast({ title: '已设置，结束前 2 小时提醒你', icon: 'none' })
-  } catch (err) {
-    const msg = (err as { message?: string })?.message || '设置失败，请稍后重试'
-    uni.showToast({ title: msg, icon: 'none' })
+    toast.success('已设置，结束前 2 小时提醒你')
+  } catch {
+    // 失败原因由请求层统一 toast，这里不再重复
   }
 }
 
@@ -176,6 +185,7 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
 
 <template>
   <view class="result">
+    <AppToast />
     <AppNavBar title="投票结果">
       <template #right>
         <!-- 结果页右上角不再放分享图标：微信胶囊里就有转发，图标只会弹 toast -->
@@ -246,6 +256,13 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
                     <text class="rank__badge-text" :class="{ 'rank__badge-text--first': i === 0 }">
                       {{ i + 1 }}
                     </text>
+                  </view>
+                  <view
+                    v-if="opt.images?.length"
+                    class="rank__thumb"
+                    @tap.stop="previewImages(opt.images)"
+                  >
+                    <image class="rank__thumb-img" :src="resolveFileUrl(opt.images[0])" mode="aspectFill" />
                   </view>
                   <text class="rank__name" :class="{ 'rank__name--first': i === 0 }">{{ opt.title }}</text>
                 </view>
@@ -373,13 +390,13 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
       </view>
     </scroll-view>
 
-    <!-- 21 底部只有一个「分享给同事」，进 27 分享页拿海报 -->
+    <!-- 21 底部只有一个「分享给朋友」，进 27 分享页拿海报 -->
     <view
       v-if="poll && mode === 'visible' && poll.rules.allowShare"
       class="result__actions"
       :style="{ paddingBottom: bottomInset(20) }"
     >
-      <AppButton type="subtle" size="cta" icon="link" @tap="goShare">分享给同事</AppButton>
+      <AppButton type="subtle" size="cta" icon="link" @tap="goShare">分享给朋友</AppButton>
     </view>
   </view>
 </template>
@@ -392,6 +409,9 @@ export default { name: 'PollResultPage' }
 .result {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -399,7 +419,7 @@ export default { name: 'PollResultPage' }
   &__nav-btn {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -434,7 +454,7 @@ export default { name: 'PollResultPage' }
 /* 冠军卡：$ink 实底、圆角 20、内边距 20、行距 14 */
 .hero {
   padding: 20px;
-  border-radius: 20px;
+  border-radius: $r-sheet;
   background: $ink;
   display: flex;
   flex-direction: column;
@@ -449,7 +469,7 @@ export default { name: 'PollResultPage' }
   /* 徽标是白色 10% 底，不是 $accent：紫在这个黑底上会糊 */
   &__badge {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: rgba(255, 255, 255, 0.1);
     display: flex;
     align-items: center;
@@ -464,18 +484,18 @@ export default { name: 'PollResultPage' }
   }
 
   &__badge-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 500;
     color: $white;
   }
 
   &__total {
-    font-size: 12px;
+    font-size: $fs-12;
     color: rgba(255, 255, 255, 0.6);
   }
 
   &__title {
-    font-size: 19px;
+    font-size: $fs-19;
     font-weight: 700;
     color: $white;
     line-height: 1.35;
@@ -508,18 +528,18 @@ export default { name: 'PollResultPage' }
   }
 
   &__winner-label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: rgba(255, 255, 255, 0.5);
   }
 
   &__winner-name {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $white;
   }
 
   &__winner-pct {
-    font-size: 30px;
+    font-size: $fs-30;
     font-weight: 700;
     color: $accent;
     font-family: $font-num;
@@ -558,7 +578,7 @@ export default { name: 'PollResultPage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
@@ -570,7 +590,7 @@ export default { name: 'PollResultPage' }
   }
 
   &__link-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
@@ -597,7 +617,7 @@ export default { name: 'PollResultPage' }
   &__badge {
     width: 18px;
     height: 18px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $bg;
     display: flex;
     align-items: center;
@@ -610,7 +630,7 @@ export default { name: 'PollResultPage' }
   }
 
   &__badge-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $faint;
 
@@ -619,8 +639,24 @@ export default { name: 'PollResultPage' }
     }
   }
 
+  /* 图文投票：排名行前面的小图，和序号一样高一点 */
+  &__thumb {
+    width: 26px;
+    height: 26px;
+    border-radius: $r-xs;
+    overflow: hidden;
+    background: $bg;
+    flex-shrink: 0;
+  }
+
+  &__thumb-img {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
   &__name {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 500;
     color: $ink;
     overflow: hidden;
@@ -641,13 +677,13 @@ export default { name: 'PollResultPage' }
   }
 
   &__votes {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
     font-family: $font-num;
   }
 
   &__pct {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
     font-family: $font-num;
@@ -667,7 +703,7 @@ export default { name: 'PollResultPage' }
   &__fill {
     height: 100%;
     border-radius: 4px;
-    background: $track;
+    background: $track-strong;
 
     &--first {
       background: $accent;
@@ -685,27 +721,27 @@ export default { name: 'PollResultPage' }
     padding: 14px;
     background: $surface;
     border: 1px solid $line;
-    border-radius: 14px;
+    border-radius: $r-input;
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
 
   &__label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   /* 21 的三个指标：三列等宽、单行显示，值 18/700；日期过长时缩到 15 号 */
   &__value {
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     color: $ink;
     font-family: $font-num;
     line-height: 1.2;
 
     &--date {
-      font-size: 15px;
+      font-size: $fs-15;
       line-height: 1.44;
     }
   }
@@ -719,13 +755,13 @@ export default { name: 'PollResultPage' }
   padding: 32px 24px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 20px;
+  border-radius: $r-sheet;
   gap: 12px;
 
   &__icon {
     width: 64px;
     height: 64px;
-    border-radius: 32px;
+    border-radius: $r-circle;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -733,14 +769,14 @@ export default { name: 'PollResultPage' }
   }
 
   &__title {
-    font-size: 17px;
+    font-size: $fs-17;
     font-weight: 600;
     color: $ink;
     text-align: center;
   }
 
   &__desc {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
     text-align: center;
     line-height: 1.6;
@@ -760,7 +796,7 @@ export default { name: 'PollResultPage' }
 .countdown {
   padding: 16px;
   background: $ink;
-  border-radius: 16px;
+  border-radius: $r-button;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -772,17 +808,17 @@ export default { name: 'PollResultPage' }
   }
 
   &__label {
-    font-size: 11px;
+    font-size: $fs-11;
     color: rgba(255, 255, 255, 0.6);
   }
 
   &__date {
-    font-size: 11px;
+    font-size: $fs-11;
     color: rgba(255, 255, 255, 0.5);
   }
 
   &__value {
-    font-size: 26px;
+    font-size: $fs-26;
     font-weight: 700;
     color: $white;
     font-family: $font-num;
@@ -807,13 +843,13 @@ export default { name: 'PollResultPage' }
   padding: 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
   display: flex;
   flex-direction: column;
   gap: 9px;
 
   &__label {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -825,14 +861,14 @@ export default { name: 'PollResultPage' }
 
   /* 22/23 的选项名是 14/400，不是加粗 */
   &__choice-text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 400;
     color: $ink;
   }
 }
 
 .closed__note {
-  font-size: 11px;
+  font-size: $fs-11;
   color: $faint;
   text-align: center;
   padding: 0 0 4px;

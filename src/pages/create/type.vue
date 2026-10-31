@@ -9,6 +9,8 @@ import StepBar from '@/components/business/StepBar.vue'
 import { useDraftStore } from '@/stores/draft'
 import { bottomInset, getSafeArea } from '@/utils/platform'
 import { back, go, ROUTES } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 28 创建 · ① 方式（含 82 来自问卷）
@@ -38,7 +40,11 @@ const draft = useDraftStore()
 const { statusBarHeight, navBarHeight } = getSafeArea()
 const navTotal = statusBarHeight + navBarHeight
 
-const selected = ref<PollType>('single')
+/**
+ * 选中的是「方式」而不是投票类型：图文投票和单选/多选是正交的，
+ * 它对应 type='single' + imageMode=true，单选还是多选到步骤③ 再定。
+ */
+const selected = ref<PollType | 'image'>('single')
 const sourceSurveyId = ref('')
 const sourceSurveyTitle = ref('')
 const sourceCount = ref(0)
@@ -46,7 +52,7 @@ const sourceCount = ref(0)
 const types: TypeItem[] = [
   { key: 'single', title: '单选 / 多选', desc: '最常用的选择型投票，可限制每人选几项', icon: 'list-checks' },
   { key: 'survey', title: '问卷收集', desc: '没有固定选项，参与者自由填写回答', icon: 'message-square-text' },
-  { key: 'image', title: '图文投票', desc: '选项带图片，适合作品与方案评选', icon: 'image', soon: true },
+  { key: 'image', title: '图文投票', desc: '选项带图片，适合作品与方案评选', icon: 'image' },
   { key: 'video', title: '视频投票', desc: '选项带视频，适合短视频征集', icon: 'video', soon: true },
   { key: 'more', title: '更多类型', desc: '排序、评分、打分等进阶形式', icon: 'sparkles', soon: true }
 ]
@@ -68,11 +74,11 @@ function isDisabled(t: TypeItem) {
 
 function pick(t: TypeItem) {
   if (isDisabled(t)) {
-    if (t.soon) uni.showToast({ title: '该类型即将支持', icon: 'none' })
-    else uni.showToast({ title: '已从问卷发起，不能再选问卷', icon: 'none' })
+    if (t.soon) toast.show('该类型即将支持')
+    else toast.show('已从问卷发起，不能再选问卷')
     return
   }
-  selected.value = t.key as PollType
+  selected.value = t.key as PollType | 'image'
 }
 
 /**
@@ -88,12 +94,19 @@ onShow(() => {
 })
 
 function next() {
+  const imageMode = selected.value === 'image'
+  // 图文投票仍然是单选/多选，只是选项多了配图
+  const type: PollType = selected.value === 'image' ? 'single' : selected.value
   const cur = draft.draft
   const keep =
-    backFromNext && cur.mode === 'create' && cur.type === selected.value && !sourceSurveyId.value
+    backFromNext &&
+    cur.mode === 'create' &&
+    cur.type === type &&
+    cur.imageMode === imageMode &&
+    !sourceSurveyId.value
 
   if (!keep) {
-    draft.startCreate(selected.value)
+    draft.startCreate(type, imageMode)
     if (sourceSurveyId.value) {
       draft.patch({ sourceSurveyId: sourceSurveyId.value })
     }
@@ -113,6 +126,7 @@ function changeSource() {
 
 <template>
   <view class="type-page">
+    <AppToast />
     <AppNavBar :back="false">
       <template #left>
         <text class="type-page__cancel" @tap="cancel">取消</text>
@@ -217,31 +231,34 @@ export default { name: 'CreateTypePage' }
 <style lang="scss" scoped>
 .type-page {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   &__cancel {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $muted;
   }
 
   &__nav-title {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 600;
     color: $ink;
   }
 
   &__draft {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $accent-soft;
     display: flex;
     align-items: center;
   }
 
   &__draft-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent;
   }
@@ -280,7 +297,7 @@ export default { name: 'CreateTypePage' }
 /* 82 来源条：$accent-soft r14 pad[12,14] gap10，图标 30 白底块，文字两行 */
 .source {
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $accent-soft;
   display: flex;
   align-items: center;
@@ -289,7 +306,7 @@ export default { name: 'CreateTypePage' }
   &__icon {
     width: 30px;
     height: 30px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: rgba(255, 255, 255, 0.7);
     display: flex;
     align-items: center;
@@ -306,19 +323,19 @@ export default { name: 'CreateTypePage' }
   }
 
   &__label {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $accent-ink;
   }
 
   &__change {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent;
     flex-shrink: 0;
   }
 
   &__title {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
     overflow: hidden;
     white-space: nowrap;
@@ -332,13 +349,13 @@ export default { name: 'CreateTypePage' }
   gap: 6px;
 
   &__title {
-    font-size: 20px;
+    font-size: $fs-20;
     font-weight: 700;
     color: $ink;
   }
 
   &__sub {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
   }
 }
@@ -351,7 +368,7 @@ export default { name: 'CreateTypePage' }
 
 .item {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -387,7 +404,7 @@ export default { name: 'CreateTypePage' }
   &__icon {
     width: 38px;
     height: 38px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -411,7 +428,7 @@ export default { name: 'CreateTypePage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
     transition: color $dur-fast $ease-both;
@@ -422,7 +439,7 @@ export default { name: 'CreateTypePage' }
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.4;
   }
@@ -430,7 +447,7 @@ export default { name: 'CreateTypePage' }
   &__check {
     width: 20px;
     height: 20px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $accent;
     display: flex;
     align-items: center;
@@ -440,7 +457,7 @@ export default { name: 'CreateTypePage' }
 
   &__soon {
     padding: 4px 8px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -448,9 +465,9 @@ export default { name: 'CreateTypePage' }
   }
 
   &__soon-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 500;
-    color: $faint;
+    color: $disabled;
   }
 }
 </style>

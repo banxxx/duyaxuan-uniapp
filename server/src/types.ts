@@ -24,6 +24,12 @@ export interface Env {
    */
   WX_ENV_VERSION?: string
   /**
+   * MixAuth 扫码登录服务的地址（H5 的 QQ / 微信登录）。
+   * 只由 Worker 访问：客户端直连 vercel.app 在境内会被 DNS 污染。
+   * 不配置时默认 https://mixauth-one.vercel.app。
+   */
+  MIXAUTH_BASE_URL?: string
+  /**
    * 订阅消息模板 ID，在微信后台「功能 → 订阅消息」里选好模板后拿到。
    * 不配置就只发站内消息，接口照常工作 —— 开发期不需要去申请模板。
    */
@@ -111,6 +117,8 @@ export interface OptionRow {
   poll_id: string
   title: string
   desc: string | null
+  /** 图文投票：JSON 数组，存 /files/options/... 相对地址；纯文字选项为 null */
+  images: string | null
   sort: number
   votes_count: number
 }
@@ -161,6 +169,8 @@ export interface PollOptionOut {
   id: string
   title: string
   desc?: string
+  /** 图文投票的配图，最多 3 张；没有图时不带这个字段 */
+  images?: string[]
   votes: number
 }
 

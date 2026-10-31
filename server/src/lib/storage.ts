@@ -37,7 +37,19 @@ export function publicFileMime(key: string): string {
 export const AVATAR_PREFIX = 'avatars/'
 /** 小程序码按 pollId + 环境存，生成一次就复用 */
 export const QRCODE_PREFIX = 'qrcodes/'
+/**
+ * 图文投票的选项配图。
+ *
+ * 按用户分目录而不是按 pollId：选项是在创建流程里先传图、再发布投票，
+ * 上传那一刻还没有 pollId。代价是放弃创建的草稿会留下孤儿文件，
+ * 和头像上传失败时一样 —— 量很小，不做清理。
+ */
+export const OPTION_PREFIX = 'options/'
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024
+/** 选项图比头像宽松：作品截图经常更宽更长，客户端会先压到 1MB 以内 */
+export const MAX_OPTION_IMAGE_BYTES = 5 * 1024 * 1024
+/** 一个选项最多几张图，和后端 cleanOptions / 前端图位数量保持一致 */
+export const MAX_OPTION_IMAGES = 3
 
 /** 从 MIME 或文件名推断扩展名，不是图片返回 null */
 export function imageExt(type: string, name?: string): string | null {
@@ -56,14 +68,41 @@ export function avatarKey(userId: string, ext: string): string {
 }
 
 /**
- * 只允许读头像目录。
+ * 选项图的对象键。
+ *
+ * 同一毫秒连传两张时纯时间戳会撞键，加上随机后缀：
+ * 键撞了后者会覆盖前者，用户看到的就是「传了 3 张只剩 2 张」。
+ */
+export function optionImageKey(userId: string, ext: string): string {
+  const rand = Math.random().toString(36).slice(2, 8)
+  return `${OPTION_PREFIX}${userId}/${Date.now()}-${rand}.${ext}`
+}
+
+/**
+ * 只允许读头像、小程序码、选项配图三个目录。
  *
  * R2 的键是扁平的，没有路径穿越问题，但放行任意键等于把整个桶
  * 公开出去 —— 以后要是往里存别的东西（导出文件等），这个白名单就是边界。
  */
 export function isPublicKey(key: string): boolean {
   if (key.includes('..')) return false
-  return key.startsWith(AVATAR_PREFIX) || key.startsWith(QRCODE_PREFIX)
+  return (
+    key.startsWith(AVATAR_PREFIX) ||
+    key.startsWith(QRCODE_PREFIX) ||
+    key.startsWith(OPTION_PREFIX)
+  )
+}
+
+/**
+ * 校验前端传回来的选项图地址。
+ *
+ * 只认本服务 `/files/options/...` 这一种形态：允许任意字符串等于让客户端
+ * 把外站地址写进数据库，详情页就会替别人的域名拉图（还会绕过微信的域名白名单）。
+ */
+export function isOptionImageUrl(url: string): boolean {
+  if (!url.startsWith('/files/')) return false
+  const key = keyFromPublicUrl(url)
+  return !!key && key.startsWith(OPTION_PREFIX) && !key.includes('..')
 }
 
 /** 存进 users.avatar 的相对路径，前端拿 API 域名拼成完整地址 */

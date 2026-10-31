@@ -5,14 +5,17 @@ import type { Poll } from '@/types/api'
 import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
+import AppInviteCode from '@/components/base/AppInviteCode.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
 import { fetchPoll, submitAnswer, joinPoll } from '@/api/poll'
 import { formatCreatedAt, formatRemaining, charCount } from '@/utils/format'
 import { buildShareMessage } from '@/utils/share'
-import { askInviteCode } from '@/utils/invite'
+import { useInviteCode } from '@/utils/invite'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, replace } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 64 问卷 · 待填写（含 65 填写信息弹窗）
@@ -24,6 +27,8 @@ import { ROUTES, replace } from '@/utils/router'
  * 规则没开却提示能改，是设计稿里最容易埋的坑，这里按实际规则渲染。
  */
 const poll = ref<Poll | null>(null)
+/** 邀请码模式的问卷：被 403 拦下时弹自定义输入层 */
+const invite = useInviteCode()
 const loading = ref(true)
 /** 首屏加载失败：给错误页和重试，不要停在空白页 */
 const loadError = ref(false)
@@ -89,14 +94,24 @@ async function doSubmit() {
           p.rules.joinMethod === 'invite' && (err as { code?: number })?.code === 403
         if (!needInvite || attempt > 0) throw err
 
-        const code = await askInviteCode()
+        const code = await invite.ask({
+          // 校验放在弹层内部做：码错了留在原地抖动提示，不用收起再弹出
+          validate: async (candidate) => {
+            try {
+              await joinPoll(p.id, candidate)
+              return null
+            } catch (e) {
+              if ((e as { code?: number })?.code === 403) return '邀请码不正确，请重新输入'
+              return (e as Error)?.message || '网络异常，请稍后重试'
+            }
+          }
+        })
         if (!code) return
-        await joinPoll(p.id, code)
       }
     }
   } catch (err) {
     const msg = (err as Error)?.message || '提交失败，请重试'
-    uni.showToast({ title: msg, icon: 'none' })
+    toast.error(msg)
   } finally {
     submitting.value = false
   }
@@ -109,6 +124,7 @@ onShareAppMessage(() =>
 
 <template>
   <view class="fill">
+    <AppToast />
     <AppNavBar :back="true">
       <!-- 问卷填写页右上角不放分享图标：分享走微信胶囊转发 -->
     </AppNavBar>
@@ -215,7 +231,7 @@ onShareAppMessage(() =>
               placeholder-class="area__ph"
             />
           </view>
-          <text class="info-form__hint">产品部 / 工号 1024</text>
+          <text class="info-form__hint">例如：张三 / 138****0000</text>
         </view>
       </view>
 
@@ -227,6 +243,17 @@ onShareAppMessage(() =>
         </view>
       </template>
     </AppSheet>
+
+    <!-- 邀请码模式的问卷：和全站弹层同一套骨架，不再用原生 showModal -->
+    <AppInviteCode
+      :visible="invite.state.visible"
+      :initial="invite.state.initial"
+      :validating="invite.state.validating"
+      :error="invite.state.error"
+      :error-seq="invite.state.errorSeq"
+      @close="invite.close()"
+      @submit="invite.submit"
+    />
   </view>
 </template>
 
@@ -238,6 +265,9 @@ export default { name: 'SurveyFillPage' }
 .fill {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -245,7 +275,7 @@ export default { name: 'SurveyFillPage' }
   &__nav-btn {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -270,14 +300,14 @@ export default { name: 'SurveyFillPage' }
   }
 
   &__title {
-    font-size: 26px;
+    font-size: $fs-26;
     font-weight: 700;
     color: $ink;
     line-height: 1.32;
   }
 
   &__desc {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
     line-height: 1.55;
   }
@@ -288,7 +318,7 @@ export default { name: 'SurveyFillPage' }
   }
 
   &__note {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -307,7 +337,7 @@ export default { name: 'SurveyFillPage' }
 
   &__live {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: $success-soft;
     display: flex;
     align-items: center;
@@ -330,7 +360,7 @@ export default { name: 'SurveyFillPage' }
   }
 
   &__live-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $success;
 
@@ -341,7 +371,7 @@ export default { name: 'SurveyFillPage' }
 
   &__chip {
     padding: 5px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -352,7 +382,7 @@ export default { name: 'SurveyFillPage' }
   }
 
   &__chip-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
 
     &--warn {
@@ -370,7 +400,7 @@ export default { name: 'SurveyFillPage' }
   &__avatar {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $accent-soft;
     display: flex;
     align-items: center;
@@ -378,7 +408,7 @@ export default { name: 'SurveyFillPage' }
   }
 
   &__initial {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 700;
     color: $accent-ink;
   }
@@ -390,13 +420,13 @@ export default { name: 'SurveyFillPage' }
   }
 
   &__name {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
 
   &__time {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -407,20 +437,20 @@ export default { name: 'SurveyFillPage' }
   justify-content: space-between;
 
   &__label {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__hint {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
   }
 }
 
 .area {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -430,14 +460,14 @@ export default { name: 'SurveyFillPage' }
   &__box {
     height: 148px;
     padding: 12px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $bg;
   }
 
   &__input {
     width: 100%;
     height: 100%;
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
     line-height: 1.6;
   }
@@ -454,7 +484,7 @@ export default { name: 'SurveyFillPage' }
 
   &__tip,
   &__count {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -472,7 +502,7 @@ export default { name: 'SurveyFillPage' }
   }
 
   &__label {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
   }
@@ -480,17 +510,17 @@ export default { name: 'SurveyFillPage' }
   &__input {
     height: 44px;
     padding: 0 14px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $surface;
     border: 1px solid $line;
     display: flex;
     align-items: center;
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
   }
 
   &__hint {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 

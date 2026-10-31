@@ -14,7 +14,17 @@ import { getPlatform } from '@/utils/platform'
 import { ROUTES, reset } from '@/utils/router'
 import { buildShareMessage, buildTimelineMessage, syncShareMenu } from '@/utils/share'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import {
+  downloadQrImage,
+  dropQrCache,
+  isQrCacheStale,
+  readQrCache,
+  writeQrCache
+} from '@/utils/qr-cache'
+import type { QrCacheEntry } from '@/utils/qr-cache'
 import { ApiError } from '@/utils/request'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 27 分享投票 / 80 分享问卷
@@ -107,15 +117,24 @@ async function loadInviteCode() {
 }
 
 async function load() {
-  const cached = cacheGet<ShareSnapshot>(cacheKey.pollShare(pollId.value))
-  if (cached) {
-    poll.value = cached.poll
-    qrUrl.value = cached.qrUrl
+  const snapshot = cacheGet<ShareSnapshot>(cacheKey.pollShare(pollId.value))
+  const qr = readQrCache(pollId.value)
+
+  // 有内存快照就先渲染海报，骨架屏只在冷启动时出现
+  if (snapshot) {
+    poll.value = snapshot.poll
+    qrUrl.value = snapshot.qrUrl
     qrLoading.value = false
     loadInviteCode()
   }
-  // 有快照就先渲染海报，骨架屏只在冷启动时出现
-  loading.value = !cached
+
+  // 本地码图比任何远端地址都快：有就直接用，不等 /qrcode
+  if (qr) {
+    qrUrl.value = qr.path
+    qrLoading.value = false
+  }
+
+  loading.value = !snapshot
   failed.value = false
   deleted.value = false
   try {
@@ -123,13 +142,26 @@ async function load() {
     loadInviteCode()
     // 发起人关掉「允许分享」后，右上角菜单里的转发也一起收掉
     syncShareMenu(poll.value.rules.allowShare)
-    // 码地址在 R2 里是稳定的，上次拿到过就不用再问一次
-    if (cached?.qrUrl) cacheSet(cacheKey.pollShare(pollId.value), { poll: poll.value, qrUrl: qrUrl.value })
-    else loadQrcode()
+
+    if (qr) {
+      // 本地图已经显示出来了，后台确认一下地址有没有换过
+      if (isQrCacheStale(qr)) revalidateQrcode(qr)
+    } else if (qrUrl.value) {
+      // 只有远端地址（旧快照 / 上次没存成）：补存一份，下次进页面就秒开
+      void downloadQrImage(pollId.value, qrUrl.value)
+    } else {
+      loadQrcode()
+    }
+
+    // 快照里的投票信息用最新的覆盖；码地址仍记远端地址，本地路径只用于渲染
+    if (snapshot) {
+      cacheSet(cacheKey.pollShare(pollId.value), { poll: poll.value, qrUrl: qr?.url ?? qrUrl.value })
+    }
   } catch (err) {
     // 已删除：海报和码都不能再展示
     if (err instanceof ApiError && (err.code === 404 || err.code === 410)) {
       cacheDrop(cacheKey.pollShare(pollId.value))
+      dropQrCache(pollId.value)
       poll.value = null
       deleted.value = true
     } else if (!poll.value) {
@@ -146,16 +178,63 @@ async function loadQrcode() {
   qrLoading.value = true
   qrFailed.value = false
   try {
-    qrUrl.value = await fetchPollQrcode(pollId.value)
+    const url = await fetchPollQrcode(pollId.value)
+    qrUrl.value = url
     if (poll.value) {
-      cacheSet(cacheKey.pollShare(pollId.value), { poll: poll.value, qrUrl: qrUrl.value })
+      cacheSet(cacheKey.pollShare(pollId.value), { poll: poll.value, qrUrl: url })
     }
+    // 存一份到本地，下次进页面直接读文件，不用再等网络
+    void downloadQrImage(pollId.value, url)
   } catch {
     // 没配 AppID / 没开 R2 / 网络问题都落到占位图案，不影响分享卡片
     qrFailed.value = true
   } finally {
     qrLoading.value = false
   }
+}
+
+/**
+ * 后台校验码地址。
+ *
+ * 地址没变：只刷新校验时间，什么都不用重画。
+ * 地址变了（换了环境 / 样式）：重新下载，换成新图。
+ * 请求失败：保持本地图不动 —— 后台失败不该把已经显示出来的码撤掉。
+ */
+async function revalidateQrcode(qr: QrCacheEntry) {
+  try {
+    const url = await fetchPollQrcode(pollId.value)
+    if (url === qr.url) {
+      writeQrCache(pollId.value, { ...qr, checkedAt: Date.now() })
+      return
+    }
+    const path = await downloadQrImage(pollId.value, url)
+    if (path) {
+      qrUrl.value = path
+    } else {
+      // 新图没存下来：清掉旧缓存，避免下次又把旧环境的码顶上来
+      dropQrCache(pollId.value)
+      qrUrl.value = url
+    }
+    if (poll.value) {
+      cacheSet(cacheKey.pollShare(pollId.value), { poll: poll.value, qrUrl: url })
+    }
+  } catch {
+    // 静默：本地图还能用
+  }
+}
+
+/**
+ * 码图读不出来（本地文件被系统清了 / 远端地址失效）：
+ * 本地文件先丢掉重走一次网络；远端地址也失败就落到占位提示，不再递归。
+ */
+function onQrError() {
+  if (/^https?:/i.test(qrUrl.value)) {
+    qrFailed.value = true
+    return
+  }
+  dropQrCache(pollId.value)
+  qrUrl.value = ''
+  loadQrcode()
 }
 
 onLoad((q) => {
@@ -168,41 +247,88 @@ function copyCode() {
   if (!poll.value?.inviteCode) return
   uni.setClipboardData({
     data: poll.value.inviteCode,
-    success: () => uni.showToast({ title: '邀请码已复制', icon: 'none' })
+    success: () => toast.success('邀请码已复制')
   })
 }
 
 /** H5 / 抖音里没有微信分享面板，点了至少给个说法 */
 function onWechat() {
   if (getPlatform() !== 'h5') return
-  uni.showToast({ title: '请在微信小程序中分享', icon: 'none' })
+  toast.show('请在微信小程序中分享')
 }
 
 function onTimeline() {
-  uni.showToast({ title: '点右上角「···」分享到朋友圈', icon: 'none' })
+  toast.show('点右上角「···」分享到朋友圈')
 }
 
 function onMore() {
-  uni.showToast({ title: '点右上角「···」转发给好友', icon: 'none' })
+  toast.show('点右上角「···」转发给好友')
 }
 
 /* ---------------- 海报保存 ----------------
  *
  * 页面上的海报是 DOM（能自适应宽度），保存要另画一张 canvas：
- * 固定 300×460 的画布，按设计稿的黑头 + 小程序码 + 署名的版式重绘，
- * 再导出 2 倍图存进相册。两者版式保持一致，用户看到什么就存什么。
+ * 按 300 宽的设计稿重绘成和页面完全一致的版式（黑头 + 截止时间胶囊 +
+ * 小程序码 + 灰底署名），再导出 1200px 宽的图，相册里放大也清楚。
+ *
+ * 老版 canvas 的坐标是逻辑像素，位图按「逻辑像素 × 屏幕像素密度」渲染，
+ * canvasToTempFilePath 的 destWidth 也是物理像素。所以画布 CSS 宽取
+ * 1200 / dpr：位图正好 1200 宽，导出 1:1 不放大也不缩，清晰且不浪费内存。
+ * （直接画布 1200 CSS 宽的话，3 倍屏位图会到 3600，既慢又可能超出画布上限。）
  */
 
-/** 标题按字数折行（中文按 1 字 ≈ 1 字号估算，够用且不用等 measureText） */
-function wrapText(text: string, maxChars: number, maxLines: number): string[] {
+/** 海报设计宽度，和页面上 .poster 的 300 一致 */
+const POSTER_W = 300
+/** 导出目标宽度（物理像素） */
+const POSTER_OUTPUT_W = 1200
+/** 画布最大高度（两行标题时 379），固定画布避免运行时改尺寸 */
+const POSTER_CANVAS_H = 380
+/** 截止时间胶囊高度：上下 4 + 文字行高 15，和页面 flex 布局一致 */
+const POSTER_CHIP_H = 4 + 15 + 4
+
+const pixelRatio = Math.max(1, Number(uni.getSystemInfoSync().pixelRatio) || 1)
+/**
+ * 画布逻辑尺寸（CSS px）：物理位图 ≈ 1200 宽。
+ * 下限 750 是给「旧版 canvas 位图不乘 DPR」的机型兜底 ——
+ * 那些机型上导出 1200 是从 750 放大 1.6 倍，仍比原来 300 → 600 的 2 倍清晰。
+ */
+const POSTER_CANVAS_W = Math.max(Math.round(POSTER_OUTPUT_W / pixelRatio), 750)
+/** 绘制缩放：设计稿 300 → 画布逻辑宽度 */
+const POSTER_SCALE = POSTER_CANVAS_W / POSTER_W
+const POSTER_CANVAS_MAX_H = POSTER_CANVAS_H * POSTER_SCALE
+
+/**
+ * 标题按实际字宽折行，和页面 .poster__title 的 260 内容宽一致
+ * （中英文混排时按字数估会差很多，这里直接用 measureText）。
+ * 最多 maxLines 行，放不下就在最后一行补省略号。
+ */
+function wrapText(
+  ctx: UniApp.CanvasContext,
+  text: string,
+  maxWidth: number,
+  maxLines: number
+): string[] {
+  const chars = Array.from(text)
   const lines: string[] = []
-  let rest = text
-  while (rest && lines.length < maxLines) {
-    lines.push(rest.slice(0, maxChars))
-    rest = rest.slice(maxChars)
+  let line = ''
+  let i = 0
+  while (i < chars.length && lines.length < maxLines) {
+    const next = line + chars[i]
+    if (line && ctx.measureText(next).width > maxWidth) {
+      lines.push(line)
+      line = ''
+      continue
+    }
+    line = next
+    i += 1
   }
-  if (rest && lines.length) {
-    lines[lines.length - 1] = `${lines[lines.length - 1].slice(0, maxChars - 1)}…`
+  if (line) lines.push(line)
+  if (i < chars.length && lines.length) {
+    let last = lines[lines.length - 1]
+    while (last && ctx.measureText(`${last}…`).width > maxWidth) {
+      last = last.slice(0, -1)
+    }
+    lines[lines.length - 1] = `${last}…`
   }
   return lines
 }
@@ -213,58 +339,146 @@ function imageInfo(src: string): Promise<string> {
   })
 }
 
-function renderPoster(qrPath: string): Promise<void> {
+/** 圆角矩形路径，用于截止时间胶囊 */
+function roundRect(
+  ctx: UniApp.CanvasContext,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+}
+
+interface PosterLayout {
+  lines: string[]
+  headerH: number
+  bodyH: number
+  footH: number
+  height: number
+}
+
+/** 版式尺寸全部按 300 宽的设计稿算，和页面上的 .poster 对齐 */
+function posterLayout(ctx: UniApp.CanvasContext, title: string): PosterLayout {
+  const lines = wrapText(ctx, title, POSTER_W - 40, 2)
+  const lineCount = Math.max(1, lines.length)
+  // 黑头：上下 20 + 标题（20 号 / 行高 1.35 → 27）+ 间距 12 + 胶囊 23
+  const headerH = 20 + lineCount * 27 + 12 + POSTER_CHIP_H + 20
+  // 白区：上下 20 + 二维码 140 + 间距 14 + 扫码文案（11 号 / 行高 1.5 → 17）
+  const bodyH = 20 + 140 + 14 + 17 + 20
+  // 灰底：上下 12 + 文字（10 号 / 行高 1.5 → 15）
+  const footH = 12 + 15 + 12
+  return { lines, headerH, bodyH, footH, height: headerH + bodyH + footH }
+}
+
+function renderPoster(qrPath: string): Promise<{ height: number }> {
   return new Promise((resolve) => {
     const p = poll.value
     if (!p) {
-      resolve()
+      resolve({ height: 0 })
       return
     }
-    const W = 300
     const ctx = uni.createCanvasContext('poster')
+    // 折行要用真实字宽，先把标题字体设好再量
+    ctx.font = 'bold 20px sans-serif'
+    const layout = posterLayout(ctx, p.title)
+    // 先整体放大，后面所有坐标都按 300 宽的设计稿写
+    ctx.scale(POSTER_SCALE, POSTER_SCALE)
 
+    // 白底
     ctx.setFillStyle('#FFFFFF')
-    ctx.fillRect(0, 0, W, 460)
+    ctx.fillRect(0, 0, POSTER_W, layout.height)
 
-    // 黑头：标题 + 截止时间
+    // 黑头
     ctx.setFillStyle('#09090B')
-    ctx.fillRect(0, 0, W, 150)
+    ctx.fillRect(0, 0, POSTER_W, layout.headerH)
+
+    // 标题
     ctx.setFillStyle('#FFFFFF')
-    ctx.setFontSize(20)
-    wrapText(p.title, 12, 2).forEach((line, i) => ctx.fillText(line, 20, 46 + i * 28))
-    ctx.setFillStyle('rgba(255,255,255,0.6)')
-    ctx.setFontSize(11)
-    ctx.fillText(deadlineText.value, 20, 128)
+    ctx.font = 'bold 20px sans-serif'
+    ctx.setTextBaseline('top')
+    layout.lines.forEach((line, i) => ctx.fillText(line, 20, 20 + i * 27))
 
-    // 小程序码
-    ctx.drawImage(qrPath, (W - 140) / 2, 180, 140, 140)
+    // 截止时间胶囊：和页面一样是 10% 白底 + 小时钟 + 10 号字
+    const chipY = 20 + Math.max(1, layout.lines.length) * 27 + 12
+    const chipH = POSTER_CHIP_H
+    const label = deadlineText.value
+    ctx.font = '10px sans-serif'
+    const textW = ctx.measureText(label).width
+    const iconW = 10
+    const chipW = 9 + iconW + 4 + textW + 9
+    roundRect(ctx, 20, chipY, chipW, chipH, 8)
+    ctx.setFillStyle('rgba(255, 255, 255, 0.08)')
+    ctx.fill()
 
+    const iconCx = 20 + 9 + iconW / 2
+    const iconCy = chipY + chipH / 2
+    ctx.setStrokeStyle('rgba(255, 255, 255, 0.6)')
+    ctx.setLineWidth(1)
+    ctx.beginPath()
+    ctx.arc(iconCx, iconCy, 4.5, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(iconCx, iconCy)
+    ctx.lineTo(iconCx, iconCy - 2.4)
+    ctx.moveTo(iconCx, iconCy)
+    ctx.lineTo(iconCx + 1.8, iconCy)
+    ctx.stroke()
+
+    ctx.setFillStyle('rgba(255, 255, 255, 0.8)')
+    ctx.setTextBaseline('middle')
+    ctx.fillText(label, 20 + 9 + iconW + 4, iconCy)
+
+    // 小程序码：140 白框 + 6 内边距，和页面一致
+    const qrX = (POSTER_W - 140) / 2
+    const qrY = layout.headerH + 20
+    ctx.setFillStyle('#FFFFFF')
+    ctx.fillRect(qrX, qrY, 140, 140)
+    ctx.drawImage(qrPath, qrX + 6, qrY + 6, 128, 128)
+
+    // 扫码文案
     ctx.setTextAlign('center')
-    ctx.setFillStyle('#71717A')
-    ctx.setFontSize(12)
-    ctx.fillText(scanText.value, W / 2, 348)
+    ctx.setTextBaseline('top')
+    ctx.setFillStyle('#52525B')
+    ctx.font = '11px sans-serif'
+    ctx.fillText(scanText.value, POSTER_W / 2, qrY + 140 + 14)
 
-    ctx.setFillStyle('#A1A1AA')
-    ctx.setFontSize(11)
-    ctx.fillText(`由 ${p.creatorName} 发起`, W / 2, 382)
-
-    ctx.setFillStyle('#4F46E5')
-    ctx.setFontSize(12)
-    ctx.fillText('杜雅轩 · 扫码参与', W / 2, 412)
+    // 灰底署名
+    const footTop = layout.headerH + layout.bodyH
+    ctx.setFillStyle('#F4F4F5')
+    ctx.fillRect(0, footTop, POSTER_W, layout.footH)
+    ctx.setTextAlign('left')
+    ctx.setTextBaseline('middle')
+    ctx.setFillStyle('#52525B')
+    ctx.font = '10px sans-serif'
+    ctx.fillText(`由 ${p.creatorName} 发起`, 20, footTop + layout.footH / 2)
 
     // 老版 canvas 的 draw 回调不保证图片已解码完，稍等一帧再导出
-    ctx.draw(false, () => setTimeout(resolve, 150))
+    ctx.draw(false, () => setTimeout(() => resolve({ height: layout.height }), 150))
   })
 }
 
-function exportPoster(): Promise<string> {
+function exportPoster(height: number): Promise<string> {
+  // 源区域用画布逻辑坐标；输出用物理像素，两者由 dpr 对齐，正好 1:1
+  const canvasHeight = height * POSTER_SCALE
+  const destHeight = Math.round((height / POSTER_W) * POSTER_OUTPUT_W)
   return new Promise((resolve, reject) => {
     uni.canvasToTempFilePath({
       canvasId: 'poster',
-      width: 300,
-      height: 460,
-      destWidth: 600,
-      destHeight: 920,
+      x: 0,
+      y: 0,
+      width: POSTER_CANVAS_W,
+      height: canvasHeight,
+      destWidth: POSTER_OUTPUT_W,
+      destHeight,
+      fileType: 'png',
       success: (r) => resolve(r.tempFilePath),
       fail: reject
     })
@@ -277,30 +491,76 @@ function saveToAlbum(filePath: string): Promise<void> {
   })
 }
 
+const NAME_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+
+/** 32 位随机文件名（大小写字母 + 数字） */
+function randomFileName(): string {
+  let name = ''
+  for (let i = 0; i < 32; i++) {
+    name += NAME_CHARS.charAt(Math.floor(Math.random() * NAME_CHARS.length))
+  }
+  return `${name}.png`
+}
+
+/**
+ * 相册 API 不能直接指定文件名，临时文件在部分机型和开发者工具里会显示成
+ * tmp_xxx。先把导出的图复制成 32 位随机名，再拿这个路径去存；复制失败就
+ * 退回临时路径，不影响保存。
+ */
+function renameForAlbum(tempPath: string): string {
+  const wxApi = (globalThis as any).wx
+  const fs = wxApi?.getFileSystemManager?.() ?? (uni as any).getFileSystemManager?.()
+  const dir = wxApi?.env?.USER_DATA_PATH ?? (uni as any).env?.USER_DATA_PATH
+  if (!fs || !dir) return tempPath
+  const target = `${dir}/${randomFileName()}`
+  try {
+    fs.copyFileSync(tempPath, target)
+    return target
+  } catch {
+    return tempPath
+  }
+}
+
+function removeTempFile(filePath: string): void {
+  const wxApi = (globalThis as any).wx
+  const fs = wxApi?.getFileSystemManager?.() ?? (uni as any).getFileSystemManager?.()
+  if (!fs) return
+  try {
+    fs.unlink({ filePath, fail: () => {} })
+  } catch {
+    // 清理失败不影响用户
+  }
+}
+
 async function savePoster() {
   if (!poll.value) return
   if (getPlatform() === 'h5') {
-    uni.showToast({ title: '请在微信小程序里保存海报', icon: 'none' })
+    toast.show('请在微信小程序里保存海报')
     return
   }
   if (!qrUrl.value) {
-    uni.showToast({ title: '小程序码还没准备好，请稍后再试', icon: 'none' })
+    toast.show('小程序码还没准备好，请稍后再试')
     return
   }
   if (saving.value) return
   saving.value = true
   try {
     const qrPath = await imageInfo(qrUrl.value)
-    await renderPoster(qrPath)
-    const filePath = await exportPoster()
-    await saveToAlbum(filePath)
-    uni.showToast({ title: '已保存到相册', icon: 'none' })
+    const { height } = await renderPoster(qrPath)
+    const tempPath = await exportPoster(height)
+    const albumPath = renameForAlbum(tempPath)
+    try {
+      await saveToAlbum(albumPath)
+    } finally {
+      if (albumPath !== tempPath) removeTempFile(albumPath)
+    }
+    toast.success('已保存到相册')
   } catch (err) {
     const msg = String((err as { errMsg?: string })?.errMsg ?? '')
     if (msg.includes('auth') || msg.includes('deny') || msg.includes('authorize')) {
       permissionVisible.value = true
     } else {
-      uni.showToast({ title: '保存失败，请重试', icon: 'none' })
+      toast.error('保存失败，请重试')
     }
   } finally {
     saving.value = false
@@ -315,13 +575,21 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
 
 <template>
   <view class="share">
+    <AppToast />
     <!--
       隐藏画布：保存海报时在这里重绘。
       尺寸必须写在内联样式里 —— class 里的 px 会被 postcss 转成 rpx，
-      不同机型上画布实际大小跟着变，而 ctx 的坐标是固定的 300×460，
-      在小屏机上右下角就被裁掉了。
+      不同机型上画布实际大小跟着变，而 ctx 的坐标是按 300 宽设计稿固定的，
+      在小屏机上右下角就被裁掉了。画布逻辑宽 = 1200 / dpr，导出 1200px。
     -->
-    <canvas canvas-id="poster" class="share__canvas" style="width: 300px; height: 460px" />
+    <canvas
+      canvas-id="poster"
+      class="share__canvas"
+      :style="{
+        width: `${POSTER_CANVAS_W}px`,
+        height: `${POSTER_CANVAS_MAX_H}px`
+      }"
+    />
 
     <AppNavBar :title="navTitle" />
 
@@ -371,6 +639,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
               :src="qrUrl"
               mode="aspectFit"
               show-menu-by-longpress
+              @error="onQrError"
             />
             <view v-else-if="qrLoading" class="poster__qr-loading">
               <view class="poster__qr-spinner" />
@@ -462,6 +731,9 @@ export default { name: 'SharePage' }
 .share {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -497,7 +769,7 @@ export default { name: 'SharePage' }
   }
 
   &__closed {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 }
@@ -508,7 +780,7 @@ export default { name: 'SharePage' }
   max-width: 100%;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 20px;
+  border-radius: $r-sheet;
   /* 黑头是直角，靠父级裁圆角 */
   overflow: hidden;
   display: flex;
@@ -523,7 +795,7 @@ export default { name: 'SharePage' }
   }
 
   &__title {
-    font-size: 20px;
+    font-size: $fs-20;
     font-weight: 700;
     color: $white;
     line-height: 1.35;
@@ -537,7 +809,7 @@ export default { name: 'SharePage' }
 
   &__chip {
     padding: 4px 9px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
@@ -545,7 +817,7 @@ export default { name: 'SharePage' }
   }
 
   &__chip-text {
-    font-size: 10px;
+    font-size: $fs-10;
     color: rgba(255, 255, 255, 0.8);
   }
 
@@ -646,7 +918,7 @@ export default { name: 'SharePage' }
   }
 
   &__scan {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
@@ -658,7 +930,7 @@ export default { name: 'SharePage' }
   }
 
   &__by {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $muted;
   }
 }
@@ -666,7 +938,7 @@ export default { name: 'SharePage' }
 .invite {
   width: 100%;
   padding: 14px 16px;
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -681,12 +953,12 @@ export default { name: 'SharePage' }
   }
 
   &__label {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
   }
 
   &__code {
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     letter-spacing: 3px;
     color: $ink;
@@ -699,7 +971,7 @@ export default { name: 'SharePage' }
   }
 
   &__copy-text {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $accent;
   }
 }
@@ -737,7 +1009,7 @@ export default { name: 'SharePage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 }

@@ -183,7 +183,7 @@ export default { name: 'AppNavBar' }
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     transition:
@@ -221,7 +221,7 @@ export default { name: 'AppNavBar' }
   }
 
   &__title-text {
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 600;
     color: $ink;
     overflow: hidden;

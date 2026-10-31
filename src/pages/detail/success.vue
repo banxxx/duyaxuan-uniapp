@@ -10,6 +10,7 @@ import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { canSeePollResult } from '@/utils/result-visibility'
 import { bottomInset } from '@/utils/platform'
 import { backTo, go, ROUTES } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 13 投票成功
@@ -81,6 +82,7 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
 
 <template>
   <view class="success">
+    <AppToast />
     <AppNavBar :back="error" />
 
     <AppEmpty
@@ -125,7 +127,7 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
           @tap="goShare"
         >
           <AppIcon name="share-2" :size="17" color="#09090B" />
-          <text class="success__secondary-text">邀请同事一起投</text>
+          <text class="success__secondary-text">邀请朋友一起投</text>
         </view>
       </view>
 
@@ -141,6 +143,9 @@ export default { name: 'VoteSuccessPage' }
 <style lang="scss" scoped>
 .success {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -159,7 +164,7 @@ export default { name: 'VoteSuccessPage' }
   &__icon {
     width: 88px;
     height: 88px;
-    border-radius: 44px;
+    border-radius: $r-circle;
     background: $success;
     display: flex;
     align-items: center;
@@ -167,13 +172,13 @@ export default { name: 'VoteSuccessPage' }
   }
 
   &__title {
-    font-size: 26px;
+    font-size: $fs-26;
     font-weight: 700;
     color: $ink;
   }
 
   &__desc {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
     text-align: center;
   }
@@ -187,7 +192,7 @@ export default { name: 'VoteSuccessPage' }
 
   &__primary {
     height: 52px;
-    border-radius: 16px;
+    border-radius: $r-button;
     background: $ink;
     display: flex;
     align-items: center;
@@ -199,14 +204,14 @@ export default { name: 'VoteSuccessPage' }
   }
 
   &__primary-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $white;
   }
 
   &__secondary {
     height: 52px;
-    border-radius: 16px;
+    border-radius: $r-button;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -220,13 +225,13 @@ export default { name: 'VoteSuccessPage' }
   }
 
   &__secondary-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
   }
 
   &__note {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
@@ -236,13 +241,13 @@ export default { name: 'VoteSuccessPage' }
   padding: 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
   display: flex;
   flex-direction: column;
   gap: 10px;
 
   &__label {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -253,7 +258,7 @@ export default { name: 'VoteSuccessPage' }
   }
 
   &__choice-text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }

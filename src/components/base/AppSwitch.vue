@@ -47,7 +47,7 @@ export default { name: 'AppSwitch' }
 .switch {
   width: 44px;
   height: 26px;
-  border-radius: 13px;
+  border-radius: $r-full;
   background: $track;
   padding: 3px;
   display: flex;
@@ -80,7 +80,7 @@ export default { name: 'AppSwitch' }
   &__knob {
     width: 20px;
     height: 20px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $white;
     box-shadow: 0 1px 3px rgba(9, 9, 11, 0.16);
     transition:

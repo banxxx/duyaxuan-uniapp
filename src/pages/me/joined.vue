@@ -12,6 +12,7 @@ import { fetchJoinedPolls } from '@/api/poll'
 import { getSafeArea } from '@/utils/platform'
 import { ROUTES, go, switchTab } from '@/utils/router'
 import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 42 我参与的
@@ -127,6 +128,7 @@ function goHome() {
 
 <template>
   <view class="page">
+    <AppToast />
     <AppNavBar title="我参与的">
       <template #right>
         <view class="page__more" @tap="openMore">
@@ -202,6 +204,9 @@ export default { name: 'JoinedPollsPage' }
 <style lang="scss" scoped>
 .page {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -217,7 +222,7 @@ export default { name: 'JoinedPollsPage' }
   &__more {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -241,13 +246,13 @@ export default { name: 'JoinedPollsPage' }
   display: flex;
   gap: 4px;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $subtle;
 
   &__item {
     flex: 1;
     padding: 8px 0;
-    border-radius: 8px;
+    border-radius: $r-chip;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -258,7 +263,7 @@ export default { name: 'JoinedPollsPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
 

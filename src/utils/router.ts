@@ -53,6 +53,7 @@ export const ROUTES = {
   settingsNotifications: '/pages/settings/notifications',
   settingsAccount: '/pages/settings/account',
   settingsWechat: '/pages/settings/wechat',
+  settingsBind: '/pages/settings/bind',
   settingsDeactivate: '/pages/settings/deactivate',
   settingsDoc: '/pages/settings/doc',
 

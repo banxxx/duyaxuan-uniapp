@@ -10,6 +10,7 @@ import { fetchPendingPolls } from '@/api/poll'
 import type { PendingPoll } from '@/mock/data'
 import { getSafeArea } from '@/utils/platform'
 import { ROUTES, go, switchTab } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 待我投票 · 全部
@@ -71,6 +72,7 @@ function goHome() {
 
 <template>
   <view class="page">
+    <AppToast />
     <AppNavBar title="待我投票" />
 
     <view class="page__content">
@@ -86,7 +88,7 @@ function goHome() {
       </view>
 
       <view v-else-if="loading && !list.length" class="page__body">
-        <AppSkeleton type="cards" />
+        <AppSkeleton type="cards" flush />
       </view>
 
       <view v-else-if="!list.length" class="page__body">
@@ -126,6 +128,9 @@ export default { name: 'PendingPollsPage' }
 <style lang="scss" scoped>
 .page {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -147,7 +152,7 @@ export default { name: 'PendingPollsPage' }
 
   &__more {
     padding: 14px 0 4px;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     text-align: center;
   }

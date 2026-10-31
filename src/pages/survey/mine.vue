@@ -10,6 +10,8 @@ import { fetchPoll, fetchMyAnswers } from '@/api/poll'
 import { formatRelative, charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 71 我的提交记录
@@ -61,7 +63,7 @@ function orderOf(a: SurveyAnswer) {
 
 function edit(a: SurveyAnswer) {
   if (isEnded.value) {
-    uni.showToast({ title: '问卷已截止，不能再修改', icon: 'none' })
+    toast.show('问卷已截止，不能再修改')
     return
   }
   go(ROUTES.surveyEditAnswer, { id: pollId.value, answerId: a.id })
@@ -74,6 +76,7 @@ function fillAgain() {
 
 <template>
   <view class="mine">
+    <AppToast />
     <AppNavBar title="我的提交" />
 
     <view v-if="loading" class="mine__body">
@@ -175,6 +178,9 @@ export default { name: 'SurveyMinePage' }
 .mine {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -199,7 +205,7 @@ export default { name: 'SurveyMinePage' }
 
 .context {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -214,7 +220,7 @@ export default { name: 'SurveyMinePage' }
 
   &__live {
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $success-soft;
     display: flex;
     align-items: center;
@@ -237,7 +243,7 @@ export default { name: 'SurveyMinePage' }
   }
 
   &__live-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $success;
 
@@ -248,7 +254,7 @@ export default { name: 'SurveyMinePage' }
 
   &__tag {
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -256,13 +262,13 @@ export default { name: 'SurveyMinePage' }
   }
 
   &__tag-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $muted;
   }
 
   &__title {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
     line-height: 1.4;
@@ -275,7 +281,7 @@ export default { name: 'SurveyMinePage' }
   }
 
   &__num {
-    font-size: 32px;
+    font-size: $fs-32;
     font-weight: 700;
     color: $accent;
     font-family: $font-num;
@@ -289,20 +295,20 @@ export default { name: 'SurveyMinePage' }
   }
 
   &__note-title {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $ink;
   }
 
   &__note-desc {
-    font-size: 9px;
+    font-size: $fs-10;
     color: $faint;
   }
 }
 
 .privacy {
   padding: 11px 12px;
-  border-radius: 10px;
+  border-radius: $r-sm;
   background: $subtle;
   display: flex;
   gap: 8px;
@@ -310,7 +316,7 @@ export default { name: 'SurveyMinePage' }
 
   &__text {
     flex: 1;
-    font-size: 10px;
+    font-size: $fs-10;
     color: $muted;
     line-height: 1.55;
   }
@@ -324,7 +330,7 @@ export default { name: 'SurveyMinePage' }
 
 .item {
   padding: 14px 16px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -345,20 +351,20 @@ export default { name: 'SurveyMinePage' }
 
   &__idx {
     padding: 2px 7px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $subtle;
     display: flex;
     align-items: center;
   }
 
   &__idx-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 700;
     color: $muted;
   }
 
   &__time {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -370,14 +376,14 @@ export default { name: 'SurveyMinePage' }
 
   &__latest {
     padding: 2px 7px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $accent-soft;
     display: flex;
     align-items: center;
   }
 
   &__latest-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $accent;
   }
@@ -389,19 +395,19 @@ export default { name: 'SurveyMinePage' }
   }
 
   &__edit-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent;
   }
 
   &__answer {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
     line-height: 1.55;
   }
 
   &__count {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 }
@@ -412,7 +418,7 @@ export default { name: 'SurveyMinePage' }
   justify-content: center;
 
   &__text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent;
   }
 }

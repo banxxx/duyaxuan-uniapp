@@ -15,6 +15,8 @@ import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 24 发布者 · 数据 · 进行中 / 25 发布者 · 数据 · 已结束
@@ -132,7 +134,7 @@ async function onEnd() {
   // 提前结束会改 rules.endAt，详情/结果页的快照跟着失效
   cacheDrop(cacheKey.pollAll(poll.value.id))
   await load()
-  uni.showToast({ title: '已结束', icon: 'none' })
+  toast.show('已结束')
 }
 
 /** 导航栏右侧的「···」：设计稿是操作入口，不是一个直达结果页的图标 */
@@ -166,6 +168,7 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
 
 <template>
   <view class="data">
+    <AppToast />
     <AppNavBar :title="isSurvey ? '问卷数据' : '投票数据'">
       <template #right>
         <view class="data__nav-btn" @tap="onMore">
@@ -410,6 +413,9 @@ export default { name: 'CreatorDataPage' }
 .data {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -418,7 +424,7 @@ export default { name: 'CreatorDataPage' }
   &__nav-btn {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -460,7 +466,7 @@ export default { name: 'CreatorDataPage' }
 /* 黑卡：r20 pad18 gap12 */
 .hero {
   padding: 18px;
-  border-radius: 20px;
+  border-radius: $r-sheet;
   background: $ink;
   display: flex;
   flex-direction: column;
@@ -474,7 +480,7 @@ export default { name: 'CreatorDataPage' }
 
   &__badge {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: rgba(255, 255, 255, 0.1);
     display: flex;
     align-items: center;
@@ -493,18 +499,18 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__badge-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 500;
     color: $white;
   }
 
   &__right {
-    font-size: 11px;
+    font-size: $fs-11;
     color: rgba(255, 255, 255, 0.6);
   }
 
   &__title {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $white;
     line-height: 1.4;
@@ -524,7 +530,7 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__stat-label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: rgba(255, 255, 255, 0.5);
   }
 
@@ -535,7 +541,7 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__stat-num {
-    font-size: 28px;
+    font-size: $fs-28;
     font-weight: 700;
     color: $accent;
     /* 纯数字没有下行字母，1 号行高正好容纳字形，避免 1.05 多出 4px 撑破卡 */
@@ -543,7 +549,7 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__stat-unit {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.6);
   }
@@ -556,13 +562,13 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__stat-total {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $white;
   }
 
   &__stat-note {
-    font-size: 9px;
+    font-size: $fs-10;
     color: rgba(255, 255, 255, 0.5);
   }
 
@@ -579,12 +585,12 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__progress-label {
-    font-size: 9px;
+    font-size: $fs-10;
     color: rgba(255, 255, 255, 0.5);
   }
 
   &__progress-right {
-    font-size: 9px;
+    font-size: $fs-10;
     color: rgba(255, 255, 255, 0.6);
   }
 
@@ -611,7 +617,7 @@ export default { name: 'CreatorDataPage' }
 .kpi {
   flex: 1;
   padding: 13px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -621,12 +627,12 @@ export default { name: 'CreatorDataPage' }
   overflow: hidden;
 
   &__label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__value {
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     color: $ink;
     line-height: 1.2;
@@ -650,13 +656,13 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__sub {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
@@ -675,7 +681,7 @@ export default { name: 'CreatorDataPage' }
   gap: 6px;
 
   &__value {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $muted;
 
@@ -694,7 +700,7 @@ export default { name: 'CreatorDataPage' }
   &__fill {
     width: 100%;
     border-radius: 4px;
-    background: $line;
+    background: $track-strong;
     min-height: 2px;
 
     &--peak {
@@ -703,7 +709,7 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__label {
-    font-size: 9px;
+    font-size: $fs-10;
     color: $faint;
   }
 }
@@ -725,7 +731,7 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
@@ -737,7 +743,7 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__link-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
@@ -764,7 +770,7 @@ export default { name: 'CreatorDataPage' }
   &__badge {
     width: 18px;
     height: 18px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $bg;
     display: flex;
     align-items: center;
@@ -777,7 +783,7 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__badge-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $faint;
 
@@ -787,7 +793,7 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__name {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 500;
     color: $ink;
     overflow: hidden;
@@ -808,12 +814,12 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__votes {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 
   &__pct {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
 
@@ -832,7 +838,7 @@ export default { name: 'CreatorDataPage' }
   &__fill {
     height: 100%;
     border-radius: 4px;
-    background: $track;
+    background: $track-strong;
 
     &--first {
       background: $accent;
@@ -843,7 +849,7 @@ export default { name: 'CreatorDataPage' }
 /* 25 的冠军卡：浅紫底 r12 pad12 gap4 */
 .winner {
   padding: 12px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $accent-soft;
   display: flex;
   flex-direction: column;
@@ -856,19 +862,19 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__label {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 500;
     color: $accent-ink;
   }
 
   &__stat {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent-ink;
   }
 
   &__name {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
   }
@@ -891,18 +897,18 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__sub {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__note {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     line-height: 1.5;
   }
@@ -921,13 +927,13 @@ export default { name: 'CreatorDataPage' }
   }
 
   &__name {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $ink;
   }
 
   &__count {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
   }
 
@@ -941,7 +947,7 @@ export default { name: 'CreatorDataPage' }
   &__fill {
     height: 100%;
     border-radius: 3px;
-    background: $track;
+    background: $track-strong;
 
     &--peak {
       background: $accent;

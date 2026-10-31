@@ -18,6 +18,7 @@ import type {
   PollType
 } from '../types'
 import { newId } from '../lib/id'
+import { isOptionImageUrl, MAX_OPTION_IMAGES } from '../lib/storage'
 import { assertCanJoin, isInviteOnly, newInviteCode } from './invites'
 import { notifyPollUpdated } from './notifications'
 import { HttpError } from '../lib/response'
@@ -105,13 +106,19 @@ function toPoll(
       profileField: row.profile_field,
       endAt: row.end_at
     },
-    options: options.map<PollOptionOut>((o) => ({
-      id: o.id,
-      title: o.title,
-      desc: o.desc ?? undefined,
-      // 结果不可见时票数直接给 0，避免从接口里把票数读出来
-      votes: resultVisible ? o.votes_count : 0
-    })),
+    options: options.map<PollOptionOut>((o) => {
+      const out: PollOptionOut = {
+        id: o.id,
+        title: o.title,
+        desc: o.desc ?? undefined,
+        // 结果不可见时票数直接给 0，避免从接口里把票数读出来
+        votes: resultVisible ? o.votes_count : 0
+      }
+      // 纯文字选项不带这个字段，前端 `v-if="opt.images"` 就能判断
+      const images = parseImages(o.images)
+      if (images.length) out.images = images
+      return out
+    }),
     // 关闭「查看投票人数」后，非发起人拿到的就是 0；前端据此不显示人数
     voterCount: !isSurvey && row.hide_voter_count && !isCreator ? 0 : row.voter_count,
     commentCount: row.comment_count,
@@ -551,7 +558,8 @@ export interface PollBody {
   type?: string
   title?: string
   desc?: string
-  options?: Array<{ id?: string; title?: string; desc?: string }>
+  /** images 只收本服务的 /files/options/... 地址，最多 3 张 */
+  options?: Array<{ id?: string; title?: string; desc?: string; images?: unknown }>
   rules?: RulesInput
   sourceSurveyId?: string
 }
@@ -625,11 +633,57 @@ function rulesInputFromRow(row: PollRowJoined): RulesInput {
   }
 }
 
-function cleanOptions(raw: PollBody['options']): Array<{ title: string; desc: string | null }> {
+/**
+ * 读库里的 images 列。
+ *
+ * 坏 JSON、非数组、外站地址一律当没有图：这一列是客户端写进来的，
+ * 不能假设它一定合规（历史数据、手工改库都可能出现脏值）。
+ */
+function parseImages(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const arr: unknown = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr
+      .filter((u): u is string => typeof u === 'string' && isOptionImageUrl(u))
+      .slice(0, MAX_OPTION_IMAGES)
+  } catch {
+    return []
+  }
+}
+
+/** 入参里的图片：只留本服务的 /files/options/ 地址，去重、截断到 3 张 */
+function cleanImages(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string' || !isOptionImageUrl(item) || out.includes(item)) continue
+    out.push(item)
+    if (out.length >= MAX_OPTION_IMAGES) break
+  }
+  return out
+}
+
+/** 空数组存 null 而不是 "[]"，读的时候少一次 JSON.parse */
+function imagesJson(images: string[]): string | null {
+  return images.length ? JSON.stringify(images) : null
+}
+
+function cleanOptions(
+  raw: PollBody['options']
+): Array<{ title: string; desc: string | null; images: string[] }> {
   const list = (Array.isArray(raw) ? raw : [])
-    .map((o) => ({ title: String(o?.title ?? '').trim(), desc: String(o?.desc ?? '').trim() }))
+    .map((o) => ({
+      title: String(o?.title ?? '').trim(),
+      desc: String(o?.desc ?? '').trim(),
+      images: cleanImages(o?.images)
+    }))
     .filter((o) => o.title)
-    .map((o) => ({ title: o.title.slice(0, 40), desc: o.desc.slice(0, 80) || null }))
+    .map((o) => ({
+      title: o.title.slice(0, 40),
+      desc: o.desc.slice(0, 80) || null,
+      images: o.images
+    }))
 
   if (list.length > MAX_OPTIONS) throw new HttpError(400, `选项最多 ${MAX_OPTIONS} 个`)
   // 同名选项会让结果页出现两行一模一样的标题，投票人也分不清投的是哪个
@@ -713,9 +767,9 @@ export async function createPoll(
     stmts.push(
       db
         .prepare(
-          'INSERT INTO options (id, poll_id, title, desc, sort, votes_count) VALUES (?,?,?,?,?,0)'
+          'INSERT INTO options (id, poll_id, title, desc, images, sort, votes_count) VALUES (?,?,?,?,?,?,0)'
         )
-        .bind(newId('o'), pollId, o.title, o.desc, i)
+        .bind(newId('o'), pollId, o.title, o.desc, imagesJson(o.images), i)
     )
   })
 
@@ -843,13 +897,14 @@ export async function updatePoll(
       .all<OptionRow>()
     const byId = new Map(existing.results.map((o) => [o.id, o]))
 
-    // 只比标题和描述：排序变化、id 变化不算「内容有更新」
+    // 只比标题、描述和配图：排序变化、id 变化不算「内容有更新」。
+    // 图片顺序也要比 —— 第一张是封面，换封面就是换了别人看到的画面。
     const beforeOptions = existing.results
-      .map((o) => `${o.title}\u0000${o.desc ?? ''}`)
+      .map((o) => `${o.title}\u0000${o.desc ?? ''}\u0000${parseImages(o.images).join(',')}`)
       .sort()
       .join('\u0001')
     const afterOptions = next
-      .map((o) => `${o.title}\u0000${o.desc ?? ''}`)
+      .map((o) => `${o.title}\u0000${o.desc ?? ''}\u0000${o.images.join(',')}`)
       .sort()
       .join('\u0001')
     optionsChanged = beforeOptions !== afterOptions
@@ -868,8 +923,9 @@ export async function updatePoll(
       throw new HttpError(400, `「${votedDropped[0].title}」已有票数，不能删除`)
     }
 
-    // 已有票的选项连文字也不能改：改标题等于偷换大家投过的东西
-    const cleanedById = new Map<string, { title: string; desc: string | null }>()
+    // 已有票的选项连文字和配图也不能改：改标题等于偷换大家投过的东西，
+    // 换图同理 —— 票是投给那张图的
+    const cleanedById = new Map<string, { title: string; desc: string | null; images: string[] }>()
     incoming.forEach((item, i) => {
       if (item.id && byId.has(item.id) && next[i]) cleanedById.set(item.id, next[i])
     })
@@ -877,27 +933,28 @@ export async function updatePoll(
       if (o.votes_count <= 0) continue
       const clean = cleanedById.get(o.id)
       if (!clean) continue // 上面已按「不能删除」拦过
-      if (clean.title !== o.title || (clean.desc ?? null) !== (o.desc ?? null)) {
+      const imagesSame = parseImages(o.images).join(',') === clean.images.join(',')
+      if (clean.title !== o.title || (clean.desc ?? null) !== (o.desc ?? null) || !imagesSame) {
         throw new HttpError(400, `「${o.title}」已有票数，不能修改`)
       }
     }
 
     let sort = 0
     for (const item of incoming) {
-      const clean = next[sort] ?? { title: '', desc: null }
+      const clean = next[sort] ?? { title: '', desc: null, images: [] }
       if (item.id && byId.has(item.id)) {
         stmts.push(
           db
-            .prepare('UPDATE options SET title = ?, desc = ?, sort = ? WHERE id = ?')
-            .bind(clean.title, clean.desc, sort, item.id)
+            .prepare('UPDATE options SET title = ?, desc = ?, images = ?, sort = ? WHERE id = ?')
+            .bind(clean.title, clean.desc, imagesJson(clean.images), sort, item.id)
         )
       } else {
         stmts.push(
           db
             .prepare(
-              'INSERT INTO options (id, poll_id, title, desc, sort, votes_count) VALUES (?,?,?,?,?,0)'
+              'INSERT INTO options (id, poll_id, title, desc, images, sort, votes_count) VALUES (?,?,?,?,?,?,0)'
             )
-            .bind(newId('o'), pollId, clean.title, clean.desc, sort)
+            .bind(newId('o'), pollId, clean.title, clean.desc, imagesJson(clean.images), sort)
         )
       }
       sort++

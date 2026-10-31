@@ -1,5 +1,6 @@
 <template>
   <view class="home">
+    <AppToast />
     <!-- 吸顶区：问候 + 搜索。整页滚动时这两块停在胶囊下方，内容从下面穿过去 -->
     <view class="home__sticky" :style="{ paddingTop: `${contentTop}px` }">
       <!-- Header：问候 + 铃铛 + 头像（设计稿 02：Greeting 宽度自适应，不参与撑满） -->
@@ -59,9 +60,9 @@
             <text class="home__all" @tap="openPending">全部</text>
           </view>
 
-          <!-- 60 加载：骨架屏替代转圈 -->
+          <!-- 60 加载：骨架屏替代转圈。外层已经有页面边距，这里用 flush 不再缩进 -->
           <view v-if="loading" class="home__loading">
-            <AppSkeleton type="cards" />
+            <AppSkeleton type="home" flush />
           </view>
 
           <!-- 03 空状态：待我投票为空时换成空状态块 -->
@@ -161,6 +162,7 @@ import { getSafeArea } from '@/utils/platform'
 import { hideNativeTabBar } from '@/utils/tab'
 import { formatDate, formatRemaining } from '@/utils/format'
 import { ROUTES, go, switchTab } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 02 首页 · 待我投票（含 03 空状态、60 加载、61 网络错误）
@@ -296,6 +298,9 @@ export default { name: 'HomePage' }
 <style lang="scss" scoped>
 .home {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -343,12 +348,12 @@ export default { name: 'HomePage' }
   }
 
   &__date {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
   &__title {
-    font-size: 28px;
+    font-size: $fs-28;
     font-weight: 700;
     color: $ink;
     line-height: 1.25;
@@ -365,7 +370,7 @@ export default { name: 'HomePage' }
   &__bell {
     width: 40px;
     height: 40px;
-    border-radius: 20px;
+    border-radius: $r-sheet;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -392,7 +397,7 @@ export default { name: 'HomePage' }
   &__search {
     height: 46px;
     padding: 0 14px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -405,7 +410,7 @@ export default { name: 'HomePage' }
   }
 
   &__search-text {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $faint;
   }
 
@@ -433,7 +438,7 @@ export default { name: 'HomePage' }
   }
 
   &__section-title {
-    font-size: 17px;
+    font-size: $fs-17;
     font-weight: 700;
     color: $ink;
   }
@@ -451,7 +456,7 @@ export default { name: 'HomePage' }
   }
 
   &__count-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 700;
     color: $white;
     line-height: 1;
@@ -459,7 +464,7 @@ export default { name: 'HomePage' }
   }
 
   &__all {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 
@@ -488,7 +493,7 @@ export default { name: 'HomePage' }
 
   &__blank-title {
     margin-top: 20px;
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     color: $ink;
   }
@@ -496,7 +501,7 @@ export default { name: 'HomePage' }
   &__blank-desc {
     width: 260px;
     margin-top: 10px;
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
     text-align: center;
     line-height: 1.6;
@@ -506,7 +511,7 @@ export default { name: 'HomePage' }
     margin-top: 20px;
     height: 42px;
     padding: 0 22px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $accent;
     display: flex;
     align-items: center;
@@ -518,7 +523,7 @@ export default { name: 'HomePage' }
   }
 
   &__blank-btn-text {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $white;
   }
@@ -546,7 +551,7 @@ export default { name: 'HomePage' }
   padding: 14px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 14px;
+  border-radius: $r-input;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -563,7 +568,7 @@ export default { name: 'HomePage' }
 
   &__title {
     flex: 1;
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
     line-height: 1.4;
@@ -606,7 +611,7 @@ export default { name: 'HomePage' }
   }
 
   &__status-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $faint;
 
@@ -616,12 +621,12 @@ export default { name: 'HomePage' }
   }
 
   &__votes {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__time {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     flex-shrink: 0;
   }

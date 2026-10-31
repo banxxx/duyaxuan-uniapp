@@ -84,14 +84,14 @@ export default { name: 'StepBar' }
   }
 
   &__num {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 700;
     color: $faint;
     transition: color $dur-base $ease-both;
   }
 
   &__text {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     transition: color $dur-base $ease-both;
   }

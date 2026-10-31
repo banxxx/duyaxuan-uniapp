@@ -5,6 +5,7 @@ import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppIcon from '@/components/base/AppIcon.vue'
 import { bottomInset } from '@/utils/platform'
 import { go } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 47 用户协议 / 52 隐私政策 / 48 关于我们
@@ -179,6 +180,7 @@ function open(url: string) {
 
 <template>
   <view class="doc">
+    <AppToast />
     <AppNavBar :title="title" />
 
     <scroll-view class="doc__scroll" scroll-y>
@@ -227,6 +229,9 @@ export default { name: 'DocPage' }
 .doc {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -245,13 +250,13 @@ export default { name: 'DocPage' }
   }
 
   &__updated {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     padding-left: 2px;
   }
 
   &__copy {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     text-align: center;
   }
@@ -263,13 +268,13 @@ export default { name: 'DocPage' }
   gap: 6px;
 
   &__h {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
 
   &__p {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
     line-height: 1.7;
     /* 隐私政策第一条是分行列表，<text> 里的 \n 要靠这个才会真的换行 */
@@ -287,26 +292,26 @@ export default { name: 'DocPage' }
   &__mark {
     width: 72px;
     height: 72px;
-    border-radius: 20px;
+    border-radius: $r-sheet;
     /* 原图自带蓝底，直接铺满，靠圆角裁出应用图标的样子 */
     overflow: hidden;
     background: $surface;
   }
 
   &__name {
-    font-size: 20px;
+    font-size: $fs-20;
     font-weight: 700;
     color: $ink;
   }
 
   &__ver {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
   }
 }
 
 .group {
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $surface;
   border: 1px solid $line;
   overflow: hidden;
@@ -329,12 +334,12 @@ export default { name: 'DocPage' }
 
   &__title {
     flex: 1;
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
   }
 
   &__value {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $faint;
   }
 }

@@ -86,7 +86,7 @@ export default { name: 'AppActionSheet' }
 <style lang="scss" scoped>
 .actions {
   background: $subtle;
-  border-radius: 14px;
+  border-radius: $r-input;
   overflow: hidden;
 
   &__item {
@@ -114,7 +114,7 @@ export default { name: 'AppActionSheet' }
   }
 
   &__label {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
 
     &--danger {
@@ -123,7 +123,7 @@ export default { name: 'AppActionSheet' }
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.45;
   }
@@ -136,7 +136,7 @@ export default { name: 'AppActionSheet' }
 
   &__cancel {
     height: 50px;
-    border-radius: 14px;
+    border-radius: $r-input;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -144,7 +144,7 @@ export default { name: 'AppActionSheet' }
   }
 
   &__cancel-text {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
   }

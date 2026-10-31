@@ -78,6 +78,9 @@ CREATE TABLE IF NOT EXISTS options (
   poll_id     TEXT NOT NULL,
   title       TEXT NOT NULL,
   desc        TEXT,
+  -- 图文投票：JSON 数组，存 /files/options/... 相对地址，最多 3 张；
+  -- 纯文字选项为 NULL（不是 '[]'，读的时候少一次解析）
+  images      TEXT,
   sort        INTEGER NOT NULL DEFAULT 0,
   votes_count INTEGER NOT NULL DEFAULT 0
 );

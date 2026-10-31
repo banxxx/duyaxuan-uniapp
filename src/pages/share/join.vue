@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppNavBar from '@/components/base/AppNavBar.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
+import AppInviteCode from '@/components/base/AppInviteCode.vue'
 import { fetchPoll, fetchMyAnswers, joinPoll } from '@/api/poll'
 import { useUserStore } from '@/stores/user'
-import { askInviteCode } from '@/utils/invite'
+import { useInviteCode } from '@/utils/invite'
 import { ApiError } from '@/utils/request'
 import { ROUTES, replace, reset } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
- * 分享落地页（不对外展示，只有一闪而过的骨架）
+ * 分享落地页（不对外展示，只有一闪而过的加载）
  *
  * 三个入口都从这里进：
  *   1. 微信好友/群分享卡片 → path 只带 id
@@ -31,6 +33,7 @@ import { ROUTES, replace, reset } from '@/utils/router'
  * 不先跳登录页打断分享链路。
  */
 const user = useUserStore()
+const invite = useInviteCode()
 
 const pollId = ref('')
 const failed = ref(false)
@@ -45,30 +48,51 @@ const needCode = ref(false)
  */
 const singlePage = ref(false)
 
-async function resolve(code?: string) {
-  loading.value = true
+/** 弹层提交时的校验：尝试加入，成功返回 null，失败返回文案 */
+function joinWith(candidate: string, id = pollId.value): Promise<string | null> {
+  return joinPoll(id, candidate).then(
+    () => null,
+    (e: { code?: number; message?: string }) =>
+      e?.code === 403 ? '邀请码不正确，请重新输入' : e?.message || '网络异常，请稍后重试'
+  )
+}
+
+/**
+ * @param joined 已经通过弹层校验并加入成功，不用再 join 一次
+ */
+async function resolve(code?: string, joined = false) {
+  // 重新校验邀请码时不要把页面切回加载态：弹层背后保持「需要邀请码」，
+  // 否则会闪一下，看起来像页面又重载了。
+  if (!needCode.value) loading.value = true
   failed.value = false
   deleted.value = false
-  needCode.value = false
+
   try {
     const poll = await fetchPoll(pollId.value)
 
     // 发起人自己预览不用登记；其他人先记录来源 / 校验邀请码
-    if (poll.creatorId !== user.profile?.id) {
+    if (!joined && poll.creatorId !== user.profile?.id) {
       try {
         await joinPoll(poll.id, code)
-      } catch {
-        // 链接模式：记来源失败不该挡住参与。
-        // 邀请码模式：没带码或者码不对，都让用户输一次。
-        if (poll.rules.joinMethod === 'invite') {
-          const next = await askInviteCode()
-          if (!next) {
-            needCode.value = true
-            loading.value = false
-            return
-          }
-          return resolve(next)
-        }
+      } catch (err) {
+        // 只有 403 才是「需要邀请码 / 邀请码不对」。
+        // 网络错误、500 等照常走失败页，不要误弹输入框。
+        const needInvite =
+          poll.rules.joinMethod === 'invite' && (err as { code?: number })?.code === 403
+        if (!needInvite) throw err
+
+        // 先把页面切到静止的「需要邀请码」，再弹层。
+        // 弹层背后如果还是骨架屏，会一直扫光，看着像卡死了。
+        needCode.value = true
+        loading.value = false
+
+        const next = await invite.ask({
+          initial: code,
+          // 校验交给弹层的「进入」按钮：码错了留在原地抖动提示，不用收起再弹出
+          validate: (candidate) => joinWith(candidate, poll.id)
+        })
+        if (!next) return
+        // 加入已经在 validate 里完成，继续往下走
       }
     }
 
@@ -86,6 +110,7 @@ async function resolve(code?: string) {
 
     replace(ROUTES.detail, { id: pollId.value })
   } catch (err) {
+    needCode.value = false
     failed.value = true
     if (err instanceof ApiError && (err.code === 404 || err.code === 410)) deleted.value = true
     loading.value = false
@@ -94,8 +119,11 @@ async function resolve(code?: string) {
 
 /** 用户取消过一次之后，从空状态里再点「输入邀请码」 */
 async function retryCode() {
-  const next = await askInviteCode()
-  if (next) resolve(next)
+  // 直接弹层，不再等一次 fetchPoll + 403：点了按钮就该立刻唤起键盘
+  const code = await invite.ask({
+    validate: (candidate) => joinWith(candidate)
+  })
+  if (code) resolve(code, true)
 }
 
 onLoad((q) => {
@@ -134,8 +162,23 @@ onMounted(() => {
 
 <template>
   <view class="join">
+    <AppToast />
+    <!--
+      自定义导航栏负责让开状态栏 / 胶囊。没有它时内容从屏幕最顶上开始，
+      真机上会和状态栏叠在一起，看起来「整体往上偏了一截」。
+      返回键在「需要邀请码」停住时也有用：栈里没有上一页会回到首页。
+    -->
+    <AppNavBar />
+
+    <!--
+      落地页只是一个中转，正常一两百毫秒就跳走了，不该摆一屏「详情页骨架」。
+      慢网时停在这里，给一个安静的转圈也比一直扫光的骨架屏更像「正在进入」。
+    -->
     <view v-if="loading" class="join__body">
-      <AppSkeleton type="detail" />
+      <view class="join__loading">
+        <view class="join__spinner" />
+        <text class="join__loading-text">正在进入…</text>
+      </view>
     </view>
 
     <view v-else class="join__body">
@@ -149,7 +192,7 @@ onMounted(() => {
         v-else-if="needCode"
         icon="lock"
         title="需要邀请码"
-        desc="这份投票只对受邀的人开放，向发起人要一个 6 位邀请码"
+        desc="只对受邀的人开放，请先获取 6 位邀请码"
         action="输入邀请码"
         @action="retryCode"
       />
@@ -170,6 +213,16 @@ onMounted(() => {
         @action="reset(ROUTES.home)"
       />
     </view>
+
+    <AppInviteCode
+      :visible="invite.state.visible"
+      :initial="invite.state.initial"
+      :validating="invite.state.validating"
+      :error="invite.state.error"
+      :error-seq="invite.state.errorSeq"
+      @close="invite.close()"
+      @submit="invite.submit"
+    />
   </view>
 </template>
 
@@ -180,10 +233,41 @@ export default { name: 'ShareJoinPage' }
 <style lang="scss" scoped>
 .join {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
 
   &__body {
     padding: 8px $gutter;
+  }
+
+  &__loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding-top: 80px;
+  }
+
+  &__spinner {
+    width: 24px;
+    height: 24px;
+    border: 2px solid $line;
+    border-top-color: $accent;
+    border-radius: 50%;
+    animation: join-spin 0.8s linear infinite;
+  }
+
+  &__loading-text {
+    font-size: $fs-13;
+    color: $faint;
+  }
+}
+
+@keyframes join-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

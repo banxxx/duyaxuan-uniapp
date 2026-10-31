@@ -19,6 +19,7 @@ import { useUserStore } from '@/stores/user'
 import { formatRelative } from '@/utils/format'
 import { bottomInset, getSafeArea } from '@/utils/platform'
 import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 26 评论 · 讨论区（投票）/ 79 评论 · 讨论区（问卷）
@@ -456,7 +457,7 @@ async function loadComments(reset: boolean) {
     cursor.value = page.cursor
     hasMore.value = page.hasMore
   } catch {
-    uni.showToast({ title: '加载失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     loadingMore.value = false
   }
@@ -579,10 +580,11 @@ async function onCommentAction(key: string) {
 
 <template>
   <view class="comments">
+    <AppToast />
     <AppNavBar title="讨论区" />
 
     <view v-if="loading" class="comments__body">
-      <AppSkeleton type="list" />
+      <AppSkeleton type="people" />
     </view>
 
     <AppEmpty
@@ -854,6 +856,9 @@ export default { name: 'PollCommentsPage' }
 .comments {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -878,7 +883,7 @@ export default { name: 'PollCommentsPage' }
 
   &__more {
     padding: 6px 0 2px;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     text-align: center;
   }
@@ -889,13 +894,13 @@ export default { name: 'PollCommentsPage' }
   display: flex;
   gap: 4px;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $subtle;
 
   &__item {
     flex: 1;
     padding: 8px 0;
-    border-radius: 8px;
+    border-radius: $r-chip;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -906,7 +911,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
 
@@ -917,7 +922,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__hint {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     line-height: 1.5;
   }
@@ -930,7 +935,7 @@ export default { name: 'PollCommentsPage' }
   gap: 8px;
   padding: 14px;
   background: $accent-soft;
-  border-radius: 12px;
+  border-radius: $r-md;
 
   &__head {
     display: flex;
@@ -939,13 +944,13 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__name {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent;
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $ink;
     line-height: 1.55;
   }
@@ -973,19 +978,19 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__name {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
     line-height: 1.4;
   }
 
   &__reply {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent-ink;
   }
 
   &__text {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
     line-height: 1.5;
     white-space: pre-wrap;
@@ -996,7 +1001,7 @@ export default { name: 'PollCommentsPage' }
   &__fold {
     align-self: flex-start;
     padding: 1px 0;
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 500;
     color: $accent;
     line-height: 1.4;
@@ -1011,7 +1016,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__time {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -1031,7 +1036,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__op-count {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
 
     &--on {
@@ -1049,7 +1054,7 @@ export default { name: 'PollCommentsPage' }
   padding: 2px 0;
 
   &__text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 500;
     color: $accent;
   }
@@ -1059,7 +1064,7 @@ export default { name: 'PollCommentsPage' }
 .replies {
   margin: 8px 0 0 44px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: $r-sm;
   background: $subtle;
   display: flex;
   flex-direction: column;
@@ -1073,7 +1078,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__more-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 500;
     color: $accent;
   }
@@ -1100,7 +1105,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__name {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $ink;
     flex-shrink: 0;
@@ -1110,7 +1115,7 @@ export default { name: 'PollCommentsPage' }
   &__to {
     flex: 1;
     min-width: 0;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent-ink;
     overflow: hidden;
     white-space: nowrap;
@@ -1118,7 +1123,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $ink;
     line-height: 1.5;
     white-space: pre-wrap;
@@ -1133,7 +1138,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__time {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
@@ -1172,7 +1177,7 @@ export default { name: 'PollCommentsPage' }
     height: 40px;
     min-width: 0;
     padding: 0 4px 0 16px;
-    border-radius: 999px;
+    border-radius: $r-full;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -1184,7 +1189,7 @@ export default { name: 'PollCommentsPage' }
     min-width: 0;
     padding-right: 4px;
     background: transparent;
-    font-size: 14px;
+    font-size: $fs-14;
     color: $ink;
   }
 
@@ -1196,7 +1201,7 @@ export default { name: 'PollCommentsPage' }
   &__expand {
     width: 32px;
     height: 32px;
-    border-radius: 999px;
+    border-radius: $r-full;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1211,7 +1216,7 @@ export default { name: 'PollCommentsPage' }
   &__send {
     height: 38px;
     padding: 0 18px;
-    border-radius: 999px;
+    border-radius: $r-full;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -1227,7 +1232,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__send-text {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $muted;
 
@@ -1267,7 +1272,7 @@ export default { name: 'PollCommentsPage' }
     /* 图标 18，点击区域放大到 40，手指不用瞄准 */
     width: 40px;
     height: 40px;
-    border-radius: 999px;
+    border-radius: $r-full;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1279,7 +1284,7 @@ export default { name: 'PollCommentsPage' }
     box-sizing: border-box;
     padding: 0 $gutter;
     background: transparent;
-    font-size: 16px;
+    font-size: $fs-16;
     line-height: 26px;
     color: $ink;
   }
@@ -1299,7 +1304,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__count {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
 
     &--max {
@@ -1311,7 +1316,7 @@ export default { name: 'PollCommentsPage' }
   &__send {
     height: 36px;
     padding: 0 20px;
-    border-radius: 999px;
+    border-radius: $r-full;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -1327,7 +1332,7 @@ export default { name: 'PollCommentsPage' }
   }
 
   &__send-text {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $muted;
 
@@ -1347,7 +1352,7 @@ export default { name: 'PollCommentsPage' }
   flex-shrink: 0;
 
   &__text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }

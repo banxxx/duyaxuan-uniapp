@@ -170,10 +170,16 @@ export function getSafeArea(): SafeArea {
 
 /**
  * 底部操作栏/固定栏的下边距：设计稿固定留 20，再叠加真机底部小横条。
- * 返回内联 style 用的字符串，单位 px —— env(safe-area-inset-bottom) 在
- * 微信开发者工具里经常是 0，真机上又不可预测，所以改用 getSystemInfoSync
- * 量出的 safeAreaInsets.bottom，稳定且跨平台一致。
+ * 返回内联 style 用的字符串 —— env(safe-area-inset-bottom) 在
+ * 微信开发者工具里经常是 0，真机上又不可预测，所以小程序端改用
+ * getSystemInfoSync 量出的 safeAreaInsets.bottom，稳定且跨平台一致。
+ *
+ * H5 反过来：浏览器里 getSystemInfoSync 量不到安全区（恒为 0），
+ * 而 CSS env() 才是准确的来源，所以这一端直接交给 calc()。
  */
 export function bottomInset(base = 20): string {
+  if (getPlatform() === 'h5') {
+    return `calc(${base}px + env(safe-area-inset-bottom))`
+  }
   return `${base + getSafeArea().safeBottom}px`
 }

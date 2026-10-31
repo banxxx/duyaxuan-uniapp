@@ -111,7 +111,7 @@ export default { name: 'AppButton' }
   justify-content: center;
   gap: 8px;
   border-radius: $r-button;
-  font-size: 15px;
+  font-size: $fs-15;
   font-weight: 600;
   /* 按下时压暗 + 轻缩，给个短过渡，避免 hover-class 硬切 */
   transition:
@@ -130,22 +130,22 @@ export default { name: 'AppButton' }
   /* 05-08/19/20：详情页的「确认投票」「分享投票」，16 号粗体 */
   &--submit {
     height: 52px;
-    font-size: 16px;
+    font-size: $fs-16;
     font-weight: 700;
   }
 
   /* 69/70/76：白底描边与分享按钮，14 号字 + 前置图标 */
   &--action {
     height: 52px;
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     gap: 6px;
   }
 
-  /* 21 的「分享给同事」：15/600，白底描边 */
+  /* 21 的「分享给朋友」：15/600，白底描边 */
   &--cta {
     height: 52px;
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     gap: 8px;
   }
@@ -153,27 +153,27 @@ export default { name: 'AppButton' }
   /* 表单页的「保存」：设计稿 50/51 是 48 高、14 圆角 */
   &--compact {
     height: 48px;
-    border-radius: 14px;
+    border-radius: $r-input;
   }
 
   /* 33 弹层里的并列按钮：48 高、14 圆角、14/600 */
   &--inline {
     height: 48px;
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
   }
 
   /* 49/53/56/57 的弹层按钮：50 高、14 圆角、15/600 */
   &--dialog {
     height: 50px;
-    border-radius: 14px;
+    border-radius: $r-input;
   }
 
   &--medium {
     height: 40px;
     padding: 0 16px;
-    font-size: 14px;
-    border-radius: 12px;
+    font-size: $fs-14;
+    border-radius: $r-md;
   }
 
   &--primary {
@@ -186,7 +186,7 @@ export default { name: 'AppButton' }
     color: $ink;
   }
 
-  /* 20 的「投票数据」、21 的「分享给同事」、70 的「我的提交」是白底描边，不是浅灰底 */
+  /* 20 的「投票数据」、21 的「分享给朋友」、70 的「我的提交」是白底描边，不是浅灰底 */
   &--subtle.btn--submit,
   &--subtle.btn--cta,
   &--subtle.btn--action {
@@ -217,16 +217,16 @@ export default { name: 'AppButton' }
     color: $muted;
   }
 
-  /* 设计稿的禁用态不是「主色降透明度」，而是整块退回 $subtle + $faint 文字 */
+  /* 设计稿的禁用态不是「主色降透明度」，而是整块退回 $subtle + $disabled 文字 */
   &--disabled {
     background: $subtle;
     border-color: transparent;
-    color: $faint;
+    color: $disabled;
   }
 
   &--disabled &__spinner {
     border-color: rgba(161, 161, 170, 0.4);
-    border-top-color: $faint;
+    border-top-color: $disabled;
   }
 
   &--active {

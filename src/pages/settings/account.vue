@@ -5,6 +5,7 @@ import MenuRow from '@/components/business/MenuRow.vue'
 import { useUserStore } from '@/stores/user'
 import { getPlatform, bottomInset } from '@/utils/platform'
 import { go } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 46 账号与安全
@@ -14,10 +15,19 @@ import { go } from '@/utils/router'
  *
  * 「微信授权」这行的文案跟宿主走——QQ 包跑在 QQ 里时显示「QQ 授权」，
  * 抖音里显示「抖音授权」，否则用户会以为自己绑错了账号。
+ *
+ * H5 没有宿主，扫码时用的是微信还是 QQ 存在 user.authProvider 里。
  */
 const user = useUserStore()
 
+const isH5 = getPlatform() === 'h5'
+
 const platformName = computed(() => {
+  if (getPlatform() === 'h5') {
+    if (user.authProvider === 'qq') return 'QQ 授权'
+    if (user.authProvider === 'weixin') return '微信授权'
+    return '账号授权'
+  }
   switch (getPlatform()) {
     case 'qq':
       return 'QQ 授权'
@@ -40,12 +50,24 @@ function open(url: string) {
 
 <template>
   <view class="account">
+    <AppToast />
     <AppNavBar title="账号与安全" />
 
     <scroll-view class="account__scroll" scroll-y>
       <view class="account__content" :style="{ paddingBottom: bottomInset(20) }">
         <view class="group">
           <MenuRow :title="platformName" :desc="bindDesc" roomy strong @tap="open('/pages/settings/wechat')" />
+        </view>
+
+        <!-- H5：扫码登录可以绑多个平台，这里提供追加绑定入口 -->
+        <view v-if="isH5" class="group">
+          <MenuRow
+            title="绑定其他登录方式"
+            desc="让 QQ / 微信扫码进入同一个账号"
+            roomy
+            strong
+            @tap="open('/pages/settings/bind')"
+          />
         </view>
 
         <view class="group">
@@ -70,6 +92,9 @@ export default { name: 'AccountPage' }
 .account {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -89,7 +114,7 @@ export default { name: 'AccountPage' }
 }
 
 .group {
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $surface;
   border: 1px solid $line;
   overflow: hidden;

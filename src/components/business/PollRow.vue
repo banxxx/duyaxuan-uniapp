@@ -108,7 +108,12 @@ function onMore(e: Event) {
   >
     <view class="poll-row__top">
       <view class="poll-row__left">
-        <StatusPill :status="status" :label="statusLabel" :tone="statusTone" />
+        <StatusPill
+          :status="status"
+          :label="statusLabel"
+          :tone="statusTone"
+          :size="compact ? 'sm' : 'md'"
+        />
         <TypeBadge :type="poll.type" :size="compact ? 'sm' : 'md'" />
       </view>
       <text class="poll-row__date">{{ dateText }}</text>
@@ -149,7 +154,7 @@ export default { name: 'PollRow' }
   padding: 15px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 14px;
+  border-radius: $r-input;
   transition: background-color $dur-fast $ease-both;
 
   &--active {
@@ -159,7 +164,7 @@ export default { name: 'PollRow' }
   &--compact {
     gap: 7px;
     padding: 12px;
-    border-radius: 12px;
+    border-radius: $r-md;
   }
 
   &__top {
@@ -175,13 +180,13 @@ export default { name: 'PollRow' }
   }
 
   &__date {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     flex-shrink: 0;
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
     line-height: 1.4;
@@ -215,12 +220,12 @@ export default { name: 'PollRow' }
   &__mine {
     align-self: flex-start;
     padding: 4px 9px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $accent-soft;
   }
 
   &__mine-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $accent;
   }

@@ -7,10 +7,15 @@ import { loginByCode, devLogin, fetchProfile, isMockAuth } from '@/api/auth'
 import { registerAuthHooks } from '@/utils/auth-token'
 import { ApiError } from '@/utils/request'
 import { cacheClear } from '@/utils/cache'
+import { ROUTES } from '@/utils/router'
 
 const TOKEN_KEY = 'dyx_token'
 const USER_KEY = 'dyx_user'
+const PROVIDER_KEY = 'dyx_auth_provider'
 const TOKEN_TTL = 1000 * 60 * 60 * 24 * 6 // 后端签发 7 天，前端提前 1 天续
+
+/** H5 扫码登录绑定的平台（设置页解绑时要知道解的是 QQ 还是微信） */
+export type AuthProvider = 'qq' | 'weixin'
 
 /**
  * 资料同步的并发闸门。
@@ -34,6 +39,8 @@ export const useUserStore = defineStore('user', () => {
   const profile = ref<UserProfile | null>(null)
   const platform = ref<Platform>('unknown')
   const loginAt = ref<number>(0)
+  /** 仅 H5 扫码登录有值；小程序靠宿主平台判断，不需要这个 */
+  const authProvider = ref<AuthProvider | ''>('')
 
   const isLoggedIn = computed(() => !!token.value)
   const loginText = computed(() => loginButtonText())
@@ -48,7 +55,12 @@ export const useUserStore = defineStore('user', () => {
       const t = uni.getStorageSync(TOKEN_KEY)
       const u = uni.getStorageSync(USER_KEY)
       const at = uni.getStorageSync(`${TOKEN_KEY}_at`)
-      if (t) token.value = t
+      const p = uni.getStorageSync(PROVIDER_KEY)
+      if (t) {
+        token.value = t
+        // 只有确实有登录态时才认绑定平台，避免退出后残留
+        if (p === 'qq' || p === 'weixin') authProvider.value = p
+      }
       if (u) profile.value = typeof u === 'string' ? JSON.parse(u) : u
       if (at) loginAt.value = Number(at)
     } catch {
@@ -77,6 +89,10 @@ export const useUserStore = defineStore('user', () => {
    *   抖音 → developer.toutiao.com/api/apps/v2/jscode2session
    */
   async function login(): Promise<LoginResult> {
+    // H5 没有宿主授权，uni.login 拿不到 code；H5 的登录/续期统一走扫码
+    // （见 loginWithMixauth），这里只保留给小程序端。
+    if (platform.value === 'h5') throw new Error('请重新扫码登录')
+
     // mock 模式下后端不存在，也就不需要 code；跳过 uni.login，
     // 这样在没有真实 appid 的游客模式里也能一键进首页。
     let code = 'mock'
@@ -112,6 +128,18 @@ export const useUserStore = defineStore('user', () => {
   }
 
   /**
+   * H5 扫码登录成功后落地登录态。
+   *
+   * token 是 Worker 确认 MixAuth 授权后签发的，这里只负责保存；
+   * 记住绑定平台是为了设置页能显示「QQ 授权」并解绑正确的平台。
+   */
+  function loginWithMixauth(provider: AuthProvider, result: LoginResult) {
+    authProvider.value = provider
+    uni.setStorageSync(PROVIDER_KEY, provider)
+    persist(result)
+  }
+
+  /**
    * 开发期切换账号：直接按 userId 登录，不走平台授权。
    * 入口在「设置 · 关于我们」长按，仅 DEV 构建可见。
    */
@@ -123,6 +151,13 @@ export const useUserStore = defineStore('user', () => {
 
   /** 401 时静默重登一次；失败返回 false */
   async function relogin(): Promise<boolean> {
+    if (platform.value === 'h5') {
+      // H5 续期必须重新扫码，静默换不到 token。清掉登录态回登录页，
+      // 免得用户停在一个所有接口都 401 的页面里反复点。
+      logout()
+      uni.reLaunch({ url: ROUTES.login })
+      return false
+    }
     try {
       await login()
       return true
@@ -136,9 +171,11 @@ export const useUserStore = defineStore('user', () => {
     token.value = ''
     profile.value = null
     loginAt.value = 0
+    authProvider.value = ''
     uni.removeStorageSync(TOKEN_KEY)
     uni.removeStorageSync(USER_KEY)
     uni.removeStorageSync(`${TOKEN_KEY}_at`)
+    uni.removeStorageSync(PROVIDER_KEY)
     // 页面数据缓存是按账号内容存的，换人登录不能让他先看到上一个人的投票
     cacheClear()
   }
@@ -146,6 +183,9 @@ export const useUserStore = defineStore('user', () => {
   /** onShow 时调用：token 快到期的顺延，避免长时间挂起后失效 */
   function touch() {
     if (!token.value) return
+    // H5 不能静默续期，提前 1 天把人踢回登录页反而更烦；
+    // 让 token 一直用到服务端真的 401，再由 relogin 处理。
+    if (platform.value === 'h5') return
     if (Date.now() - loginAt.value > TOKEN_TTL) {
       relogin()
     }
@@ -196,11 +236,13 @@ export const useUserStore = defineStore('user', () => {
     token,
     profile,
     platform,
+    authProvider,
     isLoggedIn,
     loginText,
     setPlatform,
     restore,
     login,
+    loginWithMixauth,
     loginAs,
     relogin,
     logout,

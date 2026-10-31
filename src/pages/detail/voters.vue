@@ -11,6 +11,7 @@ import { fetchPoll, fetchVoters, fetchAnswers } from '@/api/poll'
 import { formatRelative, formatMoment } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { cacheGet, cacheSet, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
 
 /**
  * 14/15 投票记录 + 73/74 回答记录
@@ -149,7 +150,7 @@ async function loadMore() {
   try {
     await loadPage(false)
   } catch {
-    uni.showToast({ title: '加载失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     loadingMore.value = false
   }
@@ -168,10 +169,11 @@ onPullDownRefresh(async () => {
 
 <template>
   <view class="voters">
+    <AppToast />
     <AppNavBar :title="isSurvey ? '回答记录' : '投票记录'" />
 
     <view v-if="loading" class="voters__body">
-      <AppSkeleton type="list" />
+      <AppSkeleton type="records" />
     </view>
 
     <AppEmpty
@@ -339,6 +341,9 @@ export default { name: 'PollVotersPage' }
 .voters {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -371,7 +376,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &__more-text {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent;
   }
 }
@@ -379,7 +384,7 @@ export default { name: 'PollVotersPage' }
 /* 上下文卡 */
 .context {
   padding: 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -394,7 +399,7 @@ export default { name: 'PollVotersPage' }
 
   &__live {
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $success-soft;
     display: flex;
     align-items: center;
@@ -417,7 +422,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &__live-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $success;
 
@@ -428,7 +433,7 @@ export default { name: 'PollVotersPage' }
 
   &__tag {
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $subtle;
     display: flex;
     align-items: center;
@@ -440,7 +445,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &__tag-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $muted;
 
@@ -450,7 +455,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &__title {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
     line-height: 1.4;
@@ -463,7 +468,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &__num {
-    font-size: 32px;
+    font-size: $fs-32;
     font-weight: 700;
     color: $accent;
     font-family: $font-num;
@@ -477,13 +482,13 @@ export default { name: 'PollVotersPage' }
   }
 
   &__note-main {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $ink;
   }
 
   &__note-sub {
-    font-size: 9px;
+    font-size: $fs-10;
     color: $faint;
   }
 }
@@ -491,7 +496,7 @@ export default { name: 'PollVotersPage' }
 /* 匿名说明条 */
 .privacy {
   padding: 11px 12px;
-  border-radius: 10px;
+  border-radius: $r-sm;
   background: $subtle;
   display: flex;
   align-items: flex-start;
@@ -499,7 +504,7 @@ export default { name: 'PollVotersPage' }
 
   &__text {
     flex: 1;
-    font-size: 10px;
+    font-size: $fs-10;
     color: $muted;
     line-height: 1.55;
   }
@@ -509,7 +514,7 @@ export default { name: 'PollVotersPage' }
 .search {
   height: 42px;
   padding: 0 14px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -518,13 +523,13 @@ export default { name: 'PollVotersPage' }
 
   &__input {
     flex: 1;
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
   }
 
   &__ph {
     color: $faint;
-    font-size: 13px;
+    font-size: $fs-13;
   }
 }
 
@@ -533,7 +538,7 @@ export default { name: 'PollVotersPage' }
   display: flex;
   gap: 4px;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: $r-md;
   background: $subtle;
 
   &__item {
@@ -550,7 +555,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $muted;
 
@@ -563,13 +568,13 @@ export default { name: 'PollVotersPage' }
 
 /* 记录卡：14/15 是 r14 行内边距 [13,14]；73/74 是 r16、卡片左右 16、行内不再留白 */
 .records {
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   overflow: hidden;
 
   &--survey {
-    border-radius: 16px;
+    border-radius: $r-button;
     padding: 0 16px;
   }
 }
@@ -605,7 +610,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &__index-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $muted;
     font-family: $font-num;
@@ -620,25 +625,25 @@ export default { name: 'PollVotersPage' }
   }
 
   &__name {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: $ink;
   }
 
   &__answer {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
     line-height: 1.5;
   }
 
   &__time {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   /* 「需个人信息」：发起人要求填的那一项，只有发起人看得到 */
   &__profile {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $muted;
     padding: 3px 6px;
     align-self: flex-start;
@@ -647,7 +652,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &__rel {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
     flex-shrink: 0;
   }
@@ -659,7 +664,7 @@ export default { name: 'PollVotersPage' }
   }
 
   &--public &__name {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
   }
 
@@ -676,7 +681,7 @@ export default { name: 'PollVotersPage' }
   &--survey &__index {
     width: 32px;
     height: 32px;
-    border-radius: 10px;
+    border-radius: $r-sm;
   }
 
   &--survey &__index-text {
@@ -684,25 +689,25 @@ export default { name: 'PollVotersPage' }
   }
 
   &--survey &__time {
-    font-size: 11px;
+    font-size: $fs-11;
   }
 
   &--survey &__answer {
-    font-size: 12px;
+    font-size: $fs-12;
     line-height: 1.5;
   }
 
   /* 选中的选项：$accent-soft 胶囊 */
   &__choice {
     padding: 5px 10px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $accent-soft;
     flex-shrink: 0;
     max-width: 45%;
   }
 
   &__choice-text {
-    font-size: 10px;
+    font-size: $fs-10;
     font-weight: 600;
     color: $accent;
     overflow: hidden;

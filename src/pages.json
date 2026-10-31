@@ -140,6 +140,10 @@
       "style": { "navigationStyle": "custom" }
     },
     {
+      "path": "pages/settings/bind",
+      "style": { "navigationStyle": "custom" }
+    },
+    {
       "path": "pages/settings/deactivate",
       "style": { "navigationStyle": "custom" }
     },

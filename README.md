@@ -185,3 +185,21 @@ GET    /polls/:id/comments
 带上 `sourceSurveyId` 即可回溯来源。
 
 鉴权：`Authorization: Bearer <token>`。401 时 `utils/request.ts` 会静默重登一次再重放请求。
+
+## H5 部署
+
+构建产物 `dist/build/h5` 传到 Cloudflare Pages 项目 `duyaxuan`，线上地址 <https://banxxx.cc.cd>
+（根域名 CNAME 到 `duyaxuan.pages.dev`，Cloudflare 会自动做 CNAME flattening）：
+
+```bash
+npm run build:h5
+cd server && npx wrangler pages deploy ../dist/build/h5 --project-name duyaxuan --branch main
+```
+
+`vite.config.ts` 的 `spaFallback()` 插件会在 h5 构建结束时往产物里写一个 `_worker.js`。
+原因：路由是 history 模式，页面路径几乎都以 `/index` 结尾（`/pages/me/index` 等），
+而 Pages 会把这些路径 308 重定向到父目录，直接打开或刷新就白屏。`_redirects` 管不住这个
+重定向（规则命中后反而会跳走），只能靠 Pages 高级模式的 `_worker.js` 在静态层之前接管请求。
+
+> 域名没有备案，Cloudflare 免费版走的是境外节点，国内访问 TLS 握手 1~2 秒、首字节 1~2 秒。
+> 想真正快只能上国内云（需要备案），换域名解决的是可达性，不是速度。

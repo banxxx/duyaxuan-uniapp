@@ -16,7 +16,7 @@ withDefaults(
     desc?: string
     /** 锁定：置灰、不可点 */
     locked?: boolean
-    /** 右侧显示的当前值（如「部门」「投票后查看」） */
+    /** 右侧显示的当前值（如「联系方式」「投票后查看」） */
     value?: string
     /** 是否显示右侧箭头，表示点击会唤起弹层 */
     clickable?: boolean
@@ -76,13 +76,13 @@ export default { name: 'RuleRow' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 500;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.45;
   }
@@ -95,14 +95,14 @@ export default { name: 'RuleRow' }
   }
 
   &__value-text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
   }
 
-  /* 锁定：标题转 $faint（设计稿 91 锁定的「参与方式」右侧值仍是 $muted） */
+  /* 锁定：标题转 $disabled（设计稿 91 锁定的「参与方式」右侧值仍是 $muted） */
   &--locked {
     .rule__title {
-      color: $faint;
+      color: $disabled;
     }
   }
 }

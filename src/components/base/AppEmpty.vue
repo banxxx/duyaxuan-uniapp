@@ -73,7 +73,7 @@ export default { name: 'AppEmpty' }
   }
 
   &__title {
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     color: $ink;
   }
@@ -81,7 +81,7 @@ export default { name: 'AppEmpty' }
   &__desc {
     width: 260px;
     margin-top: 10px;
-    font-size: 13px;
+    font-size: $fs-13;
     color: $muted;
     text-align: center;
     line-height: 1.6;
@@ -91,7 +91,7 @@ export default { name: 'AppEmpty' }
     margin-top: 20px;
     height: 42px;
     padding: 0 22px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $accent;
     display: flex;
     align-items: center;
@@ -107,7 +107,7 @@ export default { name: 'AppEmpty' }
   }
 
   &__action-text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $white;
   }

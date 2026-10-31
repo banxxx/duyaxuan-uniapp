@@ -34,7 +34,7 @@ export interface LoginResult {
   user: UserProfile
 }
 
-const MOCK_USER: UserProfile = {
+export const MOCK_USER: UserProfile = {
   id: '1024',
   nickname: '林小满',
   bio: '这个人很懒，什么都没写',
@@ -47,10 +47,12 @@ export async function loginByCode(code: string): Promise<LoginResult> {
     await new Promise((r) => setTimeout(r, 260))
     return { token: `mock-token-${Date.now()}`, user: { ...MOCK_USER } }
   }
+  // 登录失败由调用方决定怎么提示：登录页有自己的文案，
+  // 401 静默重登时更不能弹 toast，所以这里关掉请求层的自动提示。
   return http.post<LoginResult>(
     '/auth/login',
     { platform: getPlatform(), code },
-    { skipAuth: true, loading: true }
+    { skipAuth: true, toast: false }
   )
 }
 
@@ -76,7 +78,7 @@ export async function devLogin(userId: string): Promise<LoginResult> {
     await new Promise((r) => setTimeout(r, 150))
     return { token: `mock-token-${userId}`, user: { ...MOCK_USER, id: userId } }
   }
-  return http.post<LoginResult>('/auth/dev-login', { userId }, { skipAuth: true, loading: true })
+  return http.post<LoginResult>('/auth/dev-login', { userId }, { skipAuth: true })
 }
 
 /**
@@ -93,13 +95,18 @@ export async function fetchProfile(): Promise<UserProfile> {
   return http.get<UserProfile>('/user/profile', undefined, { toast: false })
 }
 
-/** 改昵称。微信昵称也是从这里落库的，不存在「从微信同步」一说 */
+/**
+ * 改昵称。微信昵称也是从这里落库的，不存在「从微信同步」一说。
+ *
+ * 和上传头像共用「我的」页同一个 catch：那边已经按 err.message 提示，
+ * 这里再让请求层弹一次会重复，所以关掉。
+ */
 export async function updateNickname(nickname: string): Promise<UserProfile> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 200))
     return { ...MOCK_USER, nickname }
   }
-  return http.put<UserProfile>('/user/profile', { nickname })
+  return http.put<UserProfile>('/user/profile', { nickname }, { toast: false })
 }
 
 /**
@@ -159,11 +166,16 @@ export async function deleteAccount(): Promise<void> {
   return http.post<void>('/user/deactivate')
 }
 
-/** 54 解除微信绑定，返回解除后的资料（bound 变 false） */
-export async function unbindWechat(): Promise<UserProfile> {
+/**
+ * 54 解除平台绑定，返回解除后的资料（bound 变 false）。
+ *
+ * 小程序端宿主就是登录平台；H5 端由调用方传入扫码时用的平台
+ * （authProvider），否则会把微信登录解成 QQ 或反过来。
+ */
+export async function unbindWechat(platform?: string): Promise<UserProfile> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 300))
     return { ...MOCK_USER, bound: false }
   }
-  return http.post<UserProfile>('/user/unbind', { platform: getPlatform() })
+  return http.post<UserProfile>('/user/unbind', { platform: platform || getPlatform() })
 }

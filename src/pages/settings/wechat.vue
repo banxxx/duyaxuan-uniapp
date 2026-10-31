@@ -8,6 +8,8 @@ import AppSheet from '@/components/base/AppSheet.vue'
 import { useUserStore } from '@/stores/user'
 import { unbindWechat } from '@/api/auth'
 import { getPlatform, bottomInset } from '@/utils/platform'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 54 授权管理（微信 / QQ / 抖音共用）
@@ -21,6 +23,11 @@ import { getPlatform, bottomInset } from '@/utils/platform'
 const user = useUserStore()
 
 const platformName = computed(() => {
+  if (getPlatform() === 'h5') {
+    if (user.authProvider === 'qq') return 'QQ'
+    if (user.authProvider === 'weixin') return '微信'
+    return '账号'
+  }
   switch (getPlatform()) {
     case 'qq':
       return 'QQ'
@@ -31,6 +38,15 @@ const platformName = computed(() => {
   }
 })
 
+/**
+ * 解绑时传给后端的平台。
+ * 小程序端宿主就是登录平台；H5 必须用扫码时记下的 authProvider。
+ */
+const bindPlatform = computed(() => {
+  if (getPlatform() !== 'h5') return getPlatform()
+  return user.authProvider || 'weixin'
+})
+
 const name = computed(() => user.profile?.nickname ?? '-')
 const bound = computed(() => !!user.profile?.bound)
 
@@ -39,7 +55,7 @@ const unbinding = ref(false)
 
 function openConfirm() {
   if (!bound.value) {
-    uni.showToast({ title: '尚未绑定', icon: 'none' })
+    toast.show('尚未绑定')
     return
   }
   confirmVisible.value = true
@@ -49,12 +65,12 @@ async function doUnbind() {
   if (unbinding.value) return
   unbinding.value = true
   try {
-    const next = await unbindWechat()
+    const next = await unbindWechat(bindPlatform.value)
     user.applyProfile(next)
     confirmVisible.value = false
-    uni.showToast({ title: '已解除绑定', icon: 'none' })
+    toast.success('已解除绑定')
   } catch {
-    uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     unbinding.value = false
   }
@@ -63,6 +79,7 @@ async function doUnbind() {
 
 <template>
   <view class="bind">
+    <AppToast />
     <AppNavBar :title="`${platformName}授权`" />
 
     <scroll-view class="bind__scroll" scroll-y>
@@ -93,7 +110,7 @@ async function doUnbind() {
 
         <view class="group">
           <view class="scope">
-            <AppIcon name="check" :size="16" color="#16A34A" :stroke-width="2.4" />
+            <AppIcon name="check" :size="16" color="#047857" :stroke-width="2.4" />
             <view class="scope__text">
               <text class="scope__title">公开信息</text>
               <text class="scope__desc">昵称、头像</text>
@@ -101,7 +118,7 @@ async function doUnbind() {
           </view>
           <view class="group__sep" />
           <view class="scope">
-            <AppIcon name="check" :size="16" color="#16A34A" :stroke-width="2.4" />
+            <AppIcon name="check" :size="16" color="#047857" :stroke-width="2.4" />
             <view class="scope__text">
               <text class="scope__title">投票数据</text>
               <text class="scope__desc">你创建的投票与参与记录</text>
@@ -149,6 +166,9 @@ export default { name: 'WechatBindPage' }
 .bind {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -167,13 +187,13 @@ export default { name: 'WechatBindPage' }
   }
 
   &__group {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $faint;
   }
 
   &__note {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.6;
     padding: 0 2px;
@@ -182,7 +202,7 @@ export default { name: 'WechatBindPage' }
 
 .card {
   padding: 16px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -198,19 +218,19 @@ export default { name: 'WechatBindPage' }
   }
 
   &__name {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
   &__tag {
     padding: 4px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $accent-soft;
     flex-shrink: 0;
 
@@ -220,18 +240,18 @@ export default { name: 'WechatBindPage' }
   }
 
   &__tag-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $accent-ink;
 
     &--off {
-      color: $faint;
+      color: $disabled;
     }
   }
 }
 
 .group {
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   overflow: hidden;
@@ -255,19 +275,19 @@ export default { name: 'WechatBindPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }
 
 .unbind {
   height: 48px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -279,7 +299,7 @@ export default { name: 'WechatBindPage' }
   }
 
   &__text {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $danger;
   }

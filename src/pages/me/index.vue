@@ -1,5 +1,6 @@
 <template>
   <view class="page" :style="{ paddingTop: `${contentTop}px` }">
+    <AppToast />
     <view class="page__content">
       <view class="page__top">
         <!-- Profile Head：头像 + 昵称 + 右上角铃铛/设置 -->
@@ -168,6 +169,8 @@ import { uploadAvatar, updateNickname } from '@/api/auth'
 import { getSafeArea, getPlatform } from '@/utils/platform'
 import { hideNativeTabBar } from '@/utils/tab'
 import { go, ROUTES } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 40 我的
@@ -386,9 +389,9 @@ async function save() {
       user.applyProfile(next)
     }
     editing.value = false
-    uni.showToast({ title: '已保存', icon: 'none' })
+    toast.success('已保存')
   } catch (err) {
-    uni.showToast({ title: err instanceof Error ? err.message : '保存失败，请重试', icon: 'none' })
+    toast.error(err instanceof Error ? err.message : '保存失败，请重试')
   } finally {
     saving.value = false
   }
@@ -402,6 +405,9 @@ export default { name: 'MePage' }
 <style lang="scss" scoped>
 .page {
   min-height: 100vh;
+  /* #ifdef H5 */
+  min-height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -429,7 +435,7 @@ export default { name: 'MePage' }
   }
 
   &__help-text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
   }
 }
@@ -448,14 +454,14 @@ export default { name: 'MePage' }
   }
 
   &__name {
-    font-size: 24px;
+    font-size: $fs-24;
     font-weight: 700;
     color: $ink;
     line-height: 1.25;
   }
 
   &__meta {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
   }
 
@@ -472,7 +478,7 @@ export default { name: 'MePage' }
     bottom: -1px;
     width: 20px;
     height: 20px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $accent;
     border: 2px solid $bg;
     display: flex;
@@ -491,7 +497,7 @@ export default { name: 'MePage' }
   &__icon {
     width: 38px;
     height: 38px;
-    border-radius: 19px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -530,7 +536,7 @@ export default { name: 'MePage' }
   padding: 16px;
   background: $surface;
   border: 1px solid $line;
-  border-radius: 16px;
+  border-radius: $r-button;
 
   &--active {
     background: $subtle;
@@ -539,7 +545,7 @@ export default { name: 'MePage' }
   &__icon {
     width: 38px;
     height: 38px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $accent-soft;
     display: flex;
     align-items: center;
@@ -556,13 +562,13 @@ export default { name: 'MePage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -574,7 +580,7 @@ export default { name: 'MePage' }
   }
 
   &__count {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $muted;
     font-family: $font-num;
@@ -605,7 +611,7 @@ export default { name: 'MePage' }
   }
 
   &__hint {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -618,14 +624,14 @@ export default { name: 'MePage' }
   }
 
   &__label {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
 
   /* 两个昵称来源：白底 + 1px $line + 12 圆角，和「添加选项」弹层同一套 */
   &__options {
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $surface;
     border: 1px solid $line;
     overflow: hidden;
@@ -653,7 +659,7 @@ export default { name: 'MePage' }
   }
 
   &__option-title {
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
     flex-shrink: 0;
   }
@@ -666,7 +672,7 @@ export default { name: 'MePage' }
   }
 
   &__option-value {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $faint;
     min-width: 0;
     overflow: hidden;
@@ -681,7 +687,7 @@ export default { name: 'MePage' }
 
   /* 记住的昵称可能已经过期（用户改过平台昵称），留一个重新获取的入口 */
   &__option-refresh {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $accent;
     flex-shrink: 0;
   }

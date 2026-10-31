@@ -20,6 +20,8 @@ import { formatRelative } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { back } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 86 汇总 · 未归类回答
@@ -113,7 +115,7 @@ async function loadMore() {
     hasMore.value = next.hasMore
     total.value = next.total
   } catch {
-    uni.showToast({ title: '加载失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   } finally {
     loadingMore.value = false
   }
@@ -151,9 +153,9 @@ async function confirmNew() {
     total.value = Math.max(0, total.value - 1)
     newSheet.value = false
     invalidate()
-    uni.showToast({ title: '已新建选项', icon: 'none' })
+    toast.success('已新建选项')
   } catch {
-    uni.showToast({ title: '新建失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   }
 }
 
@@ -173,9 +175,9 @@ async function pickInto(c: SummaryCandidate) {
     total.value = Math.max(0, total.value - 1)
     pickSheet.value = false
     invalidate()
-    uni.showToast({ title: `已归入「${c.title}」`, icon: 'none' })
+    toast.success(`已归入「${c.title}」`)
   } catch {
-    uni.showToast({ title: '归类失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   }
 }
 
@@ -186,7 +188,7 @@ async function ignore(a: UnclassifiedAnswer) {
     total.value = Math.max(0, total.value - 1)
     invalidate()
   } catch {
-    uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   }
 }
 
@@ -208,7 +210,7 @@ async function doIgnoreAll() {
     cursor.value = null
     invalidate()
   } catch {
-    uni.showToast({ title: '操作失败，请重试', icon: 'none' })
+    // 失败原因由请求层统一 toast，这里不再重复
   }
 }
 
@@ -219,6 +221,7 @@ function goBack() {
 
 <template>
   <view class="unclassified">
+    <AppToast />
     <AppNavBar title="未归类回答">
       <template #right>
         <text class="unclassified__all" @tap="ignoreAll">全部忽略</text>
@@ -245,7 +248,7 @@ function goBack() {
           <!-- 86 的说明条：$warning-soft r14 pad[12,14] -->
           <view class="intro">
             <view class="intro__icon">
-              <AppIcon name="triangle-alert" :size="15" color="#D97706" />
+              <AppIcon name="triangle-alert" :size="15" color="#B45309" />
             </view>
             <text class="intro__text">
               {{ total }} 条回答没能归到已有选项，可能是新地点，或者写得太笼统。归成新选项，或直接忽略。
@@ -355,13 +358,16 @@ export default { name: 'SummaryUnclassifiedPage' }
 .unclassified {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
 
   /* 86 页头右侧「全部忽略」是 14 号灰字 */
   &__all {
-    font-size: 14px;
+    font-size: $fs-14;
     color: $muted;
   }
 
@@ -383,7 +389,7 @@ export default { name: 'SummaryUnclassifiedPage' }
 
   &__more {
     padding: 10px 0 2px;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     text-align: center;
   }
@@ -398,7 +404,7 @@ export default { name: 'SummaryUnclassifiedPage' }
 
   &__action {
     flex: 1;
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
   }
 }
@@ -406,7 +412,7 @@ export default { name: 'SummaryUnclassifiedPage' }
 /* 说明条：$warning-soft r14 pad[12,14] gap10，图标装 28 的白底块 */
 .intro {
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $warning-soft;
   display: flex;
   align-items: flex-start;
@@ -425,7 +431,7 @@ export default { name: 'SummaryUnclassifiedPage' }
 
   &__text {
     flex: 1;
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
     line-height: 1.55;
   }
@@ -433,7 +439,7 @@ export default { name: 'SummaryUnclassifiedPage' }
 
 /* 答案卡：白底 r16，行内边距 [12,16] */
 .answers {
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $surface;
   border: 1px solid $line;
   overflow: hidden;
@@ -459,12 +465,12 @@ export default { name: 'SummaryUnclassifiedPage' }
 
   &__time,
   &__id {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__content {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $ink;
     line-height: 1.55;
   }
@@ -493,7 +499,7 @@ export default { name: 'SummaryUnclassifiedPage' }
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
 
     &--new {
@@ -513,7 +519,7 @@ export default { name: 'SummaryUnclassifiedPage' }
   gap: 8px;
 
   &__label {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $ink;
   }
@@ -521,12 +527,12 @@ export default { name: 'SummaryUnclassifiedPage' }
   /* 与 33 弹层输入框同一套：白底 + 1px $line、r12、内边距 12 */
   &__input {
     padding: 12px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $surface;
     border: 1px solid $line;
     display: flex;
     align-items: center;
-    font-size: 13px;
+    font-size: $fs-13;
     color: $ink;
   }
 
@@ -535,11 +541,11 @@ export default { name: 'SummaryUnclassifiedPage' }
   }
 
   &__sample {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
     line-height: 1.55;
     padding: 10px 12px;
-    border-radius: 10px;
+    border-radius: $r-sm;
     background: $bg;
   }
 }
@@ -551,7 +557,7 @@ export default { name: 'SummaryUnclassifiedPage' }
 
   &__item {
     padding: 12px;
-    border-radius: 12px;
+    border-radius: $r-md;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -567,13 +573,13 @@ export default { name: 'SummaryUnclassifiedPage' }
   }
 
   &__title {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 }

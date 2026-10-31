@@ -18,6 +18,8 @@ import {
 import { formatDate, formatDateTime, formatRelative, formatRemaining, charCount } from '@/utils/format'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, go } from '@/utils/router'
+import AppToast from '@/components/base/AppToast.vue'
+import { toast } from '@/utils/toast'
 
 /**
  * 77 问卷数据 · 回答列表 / 78 问卷数据 · 已截止 · 可汇总
@@ -153,7 +155,7 @@ function goShare() {
 function onMore() {
   if (canSummarize.value) {
     // 已截止后右上角没有可执行的管理操作了，指向页面下方真正的入口
-    uni.showToast({ title: '问卷已截止，可在下方汇总成投票', icon: 'none' })
+    toast.show('问卷已截止，可在下方汇总成投票')
     return
   }
   endSheet.value = true
@@ -165,12 +167,13 @@ async function doEnd() {
   endSheet.value = false
   await endPoll(poll.value.id)
   await load()
-  uni.showToast({ title: '已截止', icon: 'none' })
+  toast.show('已截止')
 }
 </script>
 
 <template>
   <view class="answers">
+    <AppToast />
     <AppNavBar title="问卷数据">
       <template #right>
         <view class="answers__nav-btn" @tap="onMore">
@@ -295,7 +298,7 @@ async function doEnd() {
               v-if="!answers.length"
               icon="inbox"
               title="还没有人提交"
-              desc="分享出去，邀请同事来填写吧"
+              desc="分享出去，邀请朋友来填写吧"
             />
 
           </view>
@@ -351,6 +354,9 @@ export default { name: 'SurveyAnswersPage' }
 .answers {
   /* 定高：scroll-view 需要父级有确定高度，min-height 在真机上会让它塌成 0 高 */
   height: 100vh;
+  /* #ifdef H5 */
+  height: 100dvh;
+  /* #endif */
   background: $bg;
   display: flex;
   flex-direction: column;
@@ -363,7 +369,7 @@ export default { name: 'SurveyAnswersPage' }
   &__nav-btn {
     width: 34px;
     height: 34px;
-    border-radius: 17px;
+    border-radius: $r-circle;
     background: $surface;
     border: 1px solid $line;
     display: flex;
@@ -406,7 +412,7 @@ export default { name: 'SurveyAnswersPage' }
 
 .hero {
   padding: 18px;
-  border-radius: 20px;
+  border-radius: $r-sheet;
   background: $ink;
   display: flex;
   flex-direction: column;
@@ -420,7 +426,7 @@ export default { name: 'SurveyAnswersPage' }
 
   &__badge {
     padding: 5px 10px;
-    border-radius: 8px;
+    border-radius: $r-chip;
     background: rgba(255, 255, 255, 0.1);
     display: flex;
     align-items: center;
@@ -439,18 +445,18 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__badge-text {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 500;
     color: $white;
   }
 
   &__right {
-    font-size: 11px;
+    font-size: $fs-11;
     color: rgba(255, 255, 255, 0.6);
   }
 
   &__title {
-    font-size: 15px;
+    font-size: $fs-15;
     font-weight: 600;
     color: $white;
     line-height: 1.4;
@@ -469,7 +475,7 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__stat-label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: rgba(255, 255, 255, 0.5);
   }
 
@@ -480,7 +486,7 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__stat-num {
-    font-size: 28px;
+    font-size: $fs-28;
     font-weight: 700;
     color: $accent;
     /* 纯数字没有下行字母，1 号行高正好容纳字形，避免 1.05 多出 4px 撑破卡 */
@@ -488,7 +494,7 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__stat-unit {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 500;
     color: rgba(255, 255, 255, 0.6);
   }
@@ -501,13 +507,13 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__stat-total {
-    font-size: 13px;
+    font-size: $fs-13;
     font-weight: 600;
     color: $white;
   }
 
   &__stat-note {
-    font-size: 9px;
+    font-size: $fs-10;
     color: rgba(255, 255, 255, 0.5);
   }
 
@@ -525,7 +531,7 @@ export default { name: 'SurveyAnswersPage' }
 
   &__progress-label,
   &__progress-right {
-    font-size: 9px;
+    font-size: $fs-10;
   }
 
   &__progress-label {
@@ -553,7 +559,7 @@ export default { name: 'SurveyAnswersPage' }
 /* 78 汇总入口 */
 .entry {
   padding: 16px;
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $accent-soft;
   display: flex;
   flex-direction: column;
@@ -566,13 +572,13 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $accent-ink;
   }
 
   &__desc {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $muted;
     line-height: 1.55;
   }
@@ -585,14 +591,14 @@ export default { name: 'SurveyAnswersPage' }
 
   &__chip {
     padding: 3px 8px;
-    border-radius: 6px;
+    border-radius: $r-xs;
     background: $surface;
     display: flex;
     align-items: center;
   }
 
   &__chip-text {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $accent-ink;
   }
 }
@@ -605,7 +611,7 @@ export default { name: 'SurveyAnswersPage' }
 .kpi {
   flex: 1;
   padding: 13px;
-  border-radius: 14px;
+  border-radius: $r-input;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -615,12 +621,12 @@ export default { name: 'SurveyAnswersPage' }
   overflow: hidden;
 
   &__label {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__value {
-    font-size: 18px;
+    font-size: $fs-18;
     font-weight: 700;
     color: $ink;
     line-height: 1.2;
@@ -629,7 +635,7 @@ export default { name: 'SurveyAnswersPage' }
 
 .responses {
   padding: 16px 16px 8px;
-  border-radius: 16px;
+  border-radius: $r-button;
   background: $surface;
   border: 1px solid $line;
   display: flex;
@@ -643,13 +649,13 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__title {
-    font-size: 14px;
+    font-size: $fs-14;
     font-weight: 600;
     color: $ink;
   }
 
   &__sub {
-    font-size: 11px;
+    font-size: $fs-11;
     color: $faint;
   }
 
@@ -675,7 +681,7 @@ export default { name: 'SurveyAnswersPage' }
   &__avatar {
     width: 32px;
     height: 32px;
-    border-radius: 16px;
+    border-radius: $r-button;
     background: $accent-soft;
     display: flex;
     align-items: center;
@@ -684,7 +690,7 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__initial {
-    font-size: 12px;
+    font-size: $fs-12;
     font-weight: 600;
     color: $accent-ink;
   }
@@ -704,18 +710,18 @@ export default { name: 'SurveyAnswersPage' }
   }
 
   &__name {
-    font-size: 11px;
+    font-size: $fs-11;
     font-weight: 600;
     color: $ink;
   }
 
   &__time {
-    font-size: 10px;
+    font-size: $fs-10;
     color: $faint;
   }
 
   &__text {
-    font-size: 12px;
+    font-size: $fs-12;
     color: $muted;
     line-height: 1.55;
   }
