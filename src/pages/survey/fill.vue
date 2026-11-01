@@ -145,7 +145,7 @@ onShareAppMessage(() =>
 
     <template v-else-if="poll">
       <scroll-view class="fill__scroll" scroll-y>
-        <view class="fill__content">
+        <view class="fill__content anim anim--fade">
           <view class="meta">
             <view class="meta__live" :class="{ 'meta__live--ended': isEnded }">
               <view class="meta__dot" :class="{ 'meta__dot--ended': isEnded }" />

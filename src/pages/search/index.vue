@@ -91,6 +91,11 @@ function openDetail(poll: Poll) {
   go(ROUTES.detail, { id: poll.id })
 }
 
+/** 时间约在数据上是多选，靠选项有没有时段认出来 */
+function isTime(poll: Poll): boolean {
+  return poll.options.some((o) => typeof o.startAt === 'number')
+}
+
 function cancel() {
   back()
 }
@@ -162,15 +167,16 @@ function cancel() {
           <text class="results__head">投票与问卷</text>
 
           <view
-            v-for="poll in results"
+            v-for="(poll, i) in results"
             :key="poll.id"
-            class="card"
+            class="card anim anim--fade-up"
+            :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
             hover-class="card--active"
             @tap="openDetail(poll)"
           >
             <view class="card__left">
               <view class="card__top">
-                <TypeBadge :type="poll.type" size="sm" />
+                <TypeBadge :type="poll.type" :time="isTime(poll)" size="sm" />
                 <text class="card__people">
                   {{
                     poll.type === 'survey'

@@ -1,4 +1,5 @@
 @use './tokens.scss' as *;
+@use './motion.scss' as *;
 @use './animation.scss';
 
 /* 全局重置与基础样式。设计稿底色 $bg = #FAFAFA，所有页面统一。 */
@@ -72,7 +73,7 @@ input:not(.uni-input-input) {
 
 /* 点击反馈：小程序里 hover-class 更省性能，但卡片统一用这个类 */
 .pressable {
-  transition: opacity 0.15s ease;
+  transition: opacity $dur-fast $ease-both;
 
   &:active {
     opacity: 0.7;

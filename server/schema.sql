@@ -81,6 +81,11 @@ CREATE TABLE IF NOT EXISTS options (
   -- 图文投票：JSON 数组，存 /files/options/... 相对地址，最多 3 张；
   -- 纯文字选项为 NULL（不是 '[]'，读的时候少一次解析）
   images      TEXT,
+  -- 时间约：选项是一个时段，存毫秒时间戳。
+  -- 普通选项为 NULL；end_at 可以没有（只知道从几点开始）。
+  -- 不单独建类型，投票/计票和 multiple 完全一样，只是选项多了时间
+  start_at    INTEGER,
+  end_at      INTEGER,
   sort        INTEGER NOT NULL DEFAULT 0,
   votes_count INTEGER NOT NULL DEFAULT 0
 );

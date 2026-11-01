@@ -378,7 +378,7 @@ export default { name: 'LoginPage' }
     border: 2px solid rgba(255, 255, 255, 0.4);
     border-top-color: $white;
     border-radius: 50%;
-    animation: login-spin 0.7s linear infinite;
+    animation: login-spin $dur-spin linear infinite;
   }
 
   &__terms {

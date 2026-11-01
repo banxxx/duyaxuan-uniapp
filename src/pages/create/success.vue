@@ -11,7 +11,7 @@ import { fetchPollQrcode } from '@/api/poll'
 import { buildShareMessage, syncShareMenu } from '@/utils/share'
 import { bottomInset } from '@/utils/platform'
 import { go, reset, ROUTES, switchTab } from '@/utils/router'
-import { cacheDrop } from '@/utils/cache'
+import { cacheDrop, cacheKey, cacheSet } from '@/utils/cache'
 import { downloadQrImage } from '@/utils/qr-cache'
 import AppToast from '@/components/base/AppToast.vue'
 
@@ -21,8 +21,10 @@ import AppToast from '@/components/base/AppToast.vue'
  * 提交发生在进入本页时（onLoad），不是点「发布」那一刻——
  * 这样从规则页退回来还能改，不会产生半成品数据。
  *
- * 缩略海报用真实小程序码（后端生成、R2 缓存），拿不到时才退回手绘占位；
- * 点「查看并分享」进 27/80 海报页，可以保存大图。
+ * 缩略海报先画手绘码位（三个定位角），真小程序码到了再盖上去。
+ * 这块只有 40×40，没人会拿它扫码，先出画面比先出码重要；
+ * 真码在后端生成（R2 缓存）要一两秒，等它会把整块海报拖成「空白 + 转圈」。
+ * 码图同时会存进本地缓存，点「查看并分享」进 27/80 海报页时就不用再等一次。
  *
  * 这里不再放「开启消息提醒」：订阅消息是一次授权换一条，入口在
  * 「设置 · 消息通知」里更合适，发布成功页留一个按钮反而和三个出口抢注意力。
@@ -35,9 +37,8 @@ const failed = ref(false)
 
 const isSurvey = ref(false)
 
-/** 缩略图里的小程序码 */
+/** 缩略图里的小程序码；空字符串表示还在生成，此时显示手绘码位 */
 const qrUrl = ref('')
-const qrLoading = ref(false)
 
 async function submit() {
   loading.value = true
@@ -58,20 +59,23 @@ async function submit() {
 }
 
 /**
- * 小程序码单独请求：生成要调一次微信接口，慢的时候一两秒，
- * 不能让它挡住「已发布」的文案和按钮先出来。
+ * 小程序码单独请求：生成要调一次微信接口，慢的时候一两秒。
+ *
+ * 页面不等它 —— 海报上先画码位，回来再淡入真码；
+ * 同时把图存进本地，紧接着进分享页时可以直接读文件。
  */
 async function loadQr(id: string) {
-  qrLoading.value = true
   try {
     const url = await fetchPollQrcode(id)
     qrUrl.value = url
-    // 顺手存一份到本地：紧接着进分享页时，码图不用再走一遍网络
+    // 顺手把分享页的快照写好：用户点「查看并分享」时，海报和码都不用再等一次
+    if (poll.value?.id === id) {
+      cacheSet(cacheKey.pollShare(id), { poll: poll.value, qrUrl: url })
+    }
+    // 再存一份到本地文件：小程序里分享页可以直接读文件，连图都不用下
     void downloadQrImage(id, url)
   } catch {
-    // 没配 AppID / 没开 R2 / 网络问题都退回占位图案，不影响本页
-  } finally {
-    qrLoading.value = false
+    // 没配 AppID / 没开 R2 / 网络问题都保持手绘码位，不影响本页
   }
 }
 
@@ -142,20 +146,21 @@ onShareAppMessage(() =>
             </view>
             <view class="poster__thumb-body">
               <view class="poster__qr">
-                <!-- 真小程序码；生成中留白，失败才退回三个定位角的手绘占位 -->
+                <!--
+                  手绘码位一直铺在底下，真码到了淡入盖上去。
+                  不用「转圈 → 换图」：转圈会让整块海报看起来在加载，
+                  而这页的重点是「发布成功」，不是这张 40×40 的图。
+                -->
+                <view class="poster__qr-corner poster__qr-corner--tl" />
+                <view class="poster__qr-corner poster__qr-corner--tr" />
+                <view class="poster__qr-corner poster__qr-corner--bl" />
                 <image
                   v-if="qrUrl"
-                  class="poster__qr-img"
+                  class="poster__qr-img anim anim--fade"
                   :src="qrUrl"
                   mode="aspectFit"
                   show-menu-by-longpress
                 />
-                <view v-else-if="qrLoading" class="poster__qr-spinner" />
-                <template v-else>
-                  <view class="poster__qr-corner poster__qr-corner--tl" />
-                  <view class="poster__qr-corner poster__qr-corner--tr" />
-                  <view class="poster__qr-corner poster__qr-corner--bl" />
-                </template>
               </view>
               <text class="poster__thumb-scan">扫码{{ isSurvey ? '填写' : '参与' }}</text>
             </view>
@@ -303,19 +308,12 @@ export default { name: 'CreateSuccessPage' }
     justify-content: center;
   }
 
+  /* 真码绝对定位盖在码位上面：三个定位角在它下面，图一淡入就看不见了 */
   &__qr-img {
+    position: absolute;
+    inset: 0;
     width: 40px;
     height: 40px;
-  }
-
-  /* 生成中：白底上转一个小圈，避免先闪一下占位再换成真码 */
-  &__qr-spinner {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid $line;
-    border-top-color: $accent;
-    animation: qr-spin 0.8s linear infinite;
   }
 
   &__qr-corner {
@@ -445,9 +443,4 @@ export default { name: 'CreateSuccessPage' }
   }
 }
 
-@keyframes qr-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 </style>

@@ -23,7 +23,7 @@ import { toast } from '@/utils/toast'
  * 这里用 query.source 判断，不单独开一页。
  */
 interface TypeItem {
-  key: PollType | 'image' | 'video' | 'more'
+  key: PollType | 'image' | 'time' | 'video' | 'more'
   title: string
   desc: string
   icon: string
@@ -41,10 +41,11 @@ const { statusBarHeight, navBarHeight } = getSafeArea()
 const navTotal = statusBarHeight + navBarHeight
 
 /**
- * 选中的是「方式」而不是投票类型：图文投票和单选/多选是正交的，
- * 它对应 type='single' + imageMode=true，单选还是多选到步骤③ 再定。
+ * 选中的是「方式」而不是投票类型：图文、时间约和单选/多选是正交的，
+ * 图文对应 type='single' + imageMode=true；时间约对应 type='multiple' + timeMode=true
+ * （约时间天然是多选，单选还是多选到步骤③ 仍可改）。
  */
-const selected = ref<PollType | 'image'>('single')
+const selected = ref<PollType | 'image' | 'time'>('single')
 const sourceSurveyId = ref('')
 const sourceSurveyTitle = ref('')
 const sourceCount = ref(0)
@@ -53,6 +54,12 @@ const types: TypeItem[] = [
   { key: 'single', title: '单选 / 多选', desc: '最常用的选择型投票，可限制每人选几项', icon: 'list-checks' },
   { key: 'survey', title: '问卷收集', desc: '没有固定选项，参与者自由填写回答', icon: 'message-square-text' },
   { key: 'image', title: '图文投票', desc: '选项带图片，适合作品与方案评选', icon: 'image' },
+  {
+    key: 'time',
+    title: '时间约',
+    desc: '选项是日期时段，看大家什么时候都有空',
+    icon: 'calendar-clock'
+  },
   { key: 'video', title: '视频投票', desc: '选项带视频，适合短视频征集', icon: 'video', soon: true },
   { key: 'more', title: '更多类型', desc: '排序、评分、打分等进阶形式', icon: 'sparkles', soon: true }
 ]
@@ -78,7 +85,7 @@ function pick(t: TypeItem) {
     else toast.show('已从问卷发起，不能再选问卷')
     return
   }
-  selected.value = t.key as PollType | 'image'
+  selected.value = t.key as PollType | 'image' | 'time'
 }
 
 /**
@@ -95,18 +102,21 @@ onShow(() => {
 
 function next() {
   const imageMode = selected.value === 'image'
-  // 图文投票仍然是单选/多选，只是选项多了配图
-  const type: PollType = selected.value === 'image' ? 'single' : selected.value
+  const timeMode = selected.value === 'time'
+  // 图文投票仍然是单选/多选，只是选项多了配图；时间约天然是多选
+  const type: PollType =
+    selected.value === 'image' ? 'single' : selected.value === 'time' ? 'multiple' : selected.value
   const cur = draft.draft
   const keep =
     backFromNext &&
     cur.mode === 'create' &&
     cur.type === type &&
     cur.imageMode === imageMode &&
+    cur.timeMode === timeMode &&
     !sourceSurveyId.value
 
   if (!keep) {
-    draft.startCreate(type, imageMode)
+    draft.startCreate(type, imageMode, timeMode)
     if (sourceSurveyId.value) {
       draft.patch({ sourceSurveyId: sourceSurveyId.value })
     }

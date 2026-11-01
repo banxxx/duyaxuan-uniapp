@@ -23,6 +23,32 @@ export function formatDateTime(ts: number): string {
   return `${formatDate(ts)} ${hh}:${mm}`
 }
 
+const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+/** 14:00 */
+export function formatTime(ts: number): string {
+  const d = new Date(ts)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** 10 月 26 日 周六 */
+export function formatDay(ts: number): string {
+  return `${formatDate(ts)} ${WEEK[new Date(ts).getDay()]}`
+}
+
+/**
+ * 时间约的选项文案：10 月 26 日 周六 14:00–18:00
+ *
+ * 这个字符串会作为选项标题落库，列表、投票记录、通知里都用它，
+ * 所以格式必须稳定。没有结束时间只写开始；跨天时两端各带日期。
+ */
+export function formatSlot(startAt: number, endAt?: number): string {
+  if (!endAt) return `${formatDay(startAt)} ${formatTime(startAt)}`
+  const sameDay = new Date(startAt).toDateString() === new Date(endAt).toDateString()
+  if (sameDay) return `${formatDay(startAt)} ${formatTime(startAt)}–${formatTime(endAt)}`
+  return `${formatDay(startAt)} ${formatTime(startAt)} – ${formatDay(endAt)} ${formatTime(endAt)}`
+}
+
 /** 10 月 20 日 14:32 创建 · 匿名投票 */
 export function formatCreatedAt(ts: number, suffix: string): string {
   const d = new Date(ts)

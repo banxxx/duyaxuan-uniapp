@@ -78,6 +78,14 @@ export function isQrCacheStale(entry: QrCacheEntry): boolean {
 }
 
 /**
+ * 正在下载的码图：同一张图同时只下一遍。
+ *
+ * 发布成功页会预热一份，而用户往往一两秒内就点「查看并分享」，
+ * 分享页这时再起一次下载，同一张图会下两遍，还会互相删对方的文件。
+ */
+const inflight = new Map<string, Promise<string | null>>()
+
+/**
  * 把远端码图存到本地，返回本地路径；失败返回 null（调用方退回远端地址）。
  *
  * 只有小程序端有可用的文件系统；H5 / 不支持的平台直接返回 null。
@@ -89,7 +97,12 @@ export function downloadQrImage(pollId: string, url: string): Promise<string | n
     return Promise.resolve(null)
   }
 
-  return new Promise((resolve) => {
+  // 按「投票 + 地址」去重：地址变了（换环境 / 换样式）就是另一张图，不能复用
+  const key = `${pollId}\u0000${url}`
+  const running = inflight.get(key)
+  if (running) return running
+
+  const task = new Promise<string | null>((resolve) => {
     uni.downloadFile({
       url,
       success: (res) => {
@@ -105,7 +118,8 @@ export function downloadQrImage(pollId: string, url: string): Promise<string | n
               resolve(null)
               return
             }
-            // 这里再读一次：两个下载可能同时在跑（发布成功页 + 分享页），
+            // 这里再读一次：同一张图的并发下载已经被上面去重，
+            // 但「换地址重新下载」仍可能和一次旧下载交叠，
             // 谁后完成谁负责把对方的文件删掉，避免留下孤儿文件占配额
             const current = readQrCache(pollId)
             writeQrCache(pollId, { url, path, checkedAt: Date.now() })
@@ -117,7 +131,10 @@ export function downloadQrImage(pollId: string, url: string): Promise<string | n
       },
       fail: () => resolve(null)
     })
-  })
+  }).finally(() => inflight.delete(key))
+
+  inflight.set(key, task)
+  return task
 }
 
 function removeSavedFile(filePath: string): void {

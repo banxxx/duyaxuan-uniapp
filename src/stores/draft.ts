@@ -17,6 +17,9 @@ export interface DraftOption {
   desc?: string
   /** 图文投票的配图（最多 3 张，第一张当封面），存服务端相对地址 */
   images?: string[]
+  /** 时间约：选项时段（毫秒）；普通选项没有 */
+  startAt?: number
+  endAt?: number
   /** 编辑时带上原票数，只读展示 */
   votes?: number
   /** 已有票数的选项不可删除 */
@@ -35,6 +38,14 @@ export interface Draft {
    * 所以它是一个和 type 正交的开关，单选/多选在步骤③ 决定。
    */
   imageMode: boolean
+  /**
+   * 时间约：选项是一个日期时段。
+   *
+   * 和 imageMode 一样，它不是新的 PollType —— 计票、结果、记录页
+   * 全部复用多选那一套，区别只在选项多了起止时间和编辑方式。
+   * 服务端按「选项有没有 startAt」来判断，不单独存类型。
+   */
+  timeMode: boolean
   title: string
   desc: string
   options: DraftOption[]
@@ -48,11 +59,16 @@ export interface Draft {
 
 const DRAFT_KEY = 'dyx_draft'
 
-export function createEmptyDraft(type: PollType = 'single', imageMode = false): Draft {
+export function createEmptyDraft(
+  type: PollType = 'single',
+  imageMode = false,
+  timeMode = false
+): Draft {
   return {
     mode: 'create',
     type,
     imageMode,
+    timeMode,
     title: '',
     desc: '',
     options: [],
@@ -90,8 +106,8 @@ export const useDraftStore = defineStore('draft', () => {
     return lockedRules.value.includes(key)
   }
 
-  function startCreate(type: PollType = 'single', imageMode = false) {
-    draft.value = createEmptyDraft(type, imageMode)
+  function startCreate(type: PollType = 'single', imageMode = false, timeMode = false) {
+    draft.value = createEmptyDraft(type, imageMode, timeMode)
     persist()
   }
 
@@ -101,7 +117,15 @@ export const useDraftStore = defineStore('draft', () => {
     type: PollType
     title: string
     desc?: string
-    options: Array<{ id: string; title: string; desc?: string; images?: string[]; votes: number }>
+    options: Array<{
+      id: string
+      title: string
+      desc?: string
+      images?: string[]
+      startAt?: number
+      endAt?: number
+      votes: number
+    }>
     rules: PollRules
     responseCount: number
   }) {
@@ -111,6 +135,8 @@ export const useDraftStore = defineStore('draft', () => {
       type: poll.type,
       // 已有选项带图就当作图文投票；全部删光图之后会退回纯文字
       imageMode: poll.options.some((o) => !!o.images?.length),
+      // 只要有一个选项带时段，就按时间约来编辑
+      timeMode: poll.options.some((o) => typeof o.startAt === 'number'),
       title: poll.title,
       desc: poll.desc ?? '',
       options: poll.options.map((o) => ({
@@ -118,6 +144,8 @@ export const useDraftStore = defineStore('draft', () => {
         title: o.title,
         desc: o.desc,
         images: o.images,
+        startAt: o.startAt,
+        endAt: o.endAt,
         votes: o.votes,
         locked: o.votes > 0
       })),
@@ -187,11 +215,15 @@ export const useDraftStore = defineStore('draft', () => {
         type,
         // 老草稿没有这个字段，当成纯文字投票
         imageMode: parsed.imageMode === true,
+        timeMode: parsed.timeMode === true,
         options: Array.isArray(parsed.options)
           ? parsed.options.map((o: DraftOption) => ({
               ...o,
               // 图片地址必须是数组；旧草稿 / 手改过的缓存里可能是别的东西
-              images: Array.isArray(o?.images) ? o.images.filter((u) => typeof u === 'string') : undefined
+              images: Array.isArray(o?.images) ? o.images.filter((u) => typeof u === 'string') : undefined,
+              // 时段必须是正数，否则格式化出来是「NaN 月」
+              startAt: typeof o?.startAt === 'number' && o.startAt > 0 ? o.startAt : undefined,
+              endAt: typeof o?.endAt === 'number' && o.endAt > 0 ? o.endAt : undefined
             }))
           : [],
         rules: { ...base.rules, ...(parsed.rules ?? {}) }

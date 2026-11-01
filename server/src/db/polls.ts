@@ -117,6 +117,9 @@ function toPoll(
       // 纯文字选项不带这个字段，前端 `v-if="opt.images"` 就能判断
       const images = parseImages(o.images)
       if (images.length) out.images = images
+      // 时间约的时段；普通选项没有，前端据此决定要不要画时间块
+      if (typeof o.start_at === 'number') out.startAt = o.start_at
+      if (typeof o.end_at === 'number') out.endAt = o.end_at
       return out
     }),
     // 关闭「查看投票人数」后，非发起人拿到的就是 0；前端据此不显示人数
@@ -559,7 +562,15 @@ export interface PollBody {
   title?: string
   desc?: string
   /** images 只收本服务的 /files/options/... 地址，最多 3 张 */
-  options?: Array<{ id?: string; title?: string; desc?: string; images?: unknown }>
+  options?: Array<{
+    id?: string
+    title?: string
+    desc?: string
+    images?: unknown
+    /** 时间约：时段起止，毫秒时间戳；普通选项不传 */
+    startAt?: unknown
+    endAt?: unknown
+  }>
   rules?: RulesInput
   sourceSurveyId?: string
 }
@@ -590,8 +601,11 @@ function normalizeTitle(raw: string | undefined): string {
 /** 规则平铺成列。非法值一律回落到默认，而不是报错 —— 前端表单不该能提交脏值 */
 function normalizeRules(input: RulesInput | undefined, type: PollType, fallbackEndAt: number) {
   const r = input ?? {}
+  // 上限跟着选项数走：时间约常有 5～10 个时段，「最多选 9 项」会卡住「全都有空」的情况
   const maxChoice =
-    type === 'multiple' ? Math.min(9, Math.max(2, Math.trunc(Number(r.maxChoice) || 2))) : 1
+    type === 'multiple'
+      ? Math.min(MAX_OPTIONS, Math.max(2, Math.trunc(Number(r.maxChoice) || 2)))
+      : 1
   const endAt = Number(r.endAt)
 
   return {
@@ -669,21 +683,43 @@ function imagesJson(images: string[]): string | null {
   return images.length ? JSON.stringify(images) : null
 }
 
-function cleanOptions(
-  raw: PollBody['options']
-): Array<{ title: string; desc: string | null; images: string[] }> {
+/** 时间约的时段：只认正的毫秒时间戳，其它一律当没填 */
+function cleanTimestamp(raw: unknown): number | null {
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null
+}
+
+interface CleanOption {
+  title: string
+  desc: string | null
+  images: string[]
+  startAt: number | null
+  endAt: number | null
+}
+
+function cleanOptions(raw: PollBody['options']): CleanOption[] {
   const list = (Array.isArray(raw) ? raw : [])
     .map((o) => ({
       title: String(o?.title ?? '').trim(),
       desc: String(o?.desc ?? '').trim(),
-      images: cleanImages(o?.images)
+      images: cleanImages(o?.images),
+      startAt: cleanTimestamp(o?.startAt),
+      // 没有开始时间就不认结束时间，避免出现「只知道结束」的怪时段
+      endAt: cleanTimestamp(o?.startAt) ? cleanTimestamp(o?.endAt) : null
     }))
     .filter((o) => o.title)
-    .map((o) => ({
-      title: o.title.slice(0, 40),
-      desc: o.desc.slice(0, 80) || null,
-      images: o.images
-    }))
+    .map((o) => {
+      if (o.startAt && o.endAt && o.endAt <= o.startAt) {
+        throw new HttpError(400, `「${o.title.slice(0, 40)}」的结束时间要晚于开始时间`)
+      }
+      return {
+        title: o.title.slice(0, 40),
+        desc: o.desc.slice(0, 80) || null,
+        images: o.images,
+        startAt: o.startAt,
+        endAt: o.endAt
+      }
+    })
 
   if (list.length > MAX_OPTIONS) throw new HttpError(400, `选项最多 ${MAX_OPTIONS} 个`)
   // 同名选项会让结果页出现两行一模一样的标题，投票人也分不清投的是哪个
@@ -767,9 +803,9 @@ export async function createPoll(
     stmts.push(
       db
         .prepare(
-          'INSERT INTO options (id, poll_id, title, desc, images, sort, votes_count) VALUES (?,?,?,?,?,?,0)'
+          'INSERT INTO options (id, poll_id, title, desc, images, start_at, end_at, sort, votes_count) VALUES (?,?,?,?,?,?,?,?,0)'
         )
-        .bind(newId('o'), pollId, o.title, o.desc, imagesJson(o.images), i)
+        .bind(newId('o'), pollId, o.title, o.desc, imagesJson(o.images), o.startAt, o.endAt, i)
     )
   })
 
@@ -897,16 +933,23 @@ export async function updatePoll(
       .all<OptionRow>()
     const byId = new Map(existing.results.map((o) => [o.id, o]))
 
-    // 只比标题、描述和配图：排序变化、id 变化不算「内容有更新」。
+    // 只比标题、描述、配图和时段：排序变化、id 变化不算「内容有更新」。
     // 图片顺序也要比 —— 第一张是封面，换封面就是换了别人看到的画面。
+    const optionKey = (o: {
+      title: string
+      desc: string | null
+      images: string[]
+      startAt?: number | null
+      endAt?: number | null
+    }) =>
+      `${o.title}\u0000${o.desc ?? ''}\u0000${o.images.join(',')}\u0000${o.startAt ?? ''}\u0000${o.endAt ?? ''}`
     const beforeOptions = existing.results
-      .map((o) => `${o.title}\u0000${o.desc ?? ''}\u0000${parseImages(o.images).join(',')}`)
+      .map((o) =>
+        optionKey({ ...o, images: parseImages(o.images), startAt: o.start_at, endAt: o.end_at })
+      )
       .sort()
       .join('\u0001')
-    const afterOptions = next
-      .map((o) => `${o.title}\u0000${o.desc ?? ''}\u0000${o.images.join(',')}`)
-      .sort()
-      .join('\u0001')
+    const afterOptions = next.map(optionKey).sort().join('\u0001')
     optionsChanged = beforeOptions !== afterOptions
 
     // 已结束：选项一律不能再动（排序除外，排序不影响内容）
@@ -923,9 +966,9 @@ export async function updatePoll(
       throw new HttpError(400, `「${votedDropped[0].title}」已有票数，不能删除`)
     }
 
-    // 已有票的选项连文字和配图也不能改：改标题等于偷换大家投过的东西，
-    // 换图同理 —— 票是投给那张图的
-    const cleanedById = new Map<string, { title: string; desc: string | null; images: string[] }>()
+    // 已有票的选项连文字、配图和时段也不能改：改标题等于偷换大家投过的东西，
+    // 换图同理 —— 票是投给那张图的；时间约改时段等于把票挪到了另一个时间
+    const cleanedById = new Map<string, CleanOption>()
     incoming.forEach((item, i) => {
       if (item.id && byId.has(item.id) && next[i]) cleanedById.set(item.id, next[i])
     })
@@ -934,27 +977,47 @@ export async function updatePoll(
       const clean = cleanedById.get(o.id)
       if (!clean) continue // 上面已按「不能删除」拦过
       const imagesSame = parseImages(o.images).join(',') === clean.images.join(',')
-      if (clean.title !== o.title || (clean.desc ?? null) !== (o.desc ?? null) || !imagesSame) {
+      const slotSame = (o.start_at ?? null) === (clean.startAt ?? null) && (o.end_at ?? null) === (clean.endAt ?? null)
+      if (clean.title !== o.title || (clean.desc ?? null) !== (o.desc ?? null) || !imagesSame || !slotSame) {
         throw new HttpError(400, `「${o.title}」已有票数，不能修改`)
       }
     }
 
     let sort = 0
     for (const item of incoming) {
-      const clean = next[sort] ?? { title: '', desc: null, images: [] }
+      const clean = next[sort] ?? { title: '', desc: null, images: [], startAt: null, endAt: null }
       if (item.id && byId.has(item.id)) {
         stmts.push(
           db
-            .prepare('UPDATE options SET title = ?, desc = ?, images = ?, sort = ? WHERE id = ?')
-            .bind(clean.title, clean.desc, imagesJson(clean.images), sort, item.id)
+            .prepare(
+              'UPDATE options SET title = ?, desc = ?, images = ?, start_at = ?, end_at = ?, sort = ? WHERE id = ?'
+            )
+            .bind(
+              clean.title,
+              clean.desc,
+              imagesJson(clean.images),
+              clean.startAt,
+              clean.endAt,
+              sort,
+              item.id
+            )
         )
       } else {
         stmts.push(
           db
             .prepare(
-              'INSERT INTO options (id, poll_id, title, desc, images, sort, votes_count) VALUES (?,?,?,?,?,?,0)'
+              'INSERT INTO options (id, poll_id, title, desc, images, start_at, end_at, sort, votes_count) VALUES (?,?,?,?,?,?,?,?,0)'
             )
-            .bind(newId('o'), pollId, clean.title, clean.desc, imagesJson(clean.images), sort)
+            .bind(
+              newId('o'),
+              pollId,
+              clean.title,
+              clean.desc,
+              imagesJson(clean.images),
+              clean.startAt,
+              clean.endAt,
+              sort
+            )
         )
       }
       sort++

@@ -203,7 +203,7 @@ export default { name: 'SupportPage' }
 
   &__chev {
     display: flex;
-    transition: transform 0.2s;
+    transition: transform $dur-fast $ease-both;
 
     &--open {
       transform: rotate(180deg);

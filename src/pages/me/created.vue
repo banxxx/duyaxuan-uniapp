@@ -10,22 +10,24 @@ import AppTabBar from '@/components/base/AppTabBar.vue'
 import StatsCard from '@/components/business/StatsCard.vue'
 import FilterChips from '@/components/business/FilterChips.vue'
 import PollRow from '@/components/business/PollRow.vue'
-import SwipeRow from '@/components/business/SwipeRow.vue'
 import { fetchMyPolls, fetchStats, deletePoll, restorePoll } from '@/api/poll'
 import { formatRemaining } from '@/utils/format'
 import { getSafeArea, bottomInset } from '@/utils/platform'
 import { takePendingUndo } from '@/utils/delete-undo'
 import { ROUTES, go } from '@/utils/router'
 import { cacheGet, cacheSet, cacheDrop, cacheKey } from '@/utils/cache'
+import { usePresence } from '@/utils/presence'
 import AppToast from '@/components/base/AppToast.vue'
 import { toast } from '@/utils/toast'
 
 /**
- * 41 我发起的 + 88 左滑操作 + 89 更多操作 + 96 删除撤销
+ * 41 我发起的 + 89 更多操作 + 96 删除撤销
  *
- * 四个设计稿页面合成一个页面：
+ * 设计稿 88 是「左滑露出编辑 / 删除」，这里没有实现：列表行本身就是整块可点，
+ * 左滑很容易在滑动列表时被误触发，误删的代价又高。
+ * 两个操作统一收在行尾的「···」里（89），入口更明确，也不影响滚动。
+ *
  *   列表常态       → 41
- *   左滑露出操作   → 88（SwipeRow 手势）
  *   点「···」      → 89（ActionSheet）
  *   删除后         → 96（底部提示条 + 5 秒撤销）
  */
@@ -55,6 +57,13 @@ const activePoll = ref<Poll | null>(null)
 const confirmVisible = ref(false)
 
 /**
+ * 两个面板是这一页自己画的（没有走 AppSheet），退场也就得自己管：
+ * 关闭时先滑下去 + 遮罩淡出，220ms 后再卸载，和 AppSheet 的节奏一致。
+ */
+const { rendered: sheetRendered, closing: sheetClosing } = usePresence(sheetVisible)
+const { rendered: confirmRendered, closing: confirmClosing } = usePresence(confirmVisible)
+
+/**
  * 删除确认的正文：进行中 / 已结束 / 还没人参与，三种情况说清楚后果。
  * 入口在列表和详情页两处，文案保持一致的政策：随时可删、立刻下线、5 秒内可撤销。
  */
@@ -78,6 +87,8 @@ const deleteDesc = computed(() => {
 // 撤销提示条（96）
 const toastVisible = ref(false)
 const toastText = ref('')
+/** 5 秒到点或点了撤销，提示条淡下去再卸载，不要原地消失 */
+const { rendered: toastRendered, closing: toastClosing } = usePresence(toastVisible)
 let undoPoll: Poll | null = null
 let undoTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -261,14 +272,6 @@ async function undoDelete() {
     toast.error('撤销失败，已超出可撤销时间')
   }
 }
-
-function onSwipeEdit(poll: Poll) {
-  goEdit(poll)
-}
-
-function onSwipeDelete(poll: Poll) {
-  askDelete(poll)
-}
 </script>
 
 <template>
@@ -281,17 +284,16 @@ function onSwipeDelete(poll: Poll) {
       <FilterChips :model-value="status" :options="filters" @update:model-value="onFilter" />
 
       <view class="page__list">
-        <SwipeRow
+        <PollRow
           v-for="(poll, i) in list"
           :key="poll.id"
           class="anim anim--fade-up"
           :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
-          @edit="onSwipeEdit(poll)"
-          @delete="onSwipeDelete(poll)"
+          :poll="poll"
+          manage
           @tap="openDetail(poll)"
-        >
-          <PollRow :poll="poll" manage @tap="openDetail(poll)" @more="openSheet(poll)" />
-        </SwipeRow>
+          @more="openSheet(poll)"
+        />
 
         <AppEmpty
           v-if="!loading && loadError && !list.length"
@@ -320,7 +322,12 @@ function onSwipeDelete(poll: Poll) {
     </view>
 
     <!-- 89 更多操作 -->
-    <view v-if="sheetVisible" class="sheet" @tap="sheetVisible = false">
+    <view
+      v-if="sheetRendered"
+      class="sheet"
+      :class="{ 'sheet--closing': sheetClosing }"
+      @tap="sheetVisible = false"
+    >
       <view class="sheet__panel" :style="{ paddingBottom: bottomInset(24) }" @tap.stop>
         <view class="sheet__handle"><view class="sheet__bar" /></view>
         <view class="sheet__head">
@@ -355,7 +362,12 @@ function onSwipeDelete(poll: Poll) {
     </view>
 
     <!-- 92/95 删除确认 -->
-    <view v-if="confirmVisible" class="sheet" @tap="confirmVisible = false">
+    <view
+      v-if="confirmRendered"
+      class="sheet"
+      :class="{ 'sheet--closing': confirmClosing }"
+      @tap="confirmVisible = false"
+    >
       <view class="confirm" :style="{ paddingBottom: bottomInset(24) }" @tap.stop>
         <view class="confirm__handle"><view class="confirm__bar" /></view>
         <view class="confirm__head">
@@ -378,7 +390,12 @@ function onSwipeDelete(poll: Poll) {
     </view>
 
     <!-- 96 撤销提示条 -->
-    <view v-if="toastVisible" class="toast" :style="{ bottom: `calc(76px + ${safeBottom}px)` }">
+    <view
+      v-if="toastRendered"
+      class="toast"
+      :class="{ 'toast--closing': toastClosing }"
+      :style="{ bottom: `calc(76px + ${safeBottom}px)` }"
+    >
       <text class="toast__text">{{ toastText }}</text>
       <text class="toast__undo" @tap="undoDelete">撤销</text>
     </view>
@@ -440,6 +457,23 @@ export default { name: 'CreatedPollsPage' }
     inset: 0;
     background: rgba(9, 9, 11, 0.4);
     animation: dyx-mask-in $dur-base $ease-out both;
+  }
+
+  /*
+   * 退场：面板滑回屏幕外、遮罩同步淡掉。这 220ms 里遮罩还挂在树上，
+   * pointer-events: none 让它不要再拦点击。
+   */
+  &--closing {
+    pointer-events: none;
+
+    &::before {
+      animation: dyx-mask-out $dur-base $ease-in both;
+    }
+
+    .sheet__panel,
+    .confirm {
+      animation: dyx-sheet-down $dur-base $ease-in both;
+    }
   }
 
   &__panel {
@@ -630,6 +664,12 @@ export default { name: 'CreatedPollsPage' }
   /* 从底部浮上来，比直接闪现更容易被注意到 */
   animation: dyx-fade-up $dur-base $ease-out both;
 
+  /* 收走时顺着原来的方向沉下去，和进场对称 */
+  &--closing {
+    pointer-events: none;
+    animation: undo-toast-out $dur-base $ease-in both;
+  }
+
   &__text {
     font-size: $fs-13;
     font-weight: 500;
@@ -646,6 +686,17 @@ export default { name: 'CreatedPollsPage' }
     color: $accent-200;
     padding-left: 12px;
     flex-shrink: 0;
+  }
+}
+
+@keyframes undo-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
   }
 }
 </style>

@@ -630,7 +630,12 @@ async function onCommentAction(key: string) {
             <text class="pinned__text">{{ pinned }}</text>
           </view>
 
-          <view v-for="t in threads" :key="t.root.id" class="thread">
+          <view
+            v-for="(t, i) in threads"
+            :key="t.root.id"
+            class="thread anim anim--fade-up"
+            :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
+          >
             <!-- 楼层：顶层评论。昵称单独一行，时间挪到底部 —— 和 B 站一样，头部不再挂两段信息 -->
             <view class="comment" @longpress="onLongPress(t.root)">
               <AppAvatar :src="t.root.user.avatar" :name="t.root.user.name" :size="34" />

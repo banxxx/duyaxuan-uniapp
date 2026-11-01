@@ -112,6 +112,12 @@ const pollId = ref('')
 
 const isOwner = computed(() => !!poll.value && poll.value.creatorId === user.profile?.id)
 const isSurvey = computed(() => poll.value?.type === 'survey')
+
+/**
+ * 时间约：选项带时段。数据上仍然是多选，只在措辞上区分 ——
+ * 「请选择 1–2 项」对约时间来说不像人话。
+ */
+const timeMode = computed(() => !!poll.value?.options.some((o) => typeof o.startAt === 'number'))
 const isEnded = computed(() => !!poll.value && poll.value.rules.endAt <= Date.now())
 const hasVoted = computed(() => (isSurvey.value ? myAnswers.value.length > 0 : myVote.value.length > 0))
 
@@ -661,7 +667,8 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
 
     <template v-else-if="poll">
       <scroll-view class="detail__scroll" scroll-y>
-        <view class="detail__content">
+        <!-- 骨架屏换成真内容时淡入一下：整块位移会让长页面晃，只做透明度 -->
+        <view class="detail__content anim anim--fade">
           <!-- 状态行：进行中 / 你已投票 + 类型 + 匿名 + 需填信息 + 撤回 -->
           <view class="meta">
             <view class="meta__left">
@@ -679,7 +686,9 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
               </view>
 
               <view class="meta__chip">
-                <text class="meta__chip-text">{{ isSurvey ? '问卷' : poll.type === 'multiple' ? '多选' : '单选' }}</text>
+                <text class="meta__chip-text">
+                  {{ isSurvey ? '问卷' : timeMode ? '时间约' : poll.type === 'multiple' ? '多选' : '单选' }}
+                </text>
               </view>
               <view class="meta__chip">
                 <text class="meta__chip-text">{{ poll.rules.anonymous ? '匿名' : '公开' }}</text>
@@ -728,7 +737,11 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
             <!-- 05/07 单选：右侧是「单选 · 未选择」；06/08 多选：换成已选数量胶囊 -->
             <view class="question">
               <text class="question__label">
-                请选择 {{ poll.type === 'multiple' ? `1–${maxChoice}` : '1' }} 项
+                {{
+                  timeMode
+                    ? '勾选你有空的时段'
+                    : `请选择 ${poll.type === 'multiple' ? `1–${maxChoice}` : '1'} 项`
+                }}
               </text>
               <view v-if="poll.type === 'multiple'" class="question__pill" :class="{ 'question__pill--on': count > 0 }">
                 <text class="question__pill-text" :class="{ 'question__pill-text--on': count > 0 }">
@@ -1444,6 +1457,8 @@ export default { name: 'PollDetailPage' }
     border-radius: 4px;
     /* 1% 的段也要看得见，但不能为 0 票的段占位（模板里已经过滤掉了） */
     min-width: 4px;
+    /* 回到详情页重新拉到票数时，段宽跟着长，不要硬切 */
+    transition: width $dur-slow $ease-out;
   }
 
   &__hint {

@@ -618,7 +618,7 @@ onShareTimeline(() => (poll.value ? buildTimelineMessage(poll.value) : { title: 
     </view>
 
     <scroll-view v-else-if="poll" class="share__scroll" scroll-y>
-      <view class="share__content">
+      <view class="share__content anim anim--fade">
         <!-- 海报：白卡 + 黑头 + 小程序码 + 灰底署名 -->
         <view class="poster">
           <view class="poster__top">
@@ -866,7 +866,7 @@ export default { name: 'SharePage' }
     border-radius: 50%;
     border: 2px solid $line;
     border-top-color: $accent;
-    animation: qr-spin 0.8s linear infinite;
+    animation: qr-spin $dur-spin linear infinite;
   }
 
   &__finder {

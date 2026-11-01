@@ -6,12 +6,13 @@ import AppIcon from '@/components/base/AppIcon.vue'
 import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppActionSheet from '@/components/base/AppActionSheet.vue'
+import AppDateTimePicker from '@/components/base/AppDateTimePicker.vue'
 import StepBar from '@/components/business/StepBar.vue'
 import { useDraftStore } from '@/stores/draft'
 import type { DraftOption } from '@/stores/draft'
 import { uploadPollImage } from '@/api/poll'
 import { resolveFileUrl } from '@/utils/api-base'
-import { charCount } from '@/utils/format'
+import { charCount, formatDate, formatDay, formatSlot, formatTime } from '@/utils/format'
 import { MAX_OPTION_IMAGES, chooseImage } from '@/utils/image'
 import { bottomInset } from '@/utils/platform'
 import { back, exitFlow, go, ROUTES } from '@/utils/router'
@@ -28,10 +29,19 @@ import { toast } from '@/utils/toast'
  * 选项不弹窗输入，直接内联编辑——设计稿 33 的「添加选项」弹层是给
  * 「标题 + 说明」两行一起填的场景，内联反而更快；这里保留弹层，
  * 因为拖拽手柄和序号要占掉一行宽度，内联两行会挤。
+ *
+ * 时间约（draft.timeMode）的选项不是一个标题，而是一个日期时段：
+ * 点「添加时段」直接开日期选择器，不再走 33 弹层——弹层里塞不下
+ * 日期/时间两段选择，套两层弹层在小程序上也会互相抢层级。
+ * 时段标题由 formatSlot() 生成，落库后列表、投票记录、通知都用它，
+ * 所以这里不给标题输入框，免得手改出来的标题和时段对不上。
  */
 const draft = useDraftStore()
 
 const isSurvey = computed(() => draft.draft.type === 'survey')
+
+/** 时间约：选项是日期时段（在步骤① 选，类型上仍然是多选） */
+const timeMode = computed(() => draft.draft.timeMode)
 
 /** 图文投票：选项可配图（在步骤① 选，单选/多选在步骤③ 定） */
 const imageMode = computed(() => draft.draft.imageMode)
@@ -113,7 +123,12 @@ function goSummary() {
 
 function openAdd() {
   if (draft.draft.options.length >= 12) {
-    toast.show('最多 12 个选项')
+    toast.show(timeMode.value ? '最多 12 个时段' : '最多 12 个选项')
+    return
+  }
+  // 时间约不弹 33：直接开日期选择器，选完就是一个时段
+  if (timeMode.value) {
+    openSlotPicker(-1, 'start')
     return
   }
   newTitle.value = ''
@@ -151,6 +166,103 @@ function confirmAdd() {
   setTimeout(() => {
     adding = false
   }, 300)
+}
+
+/* ---------------- 时间约：时段 ---------------- */
+
+const DAY = 24 * 60 * 60 * 1000
+
+/** 日期选择器：正在编辑哪个选项的哪一端，index = -1 表示新增 */
+const slotPickerVisible = ref(false)
+const slotPickerValue = ref<number | undefined>(undefined)
+const slotPickerMin = ref<number | undefined>(undefined)
+const slotTarget = ref<{ index: number; field: 'start' | 'end' } | null>(null)
+
+/** 主时段块：日期 + 开始时间 */
+function startLabel(opt: DraftOption): string {
+  if (!opt.startAt) return '选择开始时间'
+  return `${formatDay(opt.startAt)} ${formatTime(opt.startAt)}`
+}
+
+/** 结束块：同一天只写时间；跨天必须带日期，否则看起来像倒着走 */
+function endLabel(opt: DraftOption): string {
+  if (!opt.endAt || !opt.startAt) return ''
+  const sameDay = new Date(opt.startAt).toDateString() === new Date(opt.endAt).toDateString()
+  return sameDay ? formatTime(opt.endAt) : `${formatDate(opt.endAt)} ${formatTime(opt.endAt)}`
+}
+
+/**
+ * 新时段的默认值：接着上一个时段往后一天，14:00 开始。
+ * 连开几个「10 月 26 日 / 27 日 / 28 日」比每次都从今天翻月历快得多。
+ */
+function defaultSlotStart(): number {
+  const opts = draft.draft.options
+  const last = opts[opts.length - 1]
+  const base = last?.startAt ? last.startAt + DAY : Date.now() + DAY
+  const d = new Date(base)
+  d.setHours(14, 0, 0, 0)
+  return d.getTime()
+}
+
+function openSlotPicker(index: number, field: 'start' | 'end') {
+  const opt = index >= 0 ? draft.draft.options[index] : undefined
+  if (field === 'end' && !opt?.startAt) return
+
+  slotTarget.value = { index, field }
+  if (field === 'end' && opt?.startAt) {
+    slotPickerMin.value = opt.startAt
+    slotPickerValue.value = opt.endAt ?? opt.startAt + 2 * 60 * 60 * 1000
+  } else {
+    // 改开始时间时，已经过去的时段也得能改，所以最小值取「现在」和原值里更早的那个
+    slotPickerMin.value = opt?.startAt ? Math.min(opt.startAt, Date.now()) : Date.now()
+    slotPickerValue.value = opt?.startAt ?? defaultSlotStart()
+  }
+  slotPickerVisible.value = true
+}
+
+function onSlotConfirm(value: number) {
+  const target = slotTarget.value
+  slotPickerVisible.value = false
+  if (!target) return
+
+  // 开始时间选到已经过去的时间就顺延到 5 分钟后，和截止时间选择器保持同一套处理
+  if (target.field === 'start' && value <= Date.now()) {
+    value = Date.now() + 5 * 60 * 1000
+    toast.show('已顺延到最近的可选时间')
+  }
+
+  // 新增：标题直接就是格式化后的时段，服务端不用再拼一次
+  if (target.index < 0) {
+    draft.draft.options.push({ title: formatSlot(value), startAt: value })
+    syncToDraft()
+    return
+  }
+
+  const opt = draft.draft.options[target.index]
+  if (!opt) return
+
+  if (target.field === 'start') {
+    opt.startAt = value
+    // 开始挪到结束之后，结束就没有意义了，直接清掉而不是偷偷改成一个奇怪的区间
+    if (opt.endAt && opt.endAt <= value) opt.endAt = undefined
+  } else {
+    if (opt.startAt && value <= opt.startAt) {
+      toast.show('结束时间要晚于开始时间')
+      return
+    }
+    opt.endAt = value
+  }
+
+  opt.title = formatSlot(opt.startAt as number, opt.endAt)
+  syncToDraft()
+}
+
+function clearSlotEnd(index: number) {
+  const opt = draft.draft.options[index]
+  if (!opt?.startAt) return
+  opt.endAt = undefined
+  opt.title = formatSlot(opt.startAt)
+  syncToDraft()
 }
 
 /* ---------------- 选项配图（图文投票） ---------------- */
@@ -276,7 +388,7 @@ function next() {
     return
   }
   if (!isSurvey.value && draft.draft.options.length < 2) {
-    toast.show('至少添加 2 个选项')
+    toast.show(timeMode.value ? '至少添加 2 个时段' : '至少添加 2 个选项')
     return
   }
   if (!isSurvey.value && imageMode.value && !hasImage.value) {
@@ -322,7 +434,13 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
               v-model="title"
               class="field__input-inner"
               :maxlength="TITLE_MAX"
-              :placeholder="isSurvey ? '关于什么，一句话说清楚' : '例如：周末出游活动，你想安排哪些项目？'"
+              :placeholder="
+                isSurvey
+                  ? '关于什么，一句话说清楚'
+                  : timeMode
+                    ? '例如：这周末聚一下，你哪天有空？'
+                    : '例如：周末出游活动，你想安排哪些项目？'
+              "
               placeholder-class="field__ph"
               @blur="syncToDraft"
             />
@@ -347,7 +465,9 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
               :placeholder="
                 isSurvey
                   ? '随便聊聊想去哪、想玩什么，我们会根据大家的回答整理方案。'
-                  : '补充背景、规则或预算，帮助参与者判断'
+                  : timeMode
+                    ? '写清楚地点、活动时长或需要准备的，方便大家判断'
+                    : '补充背景、规则或预算，帮助参与者判断'
               "
               placeholder-class="field__ph"
               @blur="syncToDraft"
@@ -361,7 +481,7 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
         <!-- 选项（投票） -->
         <view v-if="!isSurvey" class="field">
           <view class="field__head">
-            <text class="field__label">选项</text>
+            <text class="field__label">{{ timeMode ? '时段' : '选项' }}</text>
             <text v-if="fromSurvey" class="field__link" @tap="goSummary">
               重新整理 ›
             </text>
@@ -385,7 +505,54 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
               <view class="opt__index">
                 <text class="opt__index-text">{{ i + 1 }}</text>
               </view>
-              <view class="opt__text">
+              <!--
+                时间约：标题就是时段，不给文字输入框 —— 手改标题会和时段对不上。
+                左块点开改开始时间，右块点开加/改结束时间。
+              -->
+              <view v-if="timeMode" class="opt__text">
+                <view class="slot">
+                  <view
+                    class="slot__chip slot__chip--main"
+                    hover-class="slot__chip--active"
+                    @tap="openSlotPicker(i, 'start')"
+                  >
+                    <AppIcon name="calendar-clock" :size="13" color="#4F46E5" />
+                    <text class="slot__text">{{ startLabel(opt) }}</text>
+                  </view>
+
+                  <view
+                    v-if="opt.endAt"
+                    class="slot__chip"
+                    hover-class="slot__chip--active"
+                    @tap="openSlotPicker(i, 'end')"
+                  >
+                    <text class="slot__text">– {{ endLabel(opt) }}</text>
+                    <view class="slot__clear" @tap.stop="clearSlotEnd(i)">
+                      <AppIcon name="x" :size="8" color="#A1A1AA" :stroke-width="3" />
+                    </view>
+                  </view>
+
+                  <view
+                    v-else
+                    class="slot__chip slot__chip--dashed"
+                    hover-class="slot__chip--active"
+                    @tap="openSlotPicker(i, 'end')"
+                  >
+                    <text class="slot__text slot__text--faint">加结束</text>
+                  </view>
+                </view>
+
+                <input
+                  v-model="opt.desc"
+                  class="opt__desc-input"
+                  :maxlength="OPTION_DESC_MAX"
+                  placeholder="补充一句说明（选填）"
+                  placeholder-class="field__ph"
+                  @blur="syncToDraft"
+                />
+              </view>
+
+              <view v-else class="opt__text">
                 <input
                   v-model="opt.title"
                   class="opt__title-input"
@@ -439,7 +606,7 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
 
           <view class="add" hover-class="add--active" @tap="openAdd">
             <AppIcon name="plus" :size="16" color="#71717A" />
-            <text class="add__text">添加选项</text>
+            <text class="add__text">{{ timeMode ? '添加时段' : '添加选项' }}</text>
           </view>
         </view>
 
@@ -582,11 +749,20 @@ const fromSurvey = computed(() => !!draft.draft.sourceSurveyId)
 
     <AppActionSheet
       :visible="optionMenuVisible"
-      title="选项操作"
+      :title="timeMode ? '时段操作' : '选项操作'"
       :desc="optionMenuIndex >= 0 ? draft.draft.options[optionMenuIndex]?.title : ''"
       :items="optionMenuItems"
       @close="optionMenuVisible = false"
       @select="onOptionAction"
+    />
+
+    <!-- 时间约的日期/时间选择器：新增时段和改起止都用同一个 -->
+    <AppDateTimePicker
+      :visible="slotPickerVisible"
+      :model-value="slotPickerValue"
+      :min="slotPickerMin"
+      @close="slotPickerVisible = false"
+      @confirm="onSlotConfirm"
     />
   </view>
 </template>
@@ -882,6 +1058,72 @@ export default { name: 'CreateContentPage' }
 }
 
 /*
+ * 时间约的时段：左边一块日期+开始时间（占满剩余宽度），右边一块结束时间。
+ * 两块都可点：左边改开始，右边加/改结束，右侧小 × 单独清掉结束。
+ * 结束块用虚线边框，和「已经选了结束」的实心块区分开。
+ */
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+
+  &__chip {
+    height: 30px;
+    padding: 0 9px;
+    border-radius: $r-sm;
+    background: $subtle;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    transition:
+      background-color $dur-fast $ease-both,
+      opacity $dur-fast $ease-both;
+
+    &--main {
+      flex: 1;
+      min-width: 0;
+      background: $accent-soft;
+    }
+
+    &--dashed {
+      background: $surface;
+      border: 1px dashed $line;
+    }
+
+    &--active {
+      opacity: 0.72;
+    }
+  }
+
+  &__text {
+    font-size: $fs-12;
+    font-weight: 600;
+    color: $accent-ink;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+
+    &--faint {
+      font-weight: 500;
+      color: $faint;
+    }
+  }
+
+  &__clear {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(9, 9, 11, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+}
+
+/*
  * 选项配图：44 的方图，最多 3 张 + 一个加号位。
  * 放在文字下面而不是左侧 —— 一行里已经有序号、两个输入框和拖拽手柄，
  * 再挤一列 44 的图，标题就只剩十来个字可写了。
@@ -958,7 +1200,7 @@ export default { name: 'CreateContentPage' }
     border-radius: 50%;
     border: 2px solid $line;
     border-top-color: $accent;
-    animation: shot-spin 0.7s linear infinite;
+    animation: shot-spin $dur-spin linear infinite;
   }
 }
 

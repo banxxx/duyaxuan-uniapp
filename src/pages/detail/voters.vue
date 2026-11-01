@@ -190,7 +190,7 @@ onPullDownRefresh(async () => {
       <scroll-view class="voters__scroll" scroll-y>
         <view class="voters__content" :style="{ paddingBottom: bottomInset(20) }">
           <!-- 上下文卡：状态 + 匿名/公开标识 + 标题 + 大号人数 -->
-          <view class="context">
+          <view class="context anim anim--fade-up">
             <view class="context__top">
               <view class="context__live" :class="{ 'context__live--ended': isEnded }">
                 <view class="context__dot" :class="{ 'context__dot--ended': isEnded }" />
@@ -225,7 +225,11 @@ onPullDownRefresh(async () => {
           </view>
 
           <!-- 匿名说明条（14/73） -->
-          <view v-if="isAnonymous" class="privacy">
+          <view
+            v-if="isAnonymous"
+            class="privacy anim anim--fade-up"
+            :style="{ animationDelay: '40ms' }"
+          >
             <AppIcon name="eye-off" :size="13" color="#A1A1AA" :stroke-width="2" />
             <text class="privacy__text">
               匿名{{ isSurvey ? '收集' : '投票' }}不会记录参与者身份。以下仅按时间展示每一条{{
@@ -236,7 +240,7 @@ onPullDownRefresh(async () => {
 
           <!-- 公开态：搜索 + 分段（15/74） -->
           <template v-else>
-            <view class="search">
+            <view class="search anim anim--fade-up" :style="{ animationDelay: '40ms' }">
               <AppIcon name="search" :size="16" color="#A1A1AA" />
               <input
                 v-model="keyword"
@@ -246,7 +250,7 @@ onPullDownRefresh(async () => {
               />
             </view>
 
-            <view class="segments">
+            <view class="segments anim anim--fade-up" :style="{ animationDelay: '80ms' }">
               <view
                 class="segments__item"
                 :class="{ 'segments__item--on': sort === 'latest' }"
@@ -265,7 +269,12 @@ onPullDownRefresh(async () => {
           </template>
 
           <!-- 记录列表：整块一张卡，行与行之间一条分割线 -->
-          <view v-if="shown.length" class="records" :class="{ 'records--survey': isSurvey }">
+          <view
+            v-if="shown.length"
+            class="records anim anim--fade-up"
+            :class="{ 'records--survey': isSurvey }"
+            :style="{ animationDelay: '120ms' }"
+          >
             <!-- 14 匿名投票：一条流水，只有序号、时间和「投了一票」 -->
             <template v-if="isAnonymous && !isSurvey">
               <view v-for="v in numbered" :key="v.id" class="rec">

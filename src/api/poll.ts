@@ -274,6 +274,8 @@ export async function createPoll(body: Record<string, any>): Promise<Poll> {
       title: string
       desc?: string
       images?: string[]
+      startAt?: number
+      endAt?: number
     }>
     const poll: Poll = {
       id: `p_${Date.now()}`,
@@ -292,6 +294,9 @@ export async function createPoll(body: Record<string, any>): Promise<Poll> {
               title: o.title,
               desc: o.desc,
               images: o.images?.length ? [...o.images] : undefined,
+              // 时间约的时段：mock 也要带上，否则本地调试看不到时间块
+              startAt: o.startAt,
+              endAt: o.endAt,
               votes: 0
             })),
       voterCount: 0,
@@ -322,6 +327,8 @@ export async function updatePoll(id: string, body: Record<string, any>): Promise
         title: o.title,
         desc: o.desc,
         images: o.images?.length ? [...o.images] : undefined,
+        startAt: o.startAt,
+        endAt: o.endAt,
         votes: o.votes ?? 0
       }))
     }

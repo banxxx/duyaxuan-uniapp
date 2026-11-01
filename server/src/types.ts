@@ -119,6 +119,9 @@ export interface OptionRow {
   desc: string | null
   /** 图文投票：JSON 数组，存 /files/options/... 相对地址；纯文字选项为 null */
   images: string | null
+  /** 时间约：选项时段（毫秒）；普通选项为 null */
+  start_at: number | null
+  end_at: number | null
   sort: number
   votes_count: number
 }
@@ -171,6 +174,9 @@ export interface PollOptionOut {
   desc?: string
   /** 图文投票的配图，最多 3 张；没有图时不带这个字段 */
   images?: string[]
+  /** 时间约：选项的时段起止（毫秒）。普通选项不带这两个字段 */
+  startAt?: number
+  endAt?: number
   votes: number
 }
 

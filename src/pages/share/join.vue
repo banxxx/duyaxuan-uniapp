@@ -256,7 +256,7 @@ export default { name: 'ShareJoinPage' }
     border: 2px solid $line;
     border-top-color: $accent;
     border-radius: 50%;
-    animation: join-spin 0.8s linear infinite;
+    animation: join-spin $dur-spin linear infinite;
   }
 
   &__loading-text {

@@ -8,9 +8,10 @@ import AppButton from '@/components/base/AppButton.vue'
 import AppSheet from '@/components/base/AppSheet.vue'
 import AppEmpty from '@/components/base/AppEmpty.vue'
 import AppSkeleton from '@/components/base/AppSkeleton.vue'
+import AppDateTimePicker from '@/components/base/AppDateTimePicker.vue'
 import { fetchPoll, updatePoll, uploadPollImage } from '@/api/poll'
 import { resolveFileUrl } from '@/utils/api-base'
-import { charCount } from '@/utils/format'
+import { charCount, formatDate, formatDay, formatSlot, formatTime } from '@/utils/format'
 import { MAX_OPTION_IMAGES, chooseImage } from '@/utils/image'
 import { bottomInset } from '@/utils/platform'
 import { ROUTES, back, go } from '@/utils/router'
@@ -45,6 +46,9 @@ const options = ref<
     title: string
     desc?: string
     images?: string[]
+    /** 时间约：选项时段；普通投票没有 */
+    startAt?: number
+    endAt?: number
     votes?: number
     locked?: boolean
   }>
@@ -57,6 +61,13 @@ const options = ref<
  * 从数据本身推出来比多存一列更难对不上。
  */
 const imageMode = ref(false)
+
+/**
+ * 时间约：任意一个选项带时段就按时间约编辑，同样从数据本身推。
+ * 标题就是时段文案，所以这里不给文字输入框 —— 只能通过时间选择器改，
+ * 改完同步重算标题，避免标题和时段对不上。
+ */
+const timeMode = ref(false)
 
 const pollId = ref('')
 
@@ -124,10 +135,13 @@ async function load() {
       title: o.title,
       desc: o.desc,
       images: o.images,
+      startAt: o.startAt,
+      endAt: o.endAt,
       votes: o.votes,
       locked: o.votes > 0
     }))
     imageMode.value = p.options.some((o) => !!o.images?.length)
+    timeMode.value = p.options.some((o) => typeof o.startAt === 'number')
   } catch {
     loadError.value = true
   } finally {
@@ -141,12 +155,18 @@ onLoad((q) => {
 onMounted(load)
 
 function openAdd() {
+  const noun = timeMode.value ? '时段' : '选项'
   if (isEnded.value) {
-    toast.show('已结束，不能再添加选项')
+    toast.show(`已结束，不能再添加${noun}`)
     return
   }
   if (options.value.length >= 12) {
-    toast.show('最多 12 个选项')
+    toast.show(`最多 12 个${noun}`)
+    return
+  }
+  // 时间约没有「标题 + 说明」弹层，直接开日期选择器
+  if (timeMode.value) {
+    openSlotPicker(-1)
     return
   }
   newTitle.value = ''
@@ -176,6 +196,92 @@ function confirmAdd() {
   setTimeout(() => {
     adding = false
   }, 300)
+}
+
+/* ---------------- 时间约：时段 ---------------- */
+
+const DAY = 24 * 60 * 60 * 1000
+
+const slotPickerVisible = ref(false)
+const slotPickerValue = ref<number | undefined>(undefined)
+const slotPickerMin = ref<number | undefined>(undefined)
+/** 正在改哪个选项的哪一端；index = -1 表示新增 */
+const slotTarget = ref<{ index: number; field: 'start' | 'end' } | null>(null)
+
+/** 主时段块：日期 + 开始时间 */
+function startLabel(opt: { startAt?: number }): string {
+  if (!opt.startAt) return '选择开始时间'
+  return `${formatDay(opt.startAt)} ${formatTime(opt.startAt)}`
+}
+
+/** 结束块：同一天只写时间；跨天必须带日期 */
+function endLabel(opt: { startAt?: number; endAt?: number }): string {
+  if (!opt.endAt || !opt.startAt) return ''
+  const sameDay = new Date(opt.startAt).toDateString() === new Date(opt.endAt).toDateString()
+  return sameDay ? formatTime(opt.endAt) : `${formatDate(opt.endAt)} ${formatTime(opt.endAt)}`
+}
+
+/** 新时段接着最后一个时段往后一天，14:00 开始 */
+function defaultSlotStart(): number {
+  const last = options.value[options.value.length - 1]
+  const base = last?.startAt ? last.startAt + DAY : Date.now() + DAY
+  const d = new Date(base)
+  d.setHours(14, 0, 0, 0)
+  return d.getTime()
+}
+
+function openSlotPicker(index: number, field: 'start' | 'end' = 'start') {
+  const opt = index >= 0 ? options.value[index] : undefined
+  if (opt && (opt.locked || isEnded.value)) {
+    toast.show(isEnded.value ? '已结束，不能再改时段' : `已有 ${opt.votes} 票，不能改时段`)
+    return
+  }
+  if (field === 'end' && !opt?.startAt) return
+
+  slotTarget.value = { index, field }
+  if (field === 'end' && opt?.startAt) {
+    slotPickerMin.value = opt.startAt
+    slotPickerValue.value = opt.endAt ?? opt.startAt + 2 * 60 * 60 * 1000
+  } else {
+    // 已有时段可能已经过去了，改它的时候不能把最小值卡在今天
+    slotPickerMin.value = opt?.startAt ? Math.min(opt.startAt, Date.now()) : Date.now()
+    slotPickerValue.value = opt?.startAt ?? defaultSlotStart()
+  }
+  slotPickerVisible.value = true
+}
+
+function onSlotConfirm(value: number) {
+  const target = slotTarget.value
+  slotPickerVisible.value = false
+  if (!target) return
+
+  if (target.index < 0) {
+    options.value.push({ title: formatSlot(value), startAt: value, votes: 0 })
+    return
+  }
+
+  const opt = options.value[target.index]
+  if (!opt) return
+
+  if (target.field === 'start') {
+    opt.startAt = value
+    if (opt.endAt && opt.endAt <= value) opt.endAt = undefined
+  } else {
+    if (opt.startAt && value <= opt.startAt) {
+      toast.show('结束时间要晚于开始时间')
+      return
+    }
+    opt.endAt = value
+  }
+
+  opt.title = formatSlot(opt.startAt as number, opt.endAt)
+}
+
+function clearSlotEnd(index: number) {
+  const opt = options.value[index]
+  if (!opt?.startAt || opt.locked || isEnded.value) return
+  opt.endAt = undefined
+  opt.title = formatSlot(opt.startAt)
 }
 
 /* ---------------- 选项配图（图文投票） ---------------- */
@@ -270,7 +376,7 @@ async function save() {
     return
   }
   if (!isSurvey.value && options.value.length < 2) {
-    toast.show('至少保留 2 个选项')
+    toast.show(timeMode.value ? '至少保留 2 个时段' : '至少保留 2 个选项')
     return
   }
 
@@ -288,6 +394,9 @@ async function save() {
         title: o.title.trim(),
         desc: o.desc,
         images: o.images?.length ? o.images : undefined,
+        // 时间约：时段必须一起带上，服务端会拿它判断「已投票的选项有没有被改」
+        startAt: timeMode.value ? o.startAt : undefined,
+        endAt: timeMode.value ? o.endAt : undefined,
         votes: o.votes
       }))
     }
@@ -398,9 +507,9 @@ function goRules() {
         <!-- 选项（投票） -->
         <view v-if="!isSurvey" class="field">
           <view class="field__head">
-            <text class="field__label">选项</text>
+            <text class="field__label">{{ timeMode ? '时段' : '选项' }}</text>
             <text class="field__optional">
-              {{ isEnded ? '已结束 · 全部锁定' : '有票数的选项已锁定' }}
+              {{ isEnded ? '已结束 · 全部锁定' : `有票数的${timeMode ? '时段' : '选项'}已锁定` }}
             </text>
           </view>
 
@@ -416,59 +525,116 @@ function goRules() {
               </view>
 
               <view class="opt__text">
-                <input
-                  v-model="opt.title"
-                  class="opt__title-input"
-                  :class="{ 'opt__input--locked': opt.locked || isEnded }"
-                  :disabled="opt.locked || isEnded"
-                  :maxlength="OPTION_MAX"
-                  placeholder="选项标题"
-                  placeholder-class="field__ph"
-                />
-                <input
-                  v-model="opt.desc"
-                  class="opt__desc-input"
-                  :class="{ 'opt__input--locked': opt.locked || isEnded }"
-                  :disabled="opt.locked || isEnded"
-                  :maxlength="40"
-                  placeholder="补充一句说明（选填）"
-                  placeholder-class="field__ph"
-                />
-
-                <!-- 图文投票：有票的选项连图一起锁住 -->
-                <view
-                  v-if="imageMode && ((opt.images?.length ?? 0) > 0 || (!opt.locked && !isEnded))"
-                  class="shots"
-                >
-                  <view
-                    v-for="(img, ii) in opt.images ?? []"
-                    :key="img"
-                    class="shot"
-                    @tap="previewImages(opt.images ?? [], ii)"
-                  >
-                    <image class="shot__img" :src="resolveFileUrl(img)" mode="aspectFill" />
-                    <view v-if="ii === 0 && (opt.images?.length ?? 0) > 1" class="shot__badge">
-                      <text class="shot__badge-text">封面</text>
+                <!--
+                  时间约：标题就是时段，不给文字输入框。
+                  已投票 / 已结束的时段连块都不给点，只显示成一段灰字。
+                -->
+                <template v-if="timeMode">
+                  <view v-if="opt.locked || isEnded" class="slot">
+                    <view class="slot__chip slot__chip--main slot__chip--off">
+                      <AppIcon name="calendar-clock" :size="13" color="#A1A1AA" />
+                      <text class="slot__text slot__text--off">{{ opt.title }}</text>
                     </view>
+                  </view>
+
+                  <view v-else class="slot">
                     <view
-                      v-if="!opt.locked && !isEnded"
-                      class="shot__remove"
-                      @tap.stop="removeOptionImage(i, ii)"
+                      class="slot__chip slot__chip--main"
+                      hover-class="slot__chip--active"
+                      @tap="openSlotPicker(i, 'start')"
                     >
-                      <AppIcon name="x" :size="9" color="#FFFFFF" :stroke-width="3" />
+                      <AppIcon name="calendar-clock" :size="13" color="#4F46E5" />
+                      <text class="slot__text">{{ startLabel(opt) }}</text>
+                    </view>
+
+                    <view
+                      v-if="opt.endAt"
+                      class="slot__chip"
+                      hover-class="slot__chip--active"
+                      @tap="openSlotPicker(i, 'end')"
+                    >
+                      <text class="slot__text">– {{ endLabel(opt) }}</text>
+                      <view class="slot__clear" @tap.stop="clearSlotEnd(i)">
+                        <AppIcon name="x" :size="8" color="#A1A1AA" :stroke-width="3" />
+                      </view>
+                    </view>
+
+                    <view
+                      v-else
+                      class="slot__chip slot__chip--dashed"
+                      hover-class="slot__chip--active"
+                      @tap="openSlotPicker(i, 'end')"
+                    >
+                      <text class="slot__text slot__text--faint">加结束</text>
                     </view>
                   </view>
 
+                  <input
+                    v-model="opt.desc"
+                    class="opt__desc-input"
+                    :class="{ 'opt__input--locked': opt.locked || isEnded }"
+                    :disabled="opt.locked || isEnded"
+                    :maxlength="40"
+                    placeholder="补充一句说明（选填）"
+                    placeholder-class="field__ph"
+                  />
+                </template>
+
+                <template v-else>
+                  <input
+                    v-model="opt.title"
+                    class="opt__title-input"
+                    :class="{ 'opt__input--locked': opt.locked || isEnded }"
+                    :disabled="opt.locked || isEnded"
+                    :maxlength="OPTION_MAX"
+                    placeholder="选项标题"
+                    placeholder-class="field__ph"
+                  />
+                  <input
+                    v-model="opt.desc"
+                    class="opt__desc-input"
+                    :class="{ 'opt__input--locked': opt.locked || isEnded }"
+                    :disabled="opt.locked || isEnded"
+                    :maxlength="40"
+                    placeholder="补充一句说明（选填）"
+                    placeholder-class="field__ph"
+                  />
+
+                  <!-- 图文投票：有票的选项连图一起锁住 -->
                   <view
-                    v-if="!opt.locked && !isEnded && (opt.images?.length ?? 0) < MAX_OPTION_IMAGES"
-                    class="shot shot--add"
-                    :hover-class="uploadingAt === String(i) ? 'none' : 'shot--active'"
-                    @tap="addOptionImage(i)"
+                    v-if="imageMode && ((opt.images?.length ?? 0) > 0 || (!opt.locked && !isEnded))"
+                    class="shots"
                   >
-                    <view v-if="uploadingAt === String(i)" class="shot__spin" />
-                    <AppIcon v-else name="image-plus" :size="15" color="#A1A1AA" />
+                    <view
+                      v-for="(img, ii) in opt.images ?? []"
+                      :key="img"
+                      class="shot"
+                      @tap="previewImages(opt.images ?? [], ii)"
+                    >
+                      <image class="shot__img" :src="resolveFileUrl(img)" mode="aspectFill" />
+                      <view v-if="ii === 0 && (opt.images?.length ?? 0) > 1" class="shot__badge">
+                        <text class="shot__badge-text">封面</text>
+                      </view>
+                      <view
+                        v-if="!opt.locked && !isEnded"
+                        class="shot__remove"
+                        @tap.stop="removeOptionImage(i, ii)"
+                      >
+                        <AppIcon name="x" :size="9" color="#FFFFFF" :stroke-width="3" />
+                      </view>
+                    </view>
+
+                    <view
+                      v-if="!opt.locked && !isEnded && (opt.images?.length ?? 0) < MAX_OPTION_IMAGES"
+                      class="shot shot--add"
+                      :hover-class="uploadingAt === String(i) ? 'none' : 'shot--active'"
+                      @tap="addOptionImage(i)"
+                    >
+                      <view v-if="uploadingAt === String(i)" class="shot__spin" />
+                      <AppIcon v-else name="image-plus" :size="15" color="#A1A1AA" />
+                    </view>
                   </view>
-                </view>
+                </template>
               </view>
 
               <view v-if="opt.locked || isEnded" class="opt__votes">
@@ -482,7 +648,9 @@ function goRules() {
 
           <view v-if="!isEnded" class="add" hover-class="add--active" @tap="openAdd">
             <AppIcon name="plus" :size="16" color="#71717A" />
-            <text class="add__text">添加选项（不计入已有票数）</text>
+            <text class="add__text">
+              {{ timeMode ? '添加时段（不计入已有票数）' : '添加选项（不计入已有票数）' }}
+            </text>
           </view>
         </view>
 
@@ -609,6 +777,15 @@ function goRules() {
         </view>
       </template>
     </AppSheet>
+
+    <!-- 时间约的日期/时间选择器：新增时段和改起止都用同一个 -->
+    <AppDateTimePicker
+      :visible="slotPickerVisible"
+      :model-value="slotPickerValue"
+      :min="slotPickerMin"
+      @close="slotPickerVisible = false"
+      @confirm="onSlotConfirm"
+    />
   </view>
 </template>
 
@@ -894,6 +1071,76 @@ export default { name: 'EditContentPage' }
   }
 }
 
+/* 时间约的时段：和创建页同一套两块可点的胶囊，锁定时退成灰底灰字 */
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+
+  &__chip {
+    height: 30px;
+    padding: 0 9px;
+    border-radius: $r-sm;
+    background: $subtle;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+    transition:
+      background-color $dur-fast $ease-both,
+      opacity $dur-fast $ease-both;
+
+    &--main {
+      flex: 1;
+      min-width: 0;
+      background: $accent-soft;
+    }
+
+    &--dashed {
+      background: $surface;
+      border: 1px dashed $line;
+    }
+
+    &--active {
+      opacity: 0.72;
+    }
+
+    &--off {
+      background: $subtle;
+    }
+  }
+
+  &__text {
+    font-size: $fs-12;
+    font-weight: 600;
+    color: $accent-ink;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+
+    &--faint {
+      font-weight: 500;
+      color: $faint;
+    }
+
+    &--off {
+      color: $muted;
+    }
+  }
+
+  &__clear {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(9, 9, 11, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+}
+
 /* 选项配图：和创建页同一套 44 方图 + 加号位 */
 .shots {
   display: flex;
@@ -964,7 +1211,7 @@ export default { name: 'EditContentPage' }
     border-radius: 50%;
     border: 2px solid $line;
     border-top-color: $accent;
-    animation: shot-spin 0.7s linear infinite;
+    animation: shot-spin $dur-spin linear infinite;
   }
 }
 

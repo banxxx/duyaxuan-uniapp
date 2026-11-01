@@ -76,6 +76,14 @@ const ranked = computed(() => {
 
 const winner = computed(() => ranked.value[0])
 
+/**
+ * 时间约：选项带时段。它和普通多选共用这一页，只是措辞要换 ——
+ * 「得票」在约时间这件事上是「有多少人有空」，说票数会让人以为在比人气。
+ */
+const timeMode = computed(
+  () => !!poll.value?.options.some((o) => typeof o.startAt === 'number')
+)
+
 const myChoices = computed(() =>
   (poll.value?.options ?? []).filter((o) => myVote.value.includes(o.id))
 )
@@ -217,7 +225,8 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
                 <text class="hero__badge-text">{{ isEnded ? '最终结果' : '实时更新' }}</text>
               </view>
               <text class="hero__total">
-                {{ totalVotes }} 票 · {{ poll.type === 'multiple' ? '多选' : '单选' }}
+                {{ totalVotes }} {{ timeMode ? '人次' : '票' }} ·
+                {{ timeMode ? '时间约' : poll.type === 'multiple' ? '多选' : '单选' }}
               </text>
             </view>
 
@@ -228,28 +237,33 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
                 <view class="hero__winner-left">
                   <view class="hero__winner-label-row">
                     <AppIcon name="crown" :size="11" color="#4F46E5" />
-                    <text class="hero__winner-label">领先</text>
+                    <text class="hero__winner-label">{{ timeMode ? '最多人有空' : '领先' }}</text>
                   </view>
                   <text class="hero__winner-name">{{ winner.title }}</text>
                 </view>
                 <text class="hero__winner-pct">{{ winner.pct }}%</text>
               </view>
               <view class="hero__track">
-                <view class="hero__fill" :style="{ width: `${winner.pct}%` }" />
+                <view class="hero__fill anim anim--grow" :style="{ width: `${winner.pct}%` }" />
               </view>
             </view>
           </view>
 
           <view class="rank">
             <view class="rank__head">
-              <text class="rank__title">各选项得票</text>
+              <text class="rank__title">{{ timeMode ? '各时段有空的人' : '各选项得票' }}</text>
               <view class="rank__link" @tap="goVoters">
                 <text class="rank__link-text">投票记录</text>
                 <AppIcon name="chevron-right" :size="12" color="#A1A1AA" />
               </view>
             </view>
 
-            <view v-for="(opt, i) in ranked" :key="opt.id" class="rank__row">
+            <view
+              v-for="(opt, i) in ranked"
+              :key="opt.id"
+              class="rank__row anim anim--fade-up"
+              :style="{ animationDelay: `${Math.min(i, 8) * 40}ms` }"
+            >
               <view class="rank__row-top">
                 <view class="rank__left">
                   <view class="rank__badge" :class="{ 'rank__badge--first': i === 0 }">
@@ -267,13 +281,13 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
                   <text class="rank__name" :class="{ 'rank__name--first': i === 0 }">{{ opt.title }}</text>
                 </view>
                 <view class="rank__right">
-                  <text class="rank__votes">{{ opt.votes }} 票</text>
+                  <text class="rank__votes">{{ opt.votes }} {{ timeMode ? '人' : '票' }}</text>
                   <text class="rank__pct" :class="{ 'rank__pct--first': i === 0 }">{{ opt.pct }}%</text>
                 </view>
               </view>
               <view class="rank__track">
                 <view
-                  class="rank__fill"
+                  class="rank__fill anim anim--grow"
                   :class="{ 'rank__fill--first': i === 0 }"
                   :style="{ width: `${opt.pct}%` }"
                 />
@@ -317,7 +331,7 @@ onShareAppMessage(() => (poll.value ? buildShareMessage(poll.value) : { title: '
             </view>
             <text class="countdown__value">{{ countdown }}</text>
             <view class="countdown__track">
-              <view class="countdown__fill" :style="{ width: `${timePct}%` }" />
+              <view class="countdown__fill anim anim--grow" :style="{ width: `${timePct}%` }" />
             </view>
           </view>
 
@@ -557,7 +571,8 @@ export default { name: 'PollResultPage' }
     height: 100%;
     border-radius: 4px;
     background: $accent;
-    transition: width 0.5s ease;
+    /* 进场由 .anim--grow 的 scaleX 负责，这里只管数值变化时的宽度过渡 */
+    transition: width $dur-slow $ease-both;
   }
 }
 

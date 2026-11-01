@@ -31,6 +31,13 @@ const draft = useDraftStore()
 
 const isSurvey = computed(() => draft.draft.type === 'survey')
 
+/**
+ * 时间约：类型上就是多选，但「选择方式」和「最多可选」对它是噪音 ——
+ * 约时间的语义是「有空的时段都勾上」，限制到 3 个反而是坑。
+ * 所以这两行在时间约下换成一句只读说明，上限在发布时按时段数写死。
+ */
+const timeMode = computed(() => draft.draft.timeMode)
+
 /** 单选 / 多选分段 */
 const typeMode = ref<'single' | 'multiple'>('single')
 const maxChoice = ref(3)
@@ -101,10 +108,15 @@ const resultText = computed(
 
 onLoad(() => {
   draft.restore()
-  typeMode.value = draft.draft.type === 'multiple' ? 'multiple' : 'single'
+  typeMode.value =
+    draft.draft.timeMode || draft.draft.type === 'multiple' ? 'multiple' : 'single'
   // 旧草稿里可能是 null / NaN（JSON 存不下 NaN，会变成 null），兜到 3 再收口
   const savedMax = draft.draft.rules.maxChoice
-  maxChoice.value = typeof savedMax === 'number' && Number.isFinite(savedMax) ? savedMax : 3
+  maxChoice.value = draft.draft.timeMode
+    ? Math.max(2, optionCount.value)
+    : typeof savedMax === 'number' && Number.isFinite(savedMax)
+      ? savedMax
+      : 3
   clampMaxChoice()
   profileTitle.value = draft.draft.rules.profileField ?? ''
   // 回填截止时间：草稿里已有 endAt 就按它和「现在 + 1/3/7 天」比对，
@@ -210,8 +222,12 @@ function publish() {
   else if (draft.draft.type !== 'survey') draft.draft.type = 'single'
   // 上限写进规则，详情页和待办卡都读这一个值，不在各处再猜。
   // 发布前再收一次口，防止选项在别处被删到比上限还少。
-  draft.draft.rules.maxChoice =
-    typeMode.value === 'multiple' ? Math.min(maxChoice.value, maxChoiceMax.value) : 1
+  // 时间约的上限按时段数现算：从内容页回来可能又加/删了时段，onLoad 时的值已经旧了
+  draft.draft.rules.maxChoice = draft.draft.timeMode
+    ? Math.max(2, optionCount.value)
+    : typeMode.value === 'multiple'
+      ? Math.min(maxChoice.value, maxChoiceMax.value)
+      : 1
   draft.patch({})
   go(ROUTES.createSuccess)
 }
@@ -257,54 +273,61 @@ function publish() {
 
         <!-- ================= 投票 ================= -->
         <view v-if="!isSurvey" class="card anim anim--fade-up">
-          <RuleRow
-            title="选择方式"
-            :desc="typeMode === 'single' ? '每人只能选 1 项' : '每人可勾选多项'"
-          >
-            <view class="seg">
-              <view
-                class="seg__item"
-                :class="{ 'seg__item--on': typeMode === 'single' }"
-                @tap="typeMode = 'single'"
-              >
-                <text class="seg__text" :class="{ 'seg__text--on': typeMode === 'single' }">单选</text>
-              </view>
-              <view
-                class="seg__item"
-                :class="{ 'seg__item--on': typeMode === 'multiple' }"
-                @tap="typeMode = 'multiple'; clampMaxChoice()"
-              >
-                <text class="seg__text" :class="{ 'seg__text--on': typeMode === 'multiple' }">多选</text>
-              </view>
-            </view>
+          <!-- 时间约固定多选，且不限个数：这两行只留一句只读说明 -->
+          <RuleRow v-if="timeMode" title="选择方式" desc="每人可勾选任意多个时段">
+            <text class="rules__static">多选</text>
           </RuleRow>
 
-          <RuleRow
-            v-if="typeMode === 'multiple'"
-            title="最多可选"
-            :desc="`最多 ${maxChoiceMax} 项，超过上限时禁止继续勾选`"
-          >
-            <!-- 设计稿 31：Stepper − 值 +，而不是一排数字块 -->
-            <view class="stepper">
-              <view
-                class="stepper__btn"
-                :class="{ 'stepper__btn--off': maxChoice <= 2 }"
-                :hover-class="maxChoice <= 2 ? 'none' : 'stepper__btn--active'"
-                @tap="stepMaxChoice(-1)"
-              >
-                <AppIcon name="minus" :size="13" color="#71717A" />
+          <template v-else>
+            <RuleRow
+              title="选择方式"
+              :desc="typeMode === 'single' ? '每人只能选 1 项' : '每人可勾选多项'"
+            >
+              <view class="seg">
+                <view
+                  class="seg__item"
+                  :class="{ 'seg__item--on': typeMode === 'single' }"
+                  @tap="typeMode = 'single'"
+                >
+                  <text class="seg__text" :class="{ 'seg__text--on': typeMode === 'single' }">单选</text>
+                </view>
+                <view
+                  class="seg__item"
+                  :class="{ 'seg__item--on': typeMode === 'multiple' }"
+                  @tap="typeMode = 'multiple'; clampMaxChoice()"
+                >
+                  <text class="seg__text" :class="{ 'seg__text--on': typeMode === 'multiple' }">多选</text>
+                </view>
               </view>
-              <text class="stepper__value">{{ maxChoice }}</text>
-              <view
-                class="stepper__btn"
-                :class="{ 'stepper__btn--off': maxChoice >= maxChoiceMax }"
-                :hover-class="maxChoice >= maxChoiceMax ? 'none' : 'stepper__btn--active'"
-                @tap="stepMaxChoice(1)"
-              >
-                <AppIcon name="plus" :size="13" color="#09090B" />
+            </RuleRow>
+
+            <RuleRow
+              v-if="typeMode === 'multiple'"
+              title="最多可选"
+              :desc="`最多 ${maxChoiceMax} 项，超过上限时禁止继续勾选`"
+            >
+              <!-- 设计稿 31：Stepper − 值 +，而不是一排数字块 -->
+              <view class="stepper">
+                <view
+                  class="stepper__btn"
+                  :class="{ 'stepper__btn--off': maxChoice <= 2 }"
+                  :hover-class="maxChoice <= 2 ? 'none' : 'stepper__btn--active'"
+                  @tap="stepMaxChoice(-1)"
+                >
+                  <AppIcon name="minus" :size="13" color="#71717A" />
+                </view>
+                <text class="stepper__value">{{ maxChoice }}</text>
+                <view
+                  class="stepper__btn"
+                  :class="{ 'stepper__btn--off': maxChoice >= maxChoiceMax }"
+                  :hover-class="maxChoice >= maxChoiceMax ? 'none' : 'stepper__btn--active'"
+                  @tap="stepMaxChoice(1)"
+                >
+                  <AppIcon name="plus" :size="13" color="#09090B" />
+                </view>
               </view>
-            </view>
-          </RuleRow>
+            </RuleRow>
+          </template>
 
           <RuleRow title="匿名投票" desc="参与者身份不公开">
             <AppSwitch
@@ -757,6 +780,13 @@ export default { name: 'CreateRulesPage' }
   border: 1px solid $line;
   border-radius: $r-button;
   overflow: hidden;
+}
+
+/* 时间约：选择方式是固定结论，不是可点的控件，所以只写一行字 */
+.rules__static {
+  font-size: $fs-13;
+  font-weight: 600;
+  color: $accent-ink;
 }
 
 /* 单选 / 多选分段 */

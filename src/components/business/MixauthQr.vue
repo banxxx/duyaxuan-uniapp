@@ -165,7 +165,7 @@ function close() {
     border: 2px solid $line;
     border-top-color: $accent;
     border-radius: 50%;
-    animation: mixauth-spin 0.7s linear infinite;
+    animation: mixauth-spin $dur-spin linear infinite;
   }
 
   &__mask {

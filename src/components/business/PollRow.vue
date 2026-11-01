@@ -46,6 +46,9 @@ const dateText = computed(() =>
 
 const isSurvey = computed(() => props.poll.type === 'survey')
 
+/** 时间约在数据上就是多选，靠选项有没有时段认出来 */
+const isTime = computed(() => props.poll.options.some((o) => typeof o.startAt === 'number'))
+
 /**
  * 42 的状态胶囊说的不是「这场投票怎样」，而是「我和它怎样」：
  *   已结束 → 已结束（灰）
@@ -114,7 +117,7 @@ function onMore(e: Event) {
           :tone="statusTone"
           :size="compact ? 'sm' : 'md'"
         />
-        <TypeBadge :type="poll.type" :size="compact ? 'sm' : 'md'" />
+        <TypeBadge :type="poll.type" :time="isTime" :size="compact ? 'sm' : 'md'" />
       </view>
       <text class="poll-row__date">{{ dateText }}</text>
     </view>

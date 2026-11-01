@@ -51,6 +51,12 @@ export interface PollOption {
    * 存的是 `/files/options/...` 相对地址，渲染前用 resolveFileUrl 补全域名。
    */
   images?: string[]
+  /**
+   * 时间约：选项时段的起止（毫秒时间戳）。
+   * 普通投票没有这两个字段；endAt 可能缺省（只知道从几点开始）。
+   */
+  startAt?: number
+  endAt?: number
   votes: number
   /** 汇总创建时标记：来自问卷的哪几条回答 */
   sourceAnswerIds?: string[]

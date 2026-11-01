@@ -20,94 +20,6 @@
       "style": { "navigationStyle": "custom" }
     },
     {
-      "path": "pages/detail/index",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/detail/success",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/detail/result",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/detail/voters",
-      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
-    },
-    {
-      "path": "pages/detail/comments",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/share/index",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/share/join",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/create/type",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/create/content",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/create/rules",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/create/success",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/creator/data",
-      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
-    },
-    {
-      "path": "pages/creator/edit-content",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/creator/edit-rules",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/survey/fill",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/survey/done",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/survey/mine",
-      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
-    },
-    {
-      "path": "pages/survey/edit-answer",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/survey/answers",
-      "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
-    },
-    {
-      "path": "pages/summary/index",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/summary/option",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/summary/unclassified",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
       "path": "pages/me/index",
       "style": { "navigationStyle": "custom" }
     },
@@ -122,40 +34,180 @@
     {
       "path": "pages/me/pending",
       "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
-    },
-    {
-      "path": "pages/settings/index",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/settings/notifications",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/settings/account",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/settings/wechat",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/settings/bind",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/settings/deactivate",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/settings/doc",
-      "style": { "navigationStyle": "custom" }
-    },
-    {
-      "path": "pages/support/index",
-      "style": { "navigationStyle": "custom" }
     }
   ],
+  "subPackages": [
+    {
+      "root": "pages/detail",
+      "pages": [
+        {
+          "path": "index",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "success",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "result",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "voters",
+          "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+        },
+        {
+          "path": "comments",
+          "style": { "navigationStyle": "custom" }
+        }
+      ]
+    },
+    {
+      "root": "pages/share",
+      "pages": [
+        {
+          "path": "index",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "join",
+          "style": { "navigationStyle": "custom" }
+        }
+      ]
+    },
+    {
+      "root": "pages/create",
+      "pages": [
+        {
+          "path": "type",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "content",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "rules",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "success",
+          "style": { "navigationStyle": "custom" }
+        }
+      ]
+    },
+    {
+      "root": "pages/creator",
+      "pages": [
+        {
+          "path": "data",
+          "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+        },
+        {
+          "path": "edit-content",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "edit-rules",
+          "style": { "navigationStyle": "custom" }
+        }
+      ]
+    },
+    {
+      "root": "pages/survey",
+      "pages": [
+        {
+          "path": "fill",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "done",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "mine",
+          "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+        },
+        {
+          "path": "edit-answer",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "answers",
+          "style": { "navigationStyle": "custom", "enablePullDownRefresh": true }
+        }
+      ]
+    },
+    {
+      "root": "pages/summary",
+      "pages": [
+        {
+          "path": "index",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "option",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "unclassified",
+          "style": { "navigationStyle": "custom" }
+        }
+      ]
+    },
+    {
+      "root": "pages/settings",
+      "pages": [
+        {
+          "path": "index",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "notifications",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "account",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "wechat",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "bind",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "deactivate",
+          "style": { "navigationStyle": "custom" }
+        },
+        {
+          "path": "doc",
+          "style": { "navigationStyle": "custom" }
+        }
+      ]
+    },
+    {
+      "root": "pages/support",
+      "pages": [
+        {
+          "path": "index",
+          "style": { "navigationStyle": "custom" }
+        }
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/index/index": {
+      "network": "all",
+      "packages": ["pages/detail"]
+    },
+    "pages/me/index": {
+      "network": "wifi",
+      "packages": ["pages/settings"]
+    }
+  },
   "globalStyle": {
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "杜雅轩",
